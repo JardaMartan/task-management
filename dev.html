@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Task Management Widget – Dev Harness</title>
+  <link rel="icon" href="data:," />
+  <!-- React externals expected by webpack dev build -->
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-redux@8/dist/react-redux.js" crossorigin></script>
+  <script src="https://unpkg.com/redux@4/dist/redux.js" crossorigin></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+      background: #e8ecf0;
+      color: #0a2236;
+    }
+    .harness {
+      display: grid;
+      grid-template-columns: 300px 1fr;
+      min-height: 100vh;
+    }
+    .sidebar {
+      background: #1b2a38;
+      color: #c8d8e8;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      overflow-y: auto;
+    }
+    .sidebar h2 { color: #fff; font-size: 16px; margin: 0 0 8px; }
+    .sidebar h3 { color: #9cb0c4; font-size: 13px; margin: 8px 0 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .sidebar label { font-size: 12px; color: #8fa8bc; margin-bottom: 2px; display: block; }
+    .sidebar input, .sidebar select, .sidebar textarea {
+      width: 100%; padding: 6px 8px; border-radius: 6px; border: 1px solid #374d5e;
+      background: #243547; color: #d4e4f0; font-size: 12px; margin-bottom: 4px;
+    }
+    .sidebar textarea { resize: vertical; font-family: monospace; }
+    .btn {
+      width: 100%; padding: 8px; border-radius: 8px; border: none;
+      font-size: 13px; font-weight: 600; cursor: pointer; margin-top: 2px;
+    }
+    .btn-primary { background: #0f62c0; color: #fff; }
+    .btn-secondary { background: #2e4a60; color: #c8d8e8; }
+    .btn-danger { background: #7b1c2e; color: #f8d0d8; }
+    .preset-btn {
+      width: 100%; text-align: left; padding: 6px 8px; border-radius: 6px;
+      border: 1px solid #374d5e; background: #1e3247; color: #9cb0c4;
+      font-size: 12px; cursor: pointer; margin-bottom: 4px;
+    }
+    .preset-btn:hover { background: #2a4460; color: #d4e4f0; }
+    .widget-area {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+    .widget-header {
+      background: #fff;
+      padding: 10px 16px;
+      border-bottom: 1px solid #dce4ec;
+      font-size: 13px;
+      color: #4f5b66;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .badge {
+      font-size: 11px; padding: 2px 8px; border-radius: 999px;
+      background: #e8f0fe; color: #1a56db;
+    }
+    task-management {
+      flex: 1;
+      overflow-y: auto;
+      display: block;
+    }
+    .status-line {
+      padding: 4px 16px;
+      font-size: 11px;
+      background: #f0f4f8;
+      border-top: 1px solid #dce4ec;
+      color: #4f5b66;
+    }
+    pre { font-size: 11px; color: #7a9ab4; white-space: pre-wrap; word-break: break-all; margin: 0; }
+  </style>
+</head>
+<body>
+<div class="harness">
+  <!-- ── Sidebar ──────────────────────────────────────────── -->
+  <aside class="sidebar">
+    <h2>Dev Harness</h2>
+
+    <div>
+      <h3>Quick Presets</h3>
+      <button class="preset-btn" onclick="applyPreset('caseByIdOnly')">Case – caseId only (INC0003)</button>
+      <button class="preset-btn" onclick="applyPreset('caseByEmail')">Case – email lookup (INC0003 + email)</button>
+      <button class="preset-btn" onclick="applyPreset('caseWithWorkspaceOverride')">Case – JDSWorkspaceId override</button>
+      <button class="preset-btn" onclick="applyPreset('unsupportedType')">Email task (unsupported type)</button>
+      <button class="preset-btn" onclick="applyPreset('emptyTask')">Empty / missing task</button>
+    </div>
+
+    <div>
+      <h3>Widget props</h3>
+      <label>accesstoken</label>
+      <input id="prop-accesstoken" placeholder="Bearer token (leave blank = demo mode)" />
+      <label>orgid</label>
+      <input id="prop-orgid" placeholder="Webex org ID" />
+      <label>datacenter</label>
+      <input id="prop-datacenter" placeholder="e.g. produs1" value="produs1" />
+      <label>workspaceid</label>
+      <input id="prop-workspaceid" placeholder="JDS workspace ID" />
+      <label>locale</label>
+      <select id="prop-locale">
+        <option value="en" selected>en</option>
+        <option value="es">es</option>
+        <option value="de">de</option>
+        <option value="cs">cs</option>
+      </select>
+    </div>
+
+    <div>
+      <h3>task payload (JSON)</h3>
+      <textarea id="task-json" rows="10">{
+  "taskType": "case",
+  "caseId": "INC0003"
+}</textarea>
+    </div>
+
+    <div>
+      <h3>config JSON</h3>
+      <textarea id="config-json" rows="5">{
+  "workspaceOverrideTaskTypes": ["case"]
+}</textarea>
+    </div>
+
+    <button class="btn btn-primary" onclick="applyProps()">▶ Apply to widget</button>
+    <button class="btn btn-secondary" onclick="clearWidget()">✕ Clear task</button>
+    <button class="btn btn-danger" onclick="destroyWidget()">⟳ Destroy &amp; recreate widget</button>
+  </aside>
+
+  <!-- ── Widget area ──────────────────────────────────────── -->
+  <section class="widget-area">
+    <div class="widget-header">
+      <strong>task-management</strong>
+      <span class="badge" id="task-type-badge">no task</span>
+      <span id="mode-badge" class="badge" style="background:#e8f8ef;color:#157347">demo mode</span>
+    </div>
+    <div id="widget-host" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;">
+      <task-management id="cj-widget" style="flex:1;min-height:0;"></task-management>
+    </div>
+    <div class="status-line" id="status-line">Ready. Apply props to load a task.</div>
+  </section>
+</div>
+
+<!-- Load the dev bundle AFTER externals -->
+<script src="/task-management-dev.js"></script>
+
+<script>
+  const PRESETS = {
+    caseByIdOnly: {
+      task: { taskType: 'case', caseId: 'INC0003' },
+      config: { workspaceOverrideTaskTypes: ['case'] }
+    },
+    caseByEmail: {
+      task: { taskType: 'case', caseId: 'INC0003', customerEmail: 'phubach@cisco.com' },
+      config: { workspaceOverrideTaskTypes: ['case'] }
+    },
+    caseWithWorkspaceOverride: {
+      task: { taskType: 'case', caseId: 'INC0003', JDSWorkspaceId: 'override-workspace-demo-001' },
+      config: { workspaceOverrideTaskTypes: ['case'] }
+    },
+    unsupportedType: {
+      task: { taskType: 'email', conversationId: 'conv-001' },
+      config: {}
+    },
+    emptyTask: {
+      task: null,
+      config: {}
+    }
+  };
+
+  function applyPreset(name) {
+    const preset = PRESETS[name];
+    if (!preset) return;
+    document.getElementById('task-json').value =
+      preset.task ? JSON.stringify(preset.task, null, 2) : '';
+    document.getElementById('config-json').value =
+      JSON.stringify(preset.config, null, 2);
+    applyProps();
+  }
+
+  function getWidget() {
+    return document.getElementById('cj-widget');
+  }
+
+  function applyProps() {
+    const w = getWidget();
+    if (!w) { log('Widget element not found'); return; }
+
+    const at = document.getElementById('prop-accesstoken').value.trim();
+    const orgid = document.getElementById('prop-orgid').value.trim();
+    const dc = document.getElementById('prop-datacenter').value.trim();
+    const ws = document.getElementById('prop-workspaceid').value.trim();
+    const locale = document.getElementById('prop-locale').value;
+
+    if (at) { w.accesstoken = at; w.setAttribute('accesstoken', at); }
+    if (orgid) { w.orgid = orgid; }
+    if (dc) { w.datacenter = dc; }
+    if (ws) { w.workspaceid = ws; }
+    w.locale = locale;
+
+    // Mode badge
+    document.getElementById('mode-badge').textContent = at ? 'live mode' : 'demo mode';
+    document.getElementById('mode-badge').style.background = at ? '#fff3cd' : '#e8f8ef';
+    document.getElementById('mode-badge').style.color = at ? '#996600' : '#157347';
+
+    // Task
+    let taskVal = null;
+    const rawTask = document.getElementById('task-json').value.trim();
+    if (rawTask) {
+      try {
+        taskVal = JSON.parse(rawTask);
+        document.getElementById('task-type-badge').textContent =
+          (taskVal && taskVal.taskType) ? taskVal.taskType : 'no type';
+      } catch {
+        log('ERROR: Invalid task JSON – fix syntax and retry');
+        return;
+      }
+    } else {
+      document.getElementById('task-type-badge').textContent = 'no task';
+    }
+    w.task = taskVal ? JSON.stringify(taskVal) : null;
+
+    // Config
+    const rawConfig = document.getElementById('config-json').value.trim();
+    if (rawConfig) {
+      try {
+        w.config = JSON.parse(rawConfig);
+      } catch {
+        log('WARN: Invalid config JSON – ignored');
+      }
+    }
+
+    log('Props applied: taskType=' + (taskVal && taskVal.taskType || 'none'));
+  }
+
+  function clearWidget() {
+    const w = getWidget();
+    if (w) w.task = null;
+    document.getElementById('task-json').value = '';
+    document.getElementById('task-type-badge').textContent = 'no task';
+    log('Task cleared');
+  }
+
+  function destroyWidget() {
+    const host = document.getElementById('widget-host');
+    host.innerHTML = '<task-management id="cj-widget" style="flex:1;min-height:0;"></task-management>';
+    log('Widget recreated');
+    applyProps();
+  }
+
+  function log(msg) {
+    document.getElementById('status-line').textContent =
+      '[' + new Date().toLocaleTimeString() + '] ' + msg;
+  }
+
+  // Auto-apply on load once bundle defines the custom element
+  window.addEventListener('load', () => {
+    setTimeout(() => {
+      applyProps();
+      log('Auto-applied initial props');
+    }, 200);
+  });
+</script>
+</body>
+</html>
