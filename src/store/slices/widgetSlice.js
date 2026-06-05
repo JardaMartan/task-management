@@ -73,6 +73,11 @@ const widgetSlice = createSlice({
         widgetConfig: {
             workspaceOverrideTaskTypes: DEFAULT_WORKSPACE_OVERRIDE_TASK_TYPES,
         },
+        emailConfig: {
+            tokenBrokerUrl: null,
+            webexConnectOutboundWebhook: null,
+            aiProvider: null,
+        },
         caseWorkflow: initialCaseState,
     },
     reducers: {
@@ -120,6 +125,10 @@ const widgetSlice = createSlice({
                 workspaceOverrideTaskTypes: DEFAULT_WORKSPACE_OVERRIDE_TASK_TYPES,
                 ...action.payload,
             };
+        },
+        setEmailConfig: (state, action) => {
+            if (!action.payload || typeof action.payload !== 'object') return;
+            state.emailConfig = { ...state.emailConfig, ...action.payload };
         },
         setCaseTaskPayload: (state, action) => {
             state.caseWorkflow.task = action.payload || null;
@@ -236,6 +245,7 @@ export const {
     setWorkspaceId,
     setStreamingActive,
     setWidgetConfig,
+    setEmailConfig,
     setCaseTaskPayload,
     setCaseWorkflowLoading,
     setCaseWorkflowData,
@@ -336,6 +346,20 @@ export const hydrateWidgetContext = (props = {}) => (dispatch) => {
 
     if (props.config && typeof props.config === 'object') {
         dispatch(setWidgetConfig(props.config));
+
+        // Extract email-specific config fields from the layout config object
+        const { tokenBrokerUrl, webexConnectOutboundWebhook, aiProvider, aiApiKey } = props.config;
+        const emailCfg = {};
+        if (tokenBrokerUrl) emailCfg.tokenBrokerUrl = tokenBrokerUrl;
+        if (webexConnectOutboundWebhook) emailCfg.webexConnectOutboundWebhook = webexConnectOutboundWebhook;
+        if (aiProvider) {
+            emailCfg.aiProvider = typeof aiProvider === 'object'
+                ? { ...aiProvider, apiKey: aiApiKey || aiProvider.apiKey || null }
+                : { type: aiProvider, apiKey: aiApiKey || null };
+        }
+        if (Object.keys(emailCfg).length > 0) {
+            dispatch(setEmailConfig(emailCfg));
+        }
     }
 };
 

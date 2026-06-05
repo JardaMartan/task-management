@@ -50,6 +50,7 @@ const baseDictionary = {
     },
     history: {
       title: 'Case History',
+      aiSummary: 'AI Customer Summary',
       empty: 'No history events available.',
       entry: 'Interaction',
       customerSource: 'Customer source: {{source}}',
@@ -91,7 +92,101 @@ const baseDictionary = {
         openMissingCaseId: 'Cannot open related case because case ID is missing',
       }
     }
-  }
+  },
+  email: {
+    loading: 'Loading email...',
+    noTask: 'No email task.',
+    subject: 'Subject',
+    from: 'From',
+    to: 'To',
+    cc: 'CC',
+    date: 'Date',
+    sentiment: {
+      positive: 'Positive',
+      neutral: 'Neutral',
+      negative: 'Negative',
+      urgent: 'Urgent',
+    },
+    thread: {
+      title: 'Email Thread',
+      expand: 'Expand',
+      collapse: 'Collapse',
+      summary: {
+        show: 'Show AI summary',
+        hide: 'Hide summary',
+      },
+    },
+    attachments: {
+      title: 'Attachments',
+      download: 'Download',
+      noAttachments: 'No attachments',
+    },
+    ai: {
+      summary: 'AI Summary',
+      category: 'Category',
+      sentiment: 'Sentiment',
+      confidence: 'Confidence',
+      refresh: 'Refresh Analysis',
+      suggestedReply: 'Suggested Reply',
+      useReply: 'Use this reply',
+      generating: 'Generating…',
+      chips: {
+        label: 'Quick start:',
+        confirm: 'Confirming your request…',
+        info: 'I need more information…',
+        escalate: 'Escalating to our specialist…',
+      },
+    },
+    reply: {
+      title: 'Compose Reply',
+      send: 'Send',
+      sending: 'Sending...',
+      placeholder: 'Type your reply...',
+      generate: 'AI Generate',
+      polish: 'Polish Draft',
+      translate: 'Translate',
+      instruction: 'Instruction for AI',
+      instructionPlaceholder: 'e.g. Apologize and offer a discount',
+      template: 'Use Template',
+      aiOptions: 'AI Options',
+      generating: 'AI is generating your reply…',
+      note: {
+        toggle: 'Internal Note',
+        active: '📝 Note Mode',
+        save: 'Save Note',
+        hint: 'Visible to agents only — not sent to customer',
+      },
+      undoHint: 'Sending in {n}s',
+      undo: 'Undo',
+      shortcuts: 'Ctrl+Enter to send',
+    },
+    send: {
+      pending: 'Sending email...',
+      success: 'Email sent successfully',
+      failed: 'Failed to send email',
+      timeout: 'Could not confirm delivery — please check the sent folder',
+    },
+    wrapup: {
+      title: 'Wrap Up',
+      reason: 'Wrap-up reason',
+      notes: 'Additional notes',
+      notesPlaceholder: 'Add any relevant notes...',
+      submit: 'Submit & Close',
+      cancel: 'Cancel',
+    },
+    customer: {
+      title: 'Customer History',
+      threads: 'Email History',
+      jds: 'Interaction Timeline',
+      noThreads: 'No previous emails found',
+      noHistory: 'No interaction history found',
+    },
+    error: {
+      tokenFetch: 'Failed to get email access token',
+      noWebhookUrl: 'Outbound webhook not configured',
+      wrapupFailed: 'Failed to complete wrap-up',
+    },
+  },
 };
 
 export const translations = {

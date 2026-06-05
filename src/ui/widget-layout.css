@@ -1,0 +1,239 @@
+/* ════════════════════════════════════════════════════════════════
+   widget-layout.css
+   Single source of truth for all structural spacing in the
+   task-management widget.
+
+   ── How to use ──────────────────────────────────────────────
+   1. All spacing uses --tm-* custom properties defined in :root.
+      Never hard-code a spacing or shadow value in a widget CSS
+      file — reference the token instead.
+   2. Use .widget-shell as the root of every channel widget view.
+   3. Use .view-panel as the root of every single-column tab view.
+   4. Use .widget-body for the 3-column grid inside a widget-shell.
+   5. Use .widget-panel for column panel cards.
+   6. Use .widget-rail + .widget-rail-card for the AI assist rail.
+   7. Use .widget-header-bar for the task/session strip below the
+      analytics collapse.
+   See src/ui/design-guide.md for the full visual specification.
+   ════════════════════════════════════════════════════════════════ */
+
+/* ── Design tokens ───────────────────────────────────────────── */
+:root {
+  /* Spacing scale */
+  --tm-space-1:  4px;
+  --tm-space-2:  8px;
+  --tm-space-3: 12px;
+  --tm-space-4: 16px;
+
+  /* Layout — outer gutter used by every view and widget */
+  --tm-gutter:       var(--tm-space-2);   /* 8px: shell padding on all sides   */
+  --tm-row-gap:      var(--tm-space-2);   /* 8px: gap between stacked rows      */
+  --tm-view-gap:     var(--tm-space-3);   /* 12px: gap for single-column views  */
+  --tm-col-gap:      var(--tm-space-2);   /* 8px: gap between grid columns      */
+
+  /* Panel internals */
+  --tm-panel-padding-v: 10px;
+  --tm-panel-padding-h: 12px;
+  --tm-panel-padding:   var(--tm-panel-padding-v) var(--tm-panel-padding-h);
+
+  /* Card chrome */
+  --tm-radius-sm:  6px;
+  --tm-radius-md:  8px;
+  --tm-radius-lg: 10px;
+  --tm-border-card:  1px solid var(--md-color-gray-20, #e8ebee);
+  --tm-shadow-card:  0 1px 3px rgba(0, 0, 0, .06);
+  --tm-shadow-bar:   0 1px 4px rgba(0, 0, 0, .06);
+
+  /* Surface colours */
+  --tm-bg-shell:   var(--md-color-gray-05, #f4f5f7);
+  --tm-bg-panel:   var(--md-color-white-100, #fff);
+  --tm-bg-rail:    var(--md-color-gray-05, #f8f9fa);
+
+  /* Dark-mode surface colours */
+  --tm-bg-shell-dark:  var(--md-color-gray-95, #1a1a2e);
+  --tm-bg-panel-dark:  var(--md-color-gray-80, #2d2d2d);
+  --tm-border-dark:    rgba(255, 255, 255, .08);
+}
+
+/* ── Widget shell ────────────────────────────────────────────── */
+/*
+ * Root container for every full-height channel widget
+ * (email, chat, voice, …) and every single-column routed view.
+ * Provides the canonical 8 px outer gutter and row gap so every
+ * direct child (analytics bar, header bar, column body) aligns.
+ */
+.widget-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  font-family: var(--md-font-family, 'CiscoSansTT', sans-serif);
+  padding: var(--tm-gutter);
+  gap: var(--tm-row-gap);
+  box-sizing: border-box;
+  background: var(--tm-bg-shell);
+}
+
+.md--dark .widget-shell {
+  background: var(--tm-bg-shell-dark);
+  color: rgba(255, 255, 255, .88);
+}
+
+/* ── Task / call header bar ──────────────────────────────────── */
+/*
+ * The session-info strip that sits directly beneath the analytics
+ * collapse bar.  Uses card chrome to match the panel columns below.
+ */
+.widget-header-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: var(--tm-space-2) var(--tm-panel-padding-h);
+  background: var(--tm-bg-panel);
+  border-radius: var(--tm-radius-md);
+  border: var(--tm-border-card);
+  box-shadow: var(--tm-shadow-card);
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+.md--dark .widget-header-bar {
+  background: var(--tm-bg-panel-dark);
+  border-color: var(--tm-border-dark);
+  box-shadow: none;
+}
+
+/* ── Widget body (3-column grid) ─────────────────────────────── */
+/*
+ * Grid wrapper for multi-column layouts.
+ * No padding of its own — outer gutter is already provided by
+ * the parent .widget-shell.  Only gap between columns is added.
+ * Each widget overrides grid-template-columns for its layout.
+ */
+.widget-body {
+  display: grid;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  gap: var(--tm-col-gap);
+  box-sizing: border-box;
+  background: var(--tm-bg-shell);
+}
+
+.md--dark .widget-body {
+  background: var(--tm-bg-shell-dark);
+}
+
+/* ── Widget panel (column card) ──────────────────────────────── */
+/*
+ * Card used for each column in a widget-body grid and for
+ * standalone scrollable panels (call list, transcript, etc.).
+ */
+.widget-panel {
+  background: var(--tm-bg-panel);
+  border: var(--tm-border-card);
+  border-radius: var(--tm-radius-md);
+  box-shadow: var(--tm-shadow-card);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.md--dark .widget-panel {
+  background: var(--tm-bg-panel-dark);
+  border-color: var(--tm-border-dark);
+  box-shadow: none;
+}
+
+/* ── Widget panel header ─────────────────────────────────────── */
+.widget-panel__header {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--md-color-gray-50, #767676);
+  padding: var(--tm-panel-padding-v) var(--tm-panel-padding-h) 6px;
+  border-bottom: var(--tm-border-card);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.md--dark .widget-panel__header {
+  color: rgba(255, 255, 255, .38);
+  border-bottom-color: var(--tm-border-dark);
+}
+
+/* ── Widget panel subheader ──────────────────────────────────── */
+.widget-panel__subheader {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--md-color-gray-40, #aaa);
+  padding: var(--tm-panel-padding-v) var(--tm-panel-padding-h) 5px;
+}
+
+.md--dark .widget-panel__subheader {
+  color: rgba(255, 255, 255, .3);
+}
+
+/* ── Widget rail ─────────────────────────────────────────────── */
+/*
+ * Scrollable right-column used as the AI / assist rail.
+ * Padding matches the outer gutter so cards are flush with the
+ * panel columns on the left.
+ */
+.widget-rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tm-row-gap);
+  padding: var(--tm-gutter);
+  overflow-y: auto;
+}
+
+/* ── Widget rail card ────────────────────────────────────────── */
+.widget-rail-card {
+  background: var(--tm-bg-panel);
+  border: var(--tm-border-card);
+  border-radius: var(--tm-radius-md);
+  box-shadow: var(--tm-shadow-card);
+  flex-shrink: 0;
+}
+
+.md--dark .widget-rail-card {
+  background: var(--tm-bg-panel-dark);
+  border-color: var(--tm-border-dark);
+  box-shadow: none;
+}
+
+/* Inner content area padding */
+.widget-rail-card__content {
+  padding: var(--tm-panel-padding);
+}
+
+/* ── View mount ──────────────────────────────────────────────── */
+/* Thin full-size wrapper for routed views inside TaskManagement. */
+.tm-view-mount {
+  height: 100%;
+  width: 100%;
+}
+
+/* ── View panel ──────────────────────────────────────────────── */
+/*
+ * Root for single-column tab views (cases, history).
+ * Outer gutter matches widget-shell (--tm-gutter = 8px).
+ * Row gap is larger (--tm-view-gap = 12px) for reading comfort.
+ */
+.view-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  padding: var(--tm-gutter);
+  gap: var(--tm-view-gap);
+  box-sizing: border-box;
+  overflow-y: auto;
+  font-family: var(--md-font-family, 'CiscoSansTT', sans-serif);
+}

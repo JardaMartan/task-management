@@ -23,13 +23,13 @@ export const MomentumSelect = ({
   options = [],
   onChange = () => {},
   disabled = false,
-  style = {},
+  className = '',
 }) => {
   const selectedOption = options.find((option) => option.value === value);
   const defaultValue = selectedOption?.label || options[0]?.label || '';
 
   return (
-    <div style={style}>
+    <div className={className || undefined}>
       <Select
         key={`${id}-${value}`}
         defaultValue={defaultValue}
@@ -59,12 +59,9 @@ export const MomentumSelect = ({
 MomentumSelect.propTypes = {
   id: PropTypes.string.isRequired,
   value: PropTypes.string,
-  options: PropTypes.arrayOf(PropTypes.shape({
-    value: PropTypes.string,
-    label: PropTypes.string,
-  })),
+  options: PropTypes.arrayOf(PropTypes.shape({ value: PropTypes.string, label: PropTypes.string })),
   onChange: PropTypes.func,
   disabled: PropTypes.bool,
-  style: PropTypes.object,
+  className: PropTypes.string,
 };
 

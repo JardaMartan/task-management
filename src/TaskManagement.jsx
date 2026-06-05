@@ -19,6 +19,14 @@ import {
   MomentumCard,
   MomentumSelect,
 } from './ui/momentumPrimitives';
+import EmailWidget from './email/EmailWidget';
+import ChatView from './views/ChatView';
+import ChatWidget from './chat/ChatWidget';
+import VoiceWidget from './voice/VoiceWidget';
+import CasesView from './views/CasesView';
+import HistoryView from './views/HistoryView';
+import './ui/widget-layout.css';
+import './views/views.css';
 
 const parseTaskInput = (task, taskType, email) => {
   if (!task) return null;
@@ -184,28 +192,96 @@ const TaskManagement = (props) => {
   };
 
   const isCaseTask = getNormalizedTaskType(taskPayload) === 'case';
+  const isEmailTask =
+    taskPayload?.mediaType === 'email' ||
+    getNormalizedTaskType(taskPayload) === 'email';
+
+  // Explicit view routing (set via web component `view` attribute in desktop layout JSON).
+  // Lets the same standalone bundle act as multiple visually-distinct widgets.
+  const explicitView = String(props.view || '').toLowerCase();
+  if (explicitView === 'chat') {
+    return (
+      <div className={`tm-view-mount${darkMode ? ' md--dark' : ''}`}>
+        <ChatView darkMode={darkMode} />
+      </div>
+    );
+  }
+  if (explicitView === 'chat-mock') {
+    return (
+      <div className={`tm-view-mount${darkMode ? ' md--dark' : ''}`}>
+        <ChatWidget darkMode={darkMode} mockMode />
+      </div>
+    );
+  }
+  if (explicitView === 'voice-mock') {
+    return (
+      <div className={`tm-view-mount${darkMode ? ' md--dark' : ''}`}>
+        <VoiceWidget darkMode={darkMode} />
+      </div>
+    );
+  }
+  if (explicitView === 'history') {
+    return (
+      <div className={`tm-view-mount${darkMode ? ' md--dark' : ''}`}>
+        <HistoryView darkMode={darkMode} />
+      </div>
+    );
+  }
+  if (explicitView === 'history-mock') {
+    return (
+      <div className={`tm-view-mount${darkMode ? ' md--dark' : ''}`}>
+        <HistoryView darkMode={darkMode} mockMode />
+      </div>
+    );
+  }
+  if (explicitView === 'cases') {
+    return (
+      <div className={`tm-view-mount${darkMode ? ' md--dark' : ''}`}>
+        <CasesView darkMode={darkMode} />
+      </div>
+    );
+  }
+  if (explicitView === 'cases-mock') {
+    return (
+      <div className={`tm-view-mount${darkMode ? ' md--dark' : ''}`}>
+        <CasesView darkMode={darkMode} mockMode />
+      </div>
+    );
+  }
+  if (explicitView === 'email') {
+    return (
+      <div className={`tm-view-mount${darkMode ? ' md--dark' : ''}`}>
+        {taskPayload ? (
+          <EmailWidget
+            interactionId={taskPayload.taskId || taskPayload.id || taskPayload.interactionId || ''}
+            callAssociatedDetails={taskPayload.callAssociatedDetails || taskPayload.callAssociatedData || taskPayload}
+            darkMode={darkMode}
+          />
+        ) : (
+          <MomentumCard dark={darkMode}>{t('case.noTask')}</MomentumCard>
+        )}
+      </div>
+    );
+  }
+  if (explicitView === 'email-mock') {
+    return (
+      <div className={`tm-view-mount${darkMode ? ' md--dark' : ''}`}>
+        <EmailWidget interactionId="mock-001" darkMode={darkMode} mockMode />
+      </div>
+    );
+  }
+
   const caseStatusOptions = [
     { value: 'open', label: t('case.statusValues.open') },
     { value: 'in progress', label: t('case.statusValues.inProgress') },
     { value: 'closed', label: t('case.statusValues.closed') },
   ];
 
-  const rootStyle = {
-    minHeight: '100%',
-    width: '100%',
-    padding: 16,
-    boxSizing: 'border-box',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 14,
-    ...(props.style || {}),
-  };
-
   return (
-    <div className={darkMode ? 'md--dark' : undefined} style={rootStyle}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+    <div className={`case-detail${darkMode ? ' md--dark' : ''}`}>
+      <div className="case-detail__toolbar">
         <div />
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div className="case-detail__toolbar-actions">
           {caseWorkflow.caseNavigationStack.length > 0 ? (
             <Button color='blue' onClick={onBackToPreviousCase}>
               {t('case.actions.backToPreviousCase')}
@@ -226,8 +302,16 @@ const TaskManagement = (props) => {
         <MomentumCard dark={darkMode}>{t('case.noTask')}</MomentumCard>
       ) : null}
 
-      {taskPayload && !isCaseTask ? (
+      {taskPayload && !isCaseTask && !isEmailTask ? (
         <MomentumCard dark={darkMode}>{t('case.unsupportedTaskType', { taskType: taskPayload.taskType || '-' })}</MomentumCard>
+      ) : null}
+
+      {taskPayload && isEmailTask ? (
+        <EmailWidget
+          interactionId={taskPayload.taskId || taskPayload.id || taskPayload.interactionId || ''}
+          callAssociatedDetails={taskPayload.callAssociatedDetails || taskPayload.callAssociatedData || taskPayload}
+          darkMode={darkMode}
+        />
       ) : null}
 
       {isCaseTask && caseWorkflow.isLoading ? (
@@ -240,44 +324,44 @@ const TaskManagement = (props) => {
 
       {isCaseTask && caseWorkflow.caseData ? (
         <>
-          <MomentumCard dark={darkMode} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+          <MomentumCard dark={darkMode} className="case-detail__fields-grid">
             <div>
               <Label>{t('case.fields.caseId')}</Label>
-              <div style={{ marginTop: 4 }}>{caseWorkflow.caseData.caseId || '-'}</div>
+              <div className="case-detail__field-value">{caseWorkflow.caseData.caseId || '-'}</div>
             </div>
             <div>
               <Label>{t('case.fields.status')}</Label>
-              <div style={{ marginTop: 4 }}>
+              <div className="case-detail__field-value">
                 <MomentumSelect
                   id='case-status-select'
                   value={normalizeCaseStatus(caseWorkflow.caseData.status)}
                   options={caseStatusOptions}
                   disabled={caseWorkflow.isSavingStatus}
                   onChange={onStatusSelect}
-                  style={{ maxWidth: 240 }}
+                  className="case-detail__status-select"
                 />
               </div>
             </div>
             <div>
               <Label>{t('case.fields.customer')}</Label>
-              <div style={{ marginTop: 4 }}>
+              <div className="case-detail__field-value">
                 <span>{caseWorkflow.caseData.customerName || '-'}</span>
               </div>
             </div>
             <div>
               <Label>{t('case.fields.owner')}</Label>
-              <div style={{ marginTop: 4 }}>{caseWorkflow.caseData.owner || '-'}</div>
+              <div className="case-detail__field-value">{caseWorkflow.caseData.owner || '-'}</div>
             </div>
             <div>
               <Label>{t('case.fields.createdAt')}</Label>
-              <div style={{ marginTop: 4 }}>{formatDate(caseWorkflow.caseData.createdAt)}</div>
+              <div className="case-detail__field-value">{formatDate(caseWorkflow.caseData.createdAt)}</div>
             </div>
             <div>
               <Label>{t('case.fields.assetId')}</Label>
-              <div style={{ marginTop: 4 }}>{caseWorkflow.caseData.assetId || '-'}</div>
+              <div className="case-detail__field-value">{caseWorkflow.caseData.assetId || '-'}</div>
             </div>
 
-            <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end', marginTop: 2 }}>
+            <div className="case-detail__toggle-row">
               <Button color='blue' onClick={onToggleCustomerPanel}>
                 {caseWorkflow.customerPanelOpen
                   ? t('case.actions.hideCustomerCases')
@@ -289,40 +373,40 @@ const TaskManagement = (props) => {
           {caseWorkflow.customerPanelOpen ? (
             <>
               <MomentumCard dark={darkMode}>
-                <h3 style={{ margin: '0 0 10px 0', fontSize: 16 }}>{t('case.customerCard.title')}</h3>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
+                <h3 className="case-detail__card-title">{t('case.customerCard.title')}</h3>
+                <div className="case-detail__customer-grid">
                   <div>
                     <Label>{t('case.fields.customer')}</Label>
-                    <div style={{ marginTop: 4 }}>
+                    <div className="case-detail__field-value">
                       {caseWorkflow.customerData?.name || caseWorkflow.caseData.customerName || '-'}
                     </div>
                   </div>
                   <div>
                     <Label>{t('case.customerCard.email')}</Label>
-                    <div style={{ marginTop: 4 }}>
+                    <div className="case-detail__field-value">
                       {caseWorkflow.customerData?.email || caseWorkflow.caseData.customerEmail || '-'}
                     </div>
                   </div>
                   <div>
                     <Label>{t('case.customerCard.phone')}</Label>
-                    <div style={{ marginTop: 4 }}>
+                    <div className="case-detail__field-value">
                       {caseWorkflow.customerData?.phone || caseWorkflow.caseData.customerPhone || '-'}
                     </div>
                   </div>
                   <div>
                     <Label>{t('case.customerCard.city')}</Label>
-                    <div style={{ marginTop: 4 }}>
+                    <div className="case-detail__field-value">
                       {caseWorkflow.customerData?.city || '-'}
                     </div>
                   </div>
                   <div>
                     <Label>{t('case.customerCard.country')}</Label>
-                    <div style={{ marginTop: 4 }}>
+                    <div className="case-detail__field-value">
                       {caseWorkflow.customerData?.country || '-'}
                     </div>
                   </div>
                 </div>
-                <div style={{ marginTop: 10, fontSize: 12 }}>
+                <div className="case-detail__source-note">
                   {t('case.customerCard.source', {
                     source: caseWorkflow.customerData?.enrichmentSource || caseWorkflow.customerData?.source || 'unknown',
                   })}
@@ -330,8 +414,8 @@ const TaskManagement = (props) => {
               </MomentumCard>
 
               <MomentumCard dark={darkMode}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                  <h3 style={{ margin: 0, fontSize: 16 }}>{t('case.related.title')}</h3>
+                <div className="case-detail__card-head">
+                  <h3 className="case-detail__card-title">{t('case.related.title')}</h3>
                   <Button color='none' onClick={onToggleCustomerPanel}>
                     {t('case.actions.hideCustomerCases')}
                   </Button>
@@ -350,7 +434,7 @@ const TaskManagement = (props) => {
                 ) : null}
 
                 {!caseWorkflow.isLoadingRelatedCases && caseWorkflow.relatedCases.length > 0 ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div className="case-detail__item-list">
                     {caseWorkflow.relatedCases.map((item) => (
                       (() => {
                         const relatedId = String(item.id || item.caseId || '');
@@ -359,20 +443,19 @@ const TaskManagement = (props) => {
                         return (
                           <article
                             key={relatedId || item.caseId || item.id}
+                            className="case-detail__item case-detail__item--clickable"
                             onClick={() => onToggleRelatedCase(item)}
-                            style={{ borderRadius: 8, padding: 10, cursor: 'pointer' }}
                           >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                              <strong style={{ fontSize: 14 }}>{item.caseId || item.id}</strong>
-                              <span style={{ fontSize: 12 }}>
-                              </span>
+                            <div className="case-detail__item-head">
+                              <strong className="case-detail__item-id">{item.caseId || item.id}</strong>
+                              <span />
                             </div>
 
-                            <div style={{ fontSize: 12, marginTop: 4 }}>
+                            <div className="case-detail__item-date">
                               {t('case.related.created', { value: formatDate(item.createdAt) })}
                             </div>
 
-                            <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                            <div className="case-detail__item-actions">
                               <Button
                                 color='none'
                                 onClick={(event) => {
@@ -394,10 +477,10 @@ const TaskManagement = (props) => {
                             </div>
 
                             {isExpanded ? (
-                              <div style={{ marginTop: 8 }}>
+                              <div className="case-detail__item-body">
                                 <Label>{t('case.related.details')}</Label>
-                                <div style={{ fontSize: 13, marginTop: 4 }}>{item.description || '-'}</div>
-                                <div style={{ fontSize: 12, marginTop: 4 }}>
+                                <div className="case-detail__item-desc">{item.description || '-'}</div>
+                                <div className="case-detail__item-meta">
                                   {t('case.fields.owner')}: {item.owner || '-'}
                                 </div>
                               </div>
@@ -414,7 +497,7 @@ const TaskManagement = (props) => {
 
           <MomentumCard dark={darkMode}>
             <Label>{t('case.fields.description')}</Label>
-            <div style={{ marginTop: 4, marginBottom: 12 }}>{caseWorkflow.caseData.description || '-'}</div>
+            <div className="case-detail__desc-value">{caseWorkflow.caseData.description || '-'}</div>
 
             <Input
               htmlId='case-notes-textarea'
@@ -427,7 +510,7 @@ const TaskManagement = (props) => {
               disabled={caseWorkflow.isSavingNotes}
               inputClassName='md-textarea'
             />
-            <div style={{ marginTop: 8, display: 'flex', justifyContent: 'flex-end' }}>
+            <div className="case-detail__save-row">
               <Button
                 color='blue'
                 onClick={onSaveNotes}
@@ -439,10 +522,10 @@ const TaskManagement = (props) => {
           </MomentumCard>
 
           <MomentumCard dark={darkMode}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <h3 style={{ margin: 0, fontSize: 16 }}>{t('case.history.title')}</h3>
+            <div className="case-detail__card-head">
+              <h3 className="case-detail__card-title">{t('case.history.title')}</h3>
               {caseWorkflow.customerData ? (
-                <span style={{ fontSize: 12 }}>
+                <span className="case-detail__card-meta">
                   {t('case.history.customerSource', { source: caseWorkflow.customerData.enrichmentSource || caseWorkflow.customerData.source })}
                 </span>
               ) : null}
@@ -451,22 +534,22 @@ const TaskManagement = (props) => {
             {caseWorkflow.visibleHistory.length === 0 ? (
               <div>{t('case.history.empty')}</div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div className="case-detail__item-list">
                 {caseWorkflow.visibleHistory.map((item) => (
                   <article
                     key={item.id}
-                    style={{ borderRadius: 8, padding: 10 }}
+                    className="case-detail__item"
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                      <strong style={{ fontSize: 14 }}>{item.title || t('case.history.entry')}</strong>
+                    <div className="case-detail__item-head">
+                      <strong className="case-detail__item-id">{item.title || t('case.history.entry')}</strong>
                       <Badge color={badgeColorForType(item.interactionType)} rounded>
                         {t(`case.history.types.${String(item.interactionType || 'task').toLowerCase()}`)}
                       </Badge>
                     </div>
-                    <div style={{ fontSize: 12, marginTop: 4 }}>{formatDate(item.timestamp)}</div>
-                    <div style={{ fontSize: 13, marginTop: 6 }}>{item.summary || '-'}</div>
+                    <div className="case-detail__item-date">{formatDate(item.timestamp)}</div>
+                    <div className="case-detail__item-desc">{item.summary || '-'}</div>
                     {item.details ? (
-                      <div style={{ fontSize: 12, marginTop: 4 }}>{item.details}</div>
+                      <div className="case-detail__item-meta">{item.details}</div>
                     ) : null}
                   </article>
                 ))}
@@ -474,7 +557,7 @@ const TaskManagement = (props) => {
             )}
 
             {caseWorkflow.hasMoreHistory ? (
-              <div style={{ marginTop: 10 }}>
+              <div className="case-detail__load-more">
                 <Button
                   color='none'
                   onClick={() => dispatch(loadMoreCaseHistory())}

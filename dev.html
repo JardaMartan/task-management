@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Task Management Widget – Dev Harness</title>
   <link rel="icon" href="data:," />
+  <!-- Momentum UI CSS -->
+  <link rel="stylesheet" href="node_modules/@momentum-ui/core/css/momentum-ui.min.css" />
   <!-- React externals expected by webpack dev build -->
   <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
@@ -99,8 +101,9 @@
       <button class="preset-btn" onclick="applyPreset('caseByIdOnly')">Case – caseId only (INC0003)</button>
       <button class="preset-btn" onclick="applyPreset('caseByEmail')">Case – email lookup (INC0003 + email)</button>
       <button class="preset-btn" onclick="applyPreset('caseWithWorkspaceOverride')">Case – JDSWorkspaceId override</button>
-      <button class="preset-btn" onclick="applyPreset('unsupportedType')">Email task (unsupported type)</button>
       <button class="preset-btn" onclick="applyPreset('emptyTask')">Empty / missing task</button>
+      <button class="preset-btn" style="color:#7dd3fc;border-color:#1d4ed8" onclick="applyPreset('emailTask')">✉ Email task (live widget)</button>
+      <button class="preset-btn" style="color:#86efac;border-color:#166534" onclick="showEmailMock()">✉ Email layout mock (static)</button>
     </div>
 
     <div>
@@ -128,6 +131,22 @@
   "taskType": "case",
   "caseId": "INC0003"
 }</textarea>
+    </div>
+
+    <div>
+      <h3>Email config</h3>
+      <label>tokenBrokerUrl</label>
+      <input id="prop-tokenBrokerUrl" placeholder="https://…/auth/gmail-token" />
+      <label>webexConnectOutboundWebhook</label>
+      <input id="prop-wcWebhook" placeholder="https://inbound.us1.webexconnect.io/…" />
+      <label>AI provider</label>
+      <select id="prop-aiProvider">
+        <option value="mock" selected>mock (offline)</option>
+        <option value="gemini">gemini</option>
+        <option value="openai">openai</option>
+      </select>
+      <label>AI API key</label>
+      <input id="prop-aiApiKey" placeholder="Leave blank for mock" type="password" />
     </div>
 
     <div>
@@ -174,8 +193,28 @@
       config: { workspaceOverrideTaskTypes: ['case'] }
     },
     unsupportedType: {
-      task: { taskType: 'email', conversationId: 'conv-001' },
+      task: { taskType: 'unknown', conversationId: 'conv-001' },
       config: {}
+    },
+    emailTask: {
+      task: {
+        taskType: 'email',
+        mediaType: 'email',
+        taskId: 'email-task-demo-001',
+        interactionId: 'email-task-demo-001',
+        callAssociatedDetails: {
+          threadId: 'thread-demo-001',
+          fromAddress: 'john.doe@example.com',
+          toAddress: 'support@acme.com',
+          subject: 'Order #78234 – delivery never arrived',
+          aiSummary: 'Customer reports that order #78234 placed 5 days ago has not arrived. Tracking shows stuck in transit since June 1st.',
+          aiCategory: 'shipping',
+          aiSentiment: 'negative',
+          aiConfidence: '0.91',
+          aiSuggestedReply: 'Thank you for reaching out. I apologize for the inconvenience. I have escalated your order #78234 to our logistics team and you will receive an update within 24 hours.'
+        }
+      },
+      config: { workspaceOverrideTaskTypes: ['email'], aiProvider: { type: 'mock' } }
     },
     emptyTask: {
       task: null,
@@ -213,6 +252,16 @@
     if (ws) { w.workspaceid = ws; }
     w.locale = locale;
 
+    // Collect email config from sidebar fields
+    const emailConfigFromFields = {};
+    const tbUrl = document.getElementById('prop-tokenBrokerUrl').value.trim();
+    const wcUrl = document.getElementById('prop-wcWebhook').value.trim();
+    const aiProv = document.getElementById('prop-aiProvider').value;
+    const aiKey = document.getElementById('prop-aiApiKey').value.trim();
+    if (tbUrl) emailConfigFromFields.tokenBrokerUrl = tbUrl;
+    if (wcUrl) emailConfigFromFields.webexConnectOutboundWebhook = wcUrl;
+    if (aiProv) emailConfigFromFields.aiProvider = { type: aiProv, apiKey: aiKey || null };
+
     // Mode badge
     document.getElementById('mode-badge').textContent = at ? 'live mode' : 'demo mode';
     document.getElementById('mode-badge').style.background = at ? '#fff3cd' : '#e8f8ef';
@@ -235,15 +284,15 @@
     }
     w.task = taskVal ? JSON.stringify(taskVal) : null;
 
-    // Config
+    // Config (merge email sidebar fields into config JSON)
     const rawConfig = document.getElementById('config-json').value.trim();
+    let parsedConfig = {};
     if (rawConfig) {
-      try {
-        w.config = JSON.parse(rawConfig);
-      } catch {
-        log('WARN: Invalid config JSON – ignored');
-      }
+      try { parsedConfig = JSON.parse(rawConfig); }
+      catch { log('WARN: Invalid config JSON – ignored'); }
     }
+    const mergedConfig = Object.assign({}, parsedConfig, emailConfigFromFields);
+    if (Object.keys(mergedConfig).length > 0) w.config = mergedConfig;
 
     log('Props applied: taskType=' + (taskVal && taskVal.taskType || 'none'));
   }
@@ -276,5 +325,395 @@
     }, 200);
   });
 </script>
+
+
+<!-- ═══════════════════════════════════════════════════════════
+     EMAIL LAYOUT MOCK  – Momentum UI · Advanced UX preview
+     ═══════════════════════════════════════════════════════════ -->
+<style>
+  /* Overlay shell */
+  #email-mock-overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,.55); z-index: 1000;
+    overflow: auto; padding: 24px;
+    font-family: "CiscoSansTT","Helvetica Neue",Helvetica,Arial,sans-serif;
+  }
+  .em-shell { max-width: 1280px; margin: 0 auto; border-radius: 8px; overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,.4); background: #f3f5f7; font-size: 13px; }
+  .em-titlebar { background: #1b2a38; color: #fff; padding: 10px 20px; display: flex; align-items: center; justify-content: space-between; font-size: 14px; font-weight: 600; }
+  .em-body { display: grid; grid-template-columns: 280px 1fr 320px; min-height: 640px; }
+  .em-col { display: flex; flex-direction: column; min-height: 0; }
+  .em-col--threads { background: #f8f9fa; border-right: 1px solid #e8ebee; overflow-y: auto; }
+  .em-col--center  { background: #fff; }
+  .em-col--rail    { background: #f8f9fa; border-left: 1px solid #e8ebee; overflow-y: auto; }
+  .em-section { padding: 16px; border-bottom: 1px solid #d5dde5; }
+  .em-section:last-child { border-bottom: none; }
+  .em-section-title { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .em-section-title .md-h4 { margin: 0; }
+  .em-meta-row { display: flex; flex-wrap: wrap; gap: 16px; font-size: 12px; margin-top: 8px; }
+  /* Priority accent bars */
+  #email-mock-overlay .md-card { margin: 0; border-radius: 0; }
+  .em-header-negative.md-card { border-left: 4px solid #e84545; }
+  .em-header-urgent.md-card   { border-left: 4px solid #f58219; }
+
+  /* Thread list (left column) */
+  .em-thread-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+  .em-thread-item { padding: 8px 10px; border-radius: 6px; cursor: pointer; border: 1px solid transparent; }
+  .em-thread-item:hover { background: #f0f2f4; }
+  .em-thread-item.active { background: #f0f7ff; border-color: #b3dff5; }
+  .em-thread-item.newest { border-left: 3px solid #007aa3; }
+  .em-thread-item__head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .em-thread-item__from { font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .em-thread-item__date { font-size: 11px; color: #767676; white-space: nowrap; }
+  .em-thread-item__snippet { font-size: 12px; color: #545454; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+  .em-thread-item__meta { font-size: 11px; color: #767676; margin-top: 2px; }
+  .em-other-toggle { margin-top: 12px; padding-top: 8px; border-top: 1px solid #f0f2f4; }
+
+  /* Reading pane (center) */
+  .em-reading-summary { background: #f0f7ff; border: 1px solid #b3dff5; border-left: 3px solid #007aa3; border-radius: 4px; padding: 8px 12px; margin-bottom: 12px; }
+  .em-reading-summary-label { display: block; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .4px; color: #00557b; margin-bottom: 4px; }
+  .em-reading-summary-text  { font-size: 12px; line-height: 1.5; margin: 0; color: #1c1c1c; }
+  .em-reading-body { background: #fafafa; border: 1px solid #e0e4e8; border-radius: 4px; padding: 12px; font-size: 13px; line-height: 1.6; }
+  /* AI chips */
+  .em-chips { margin-top: 10px; padding-top: 10px; border-top: 1px solid #f0f2f4; }
+  .em-chips-label { display: block; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .4px; color: #767676; margin-bottom: 6px; }
+  .em-chips-row { display: flex; flex-wrap: wrap; gap: 6px; }
+  .em-chip { font-size: 11px; border: 1px solid #d0d4d9; border-radius: 999px; padding: 3px 10px; background: #fff; cursor: pointer; line-height: 1.4; }
+  .em-chip:hover { border-color: #007aa3; color: #007aa3; background: #f0f7ff; }
+  /* AI suggested box */
+  .em-ai-suggested { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 10px 12px; margin-top: 8px; }
+  /* Note mode */
+  .em-composer--note { background: #fffbeb; border-left: 3px solid #f5a623; }
+  .em-note-hint { font-size: 11px; color: #b45309; background: #fffbeb; border: 1px solid #fde68a; border-radius: 4px; padding: 4px 10px; margin-bottom: 8px; }
+  .em-textarea { width: 100%; box-sizing: border-box; resize: vertical; font-family: inherit; font-size: 13px; line-height: 1.5; padding: 8px 10px; border: 1px solid #d5dde5; border-radius: 4px; background: #fafafa; margin: 6px 0 10px; }
+  /* Formatting toolbar */
+  .em-editor-wrap { border: 1px solid #d5dde5; border-radius: 4px; background: #fafafa; margin: 6px 0 10px; overflow: hidden; }
+  .em-toolbar { display: flex; align-items: center; gap: 2px; padding: 4px 6px; border-bottom: 1px solid #e8ecf0; background: #f3f5f7; flex-wrap: wrap; }
+  .em-toolbar-btn { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border: 1px solid transparent; border-radius: 3px; background: transparent; cursor: pointer; font-size: 13px; color: #444; }
+  .em-toolbar-btn:hover { background: #e0e4e8; border-color: #c8cdd3; }
+  .em-toolbar-btn.active { background: #ddeeff; border-color: #7fbde0; color: #0070b8; }
+  .em-toolbar-sep { width: 1px; height: 18px; background: #d0d4d9; margin: 0 3px; }
+  .em-editor-body { min-height: 80px; max-height: 160px; overflow-y: auto; padding: 8px 10px; font-size: 13px; line-height: 1.5; outline: none; color: #333; }
+  .em-editor-body:focus { background: #fff; }
+  /* Attachment bar */
+  .em-attach-bar { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-top: 1px solid #e8ecf0; background: #f8f9fa; flex-wrap: wrap; }
+  .em-attach-btn { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: #555; background: none; border: none; cursor: pointer; padding: 2px 4px; border-radius: 3px; }
+  .em-attach-btn:hover { background: #e0e4e8; color: #0070b8; }
+  .em-attach-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; background: #e8f0fe; border: 1px solid #b8cef7; border-radius: 12px; padding: 2px 8px; color: #1a56db; }
+  .em-attach-chip button { background: none; border: none; cursor: pointer; font-size: 12px; color: #888; padding: 0; line-height: 1; margin-left: 2px; }
+  .em-attach-chip button:hover { color: #c00; }
+  .em-textarea--note { background: #fffbeb !important; border-color: #fcd34d !important; }
+  /* AI shimmer */
+  @keyframes em-shimmer { 0% { background-position: -600px 0; } 100% { background-position: 600px 0; } }
+  .em-shimmer { width: 100%; height: 160px; border-radius: 4px; margin: 6px 0 10px; background: linear-gradient(90deg, #f0f2f4 25%, #f8f9fa 50%, #f0f2f4 75%); background-size: 1200px 100%; animation: em-shimmer 1.4s infinite linear; }
+  /* Undo toast */
+  .em-undo-toast { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 12px; margin-bottom: 8px; background: #fff7ed; border: 1px solid #fcd34d; border-radius: 6px; font-size: 13px; }
+  /* To line */
+  .em-to-line { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #545454; margin-bottom: 6px; padding: 4px 6px; background: #f8f9fa; border-radius: 4px; border: 1px solid #f0f2f4; }
+  .em-to-label { font-weight: 600; }
+  /* Misc */
+  .em-section-title-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+  .em-ai-options { background: #f8f9fa; border: 1px solid #d5dde5; border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
+  .em-ai-options__label { font-size: 12px; font-weight: 600; }
+  .em-ai-options__controls { display: flex; gap: 8px; align-items: center; }
+  .em-ai-options__controls .md-input { flex: 1 1 auto; width: auto !important; min-width: 100px; font-size: 12px; }
+  .em-composer-footer { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding-top: 10px; border-top: 1px solid #d5dde5; margin-top: auto; }
+  .em-select { width: 100%; font-size: 13px; padding: 6px 8px; border: 1px solid #d5dde5; border-radius: 4px; background: #fff; color: #333; margin-top: 4px; }
+  .em-attachment { display: flex; align-items: center; gap: 10px; background: #f3f5f7; border: 1px solid #d5dde5; border-radius: 6px; padding: 7px 10px; margin-top: 10px; font-size: 12px; }
+  .em-attachment .em-file-name { flex: 1; }
+  .em-send-result { font-size: 12px; color: #16a34a; }
+</style>
+
+<div id="email-mock-overlay">
+  <div class="em-shell">
+
+    <!-- Title bar -->
+    <div class="em-titlebar">
+      <span>&#9993; Email Task &#8211; Momentum UI Advanced UX Preview</span>
+      <button class="md-button md-button--28 md-button--red"
+        onclick="document.getElementById('email-mock-overlay').style.display='none'">
+        &#x2715; Close
+      </button>
+    </div>
+
+    <!-- ── Email header card (negative sentiment → red accent bar) ── -->
+    <div class="md-card em-header-negative">
+      <div class="md-card-section md-card-section--full">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
+          <h2 class="md-h2" style="margin:0;">Order #78234 &#8211; delivery never arrived</h2>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <span class="md-badge">3</span>
+            <span class="md-badge md-badge--blue">shipping</span>
+            <span class="md-badge md-badge--red">negative</span>
+          </div>
+        </div>
+        <div class="em-meta-row">
+          <span><strong>From:</strong> john.doe@example.com</span>
+          <span><strong>To:</strong> support@acme.com</span>
+          <span><strong>Date:</strong> Tue, 3 Jun 2026 09:12:04 +0000</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Three-column body: thread list / reading + composer / AI rail ── -->
+    <div class="em-body">
+
+      <!-- LEFT COLUMN: thread list (and "other threads" toggle) -->
+      <aside class="em-col em-col--threads" aria-label="Thread list">
+        <div class="em-section">
+          <div class="em-section-title">
+            <span class="md-h4">Thread</span>
+            <span class="md-badge">3</span>
+          </div>
+
+          <ul class="em-thread-list" role="listbox" aria-label="Thread messages">
+            <!-- Newest + active -->
+            <li class="em-thread-item active newest" role="option" aria-selected="true" tabindex="0">
+              <div class="em-thread-item__head">
+                <span class="em-thread-item__from">john.doe@example.com</span>
+                <span class="em-thread-item__date">3h ago</span>
+              </div>
+              <div class="em-thread-item__snippet">Still no update. Tracking shows stuck in transit. Please escalate.</div>
+              <div class="em-thread-item__meta">📎 1</div>
+            </li>
+            <li class="em-thread-item" role="option" aria-selected="false" tabindex="0">
+              <div class="em-thread-item__head">
+                <span class="em-thread-item__from">support@acme.com</span>
+                <span class="em-thread-item__date">4d ago</span>
+              </div>
+              <div class="em-thread-item__snippet">Thank you for contacting us. We are investigating the delay…</div>
+            </li>
+            <li class="em-thread-item" role="option" aria-selected="false" tabindex="0">
+              <div class="em-thread-item__head">
+                <span class="em-thread-item__from">john.doe@example.com</span>
+                <span class="em-thread-item__date">5d ago</span>
+              </div>
+              <div class="em-thread-item__snippet">Hi, I ordered item #78234 five days ago but it still hasn't arrived…</div>
+            </li>
+          </ul>
+
+          <div class="em-other-toggle">
+            <button class="md-button md-button--28 md-button--color-none"
+              onclick="(function(b){var l=document.getElementById('em-other-list');var o=l.style.display==='none';l.style.display=o?'block':'none';b.textContent=(o?'▾':'▸')+' Other threads (3)';})(this)">
+              ▸ Other threads (3)
+            </button>
+            <ul id="em-other-list" class="em-thread-list" style="display:none;margin-top:6px;">
+              <li class="em-thread-item" role="option" tabindex="0">
+                <div class="em-thread-item__snippet">Re: Invoice query #2024-11 · 8mo ago</div>
+              </li>
+              <li class="em-thread-item" role="option" tabindex="0">
+                <div class="em-thread-item__snippet">Account access issue · 9mo ago</div>
+              </li>
+              <li class="em-thread-item" role="option" tabindex="0">
+                <div class="em-thread-item__snippet">Product return request · 11mo ago</div>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </aside>
+
+      <!-- CENTER COLUMN: reading pane + composer -->
+      <main class="em-col em-col--center">
+
+        <!-- Reading pane -->
+        <div class="em-section">
+          <div class="em-reading-summary" role="note">
+            <span class="em-reading-summary-label">AI summary</span>
+            <p class="em-reading-summary-text">
+              Customer reports that order #78234 placed 5 days ago has not arrived. Tracking shows
+              <strong>stuck in transit</strong> since June 1st. Customer is escalating urgently.
+            </p>
+          </div>
+
+          <div class="em-reading-body">
+            <p style="margin:0 0 8px;">Hi again,</p>
+            <p style="margin:0 0 8px;">I still have not received any update. The tracking still shows <strong>stuck in transit</strong>. Please escalate immediately.</p>
+            <p style="margin:0;">Best regards,<br>John Doe</p>
+          </div>
+
+          <div class="em-attachment">
+            <i class="icon icon-attachment_16"></i>
+            <span class="em-file-name">tracking_screenshot.png</span>
+            <span style="color:#8b96a1;">87.3 KB</span>
+            <button class="md-button md-button--28 md-button--blue">Download</button>
+          </div>
+        </div>
+
+        <!-- Reply composer -->
+        <div class="em-section" style="flex:1;display:flex;flex-direction:column;" id="em-composer">
+          <div class="em-section-title">
+            <span class="md-h4" id="em-composer-title">Compose Reply</span>
+            <div class="em-section-title-actions">
+              <button class="md-button md-button--28 md-button--color-none"
+                id="em-note-btn"
+                onclick="(function(){
+                  var c=document.getElementById('em-composer');
+                  var t=document.getElementById('em-composer-title');
+                  var ta=document.getElementById('em-editor');
+                  var hint=document.getElementById('em-note-hint');
+                  var toline=document.getElementById('em-to-line');
+                  var btn=document.getElementById('em-note-btn');
+                  var sendBtn=document.getElementById('em-send-btn');
+                  var isNote=c.classList.toggle('em-composer--note');
+                  ta.classList.toggle('em-textarea--note',isNote);
+                  hint.style.display=isNote?'block':'none';
+                  toline.style.display=isNote?'none':'flex';
+                  t.textContent=isNote?'📝 Note Mode':'Compose Reply';
+                  btn.textContent=isNote?'📝 Note Mode':'Internal Note';
+                  sendBtn.textContent=isNote?'Save Note':'Send';
+                  sendBtn.className='md-button md-button--28 '+(isNote?'md-button--orange':'md-button--blue');
+                })()">
+                Internal Note
+              </button>
+              <select class="em-select" style="width:auto;margin-top:0;">
+                <option>Use Template</option>
+                <option>Apology – shipping delay</option>
+                <option>Order status update</option>
+              </select>
+            </div>
+          </div>
+
+          <div id="em-note-hint" class="em-note-hint" style="display:none;">
+            🔒 Visible to agents only — not sent to customer
+          </div>
+
+          <div id="em-to-line" class="em-to-line">
+            <span class="em-to-label">To:</span>
+            <span>john.doe@example.com</span>
+          </div>
+
+          <div class="em-editor-wrap">
+            <div class="em-toolbar" id="em-toolbar">
+              <button class="em-toolbar-btn" title="Bold" onclick="document.execCommand('bold');document.getElementById('em-editor').focus();this.classList.toggle('active',document.queryCommandState('bold'))"><b>B</b></button>
+              <button class="em-toolbar-btn" title="Italic" onclick="document.execCommand('italic');document.getElementById('em-editor').focus();this.classList.toggle('active',document.queryCommandState('italic'))"><i>I</i></button>
+              <button class="em-toolbar-btn" title="Underline" style="text-decoration:underline;" onclick="document.execCommand('underline');document.getElementById('em-editor').focus()">U</button>
+              <div class="em-toolbar-sep"></div>
+              <button class="em-toolbar-btn" title="Bullet list" onclick="document.execCommand('insertUnorderedList');document.getElementById('em-editor').focus()" style="font-size:11px;font-weight:700;">&#x2022;&#x2013;</button>
+              <button class="em-toolbar-btn" title="Numbered list" onclick="document.execCommand('insertOrderedList');document.getElementById('em-editor').focus()" style="font-size:11px;font-weight:700;">1.</button>
+              <div class="em-toolbar-sep"></div>
+              <button class="em-toolbar-btn" title="Align left" onclick="document.execCommand('justifyLeft');document.getElementById('em-editor').focus()" style="font-size:11px;">&#8676;</button>
+              <button class="em-toolbar-btn" title="Align center" onclick="document.execCommand('justifyCenter');document.getElementById('em-editor').focus()" style="font-size:11px;">&#8596;</button>
+              <div class="em-toolbar-sep"></div>
+              <button class="em-toolbar-btn" title="Insert link" onclick="(function(){var u=prompt('URL:','https://');if(u)document.execCommand('createLink',false,u);document.getElementById('em-editor').focus()})()" >&#128279;</button>
+              <button class="em-toolbar-btn" title="Remove formatting" onclick="document.execCommand('removeFormat');document.getElementById('em-editor').focus()" style="font-size:11px;width:auto;padding:0 4px;">Tx</button>
+            </div>
+            <div id="em-editor" class="em-editor-body" contenteditable="true" spellcheck="true">Thank you for reaching out. I apologize for the inconvenience. I have escalated your order #78234 to our logistics team and you will receive an update within 24 hours.</div>
+            <div class="em-attach-bar" id="em-attach-bar">
+              <button class="em-attach-btn" title="Attach file" onclick="document.getElementById('em-file-input').click()">📎 Attach</button>
+              <input type="file" id="em-file-input" multiple style="display:none" onchange="(function(inp){
+                var bar=document.getElementById('em-attach-bar');
+                Array.from(inp.files).forEach(function(f){
+                  var chip=document.createElement('span');
+                  chip.className='em-attach-chip';
+                  chip.innerHTML='📄 '+f.name+' <button onclick=\'this.parentNode.remove()\' title=\'Remove\'>✕</button>';
+                  bar.appendChild(chip);
+                });
+                inp.value='';
+              })(this)" />
+            </div>
+          </div>
+          <div id="em-shimmer" class="em-shimmer" style="display:none;"></div>
+
+          <div class="em-ai-options">
+            <div class="em-ai-options__label">AI Options <small style="font-weight:400;color:#767676;">(tone auto-set: Empathetic ← negative sentiment)</small></div>
+            <div class="em-ai-options__controls">
+              <input class="md-input" type="text" placeholder="e.g. Apologize and offer a discount" />
+              <select class="em-select" style="width:110px;margin-top:0;flex-shrink:0;">
+                <option>Professional</option><option selected>Empathetic</option><option>Friendly</option><option>Formal</option>
+              </select>
+              <button class="md-button md-button--28 md-button--blue" style="flex-shrink:0;"
+                onclick="(function(){
+                  var ed=document.getElementById('em-editor');
+                  var sh=document.getElementById('em-shimmer');
+                  ed.style.display='none'; sh.style.display='block';
+                  setTimeout(function(){ ed.style.display=''; sh.style.display='none'; },2000);
+                })()">AI Generate</button>
+              <button class="md-button md-button--28 md-button--white" style="flex-shrink:0;">Polish Draft</button>
+            </div>
+          </div>
+
+          <div id="em-undo-toast" class="em-undo-toast" style="display:none;">
+            <span id="em-undo-hint">Sending in 5s</span>
+            <button class="md-button md-button--28 md-button--orange"
+              onclick="clearTimeout(window._emSendTimer);document.getElementById('em-undo-toast').style.display='none';">
+              Undo
+            </button>
+          </div>
+
+          <div class="em-composer-footer">
+            <span class="em-send-result" id="em-send-result" style="display:none;">✓ Email sent successfully</span>
+            <button id="em-send-btn" class="md-button md-button--28 md-button--blue"
+              onclick="(function(){
+                var toast=document.getElementById('em-undo-toast');
+                var result=document.getElementById('em-send-result');
+                var hint=document.getElementById('em-undo-hint');
+                toast.style.display='flex'; result.style.display='none';
+                var n=5;
+                hint.textContent='Sending in '+n+'s';
+                window._emSendTimer=setInterval(function(){
+                  n--;
+                  if(n<=0){
+                    clearInterval(window._emSendTimer);
+                    toast.style.display='none';
+                    result.style.display='inline';
+                  } else { hint.textContent='Sending in '+n+'s'; }
+                },1000);
+              })()">Send</button>
+          </div>
+        </div>
+
+      </main>
+
+      <!-- RIGHT COLUMN: AI rail -->
+      <aside class="em-col em-col--rail" aria-label="AI assist">
+        <div class="em-section">
+          <div class="em-section-title">
+            <span class="md-h4">AI Summary</span>
+            <span class="md-badge">pre-analyzed</span>
+            <div class="em-section-title-actions">
+              <button class="md-button md-button--28 md-button--color-none">Refresh</button>
+            </div>
+          </div>
+
+          <p style="font-size:13px;line-height:1.5;margin:0 0 10px;">
+            Customer reports that order #78234 placed 5 days ago has not arrived.
+            Tracking shows stuck in transit since June 1st. Customer is escalating urgently.
+          </p>
+
+          <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:10px;align-items:center;">
+            <span style="font-size:12px;">Category: <span class="md-badge md-badge--blue">shipping</span></span>
+            <span style="font-size:12px;">Sentiment: <span class="md-badge md-badge--red">negative</span></span>
+            <span style="font-size:12px;">Confidence: <strong>91%</strong></span>
+          </div>
+
+          <div class="em-ai-suggested">
+            <div style="font-size:12px;font-weight:600;color:#166534;margin-bottom:6px;">Suggested Reply</div>
+            <p style="font-size:12px;line-height:1.5;margin:0 0 8px;">
+              I apologize for the inconvenience. I have escalated your order #78234 to our logistics team…
+            </p>
+            <button class="md-button md-button--28 md-button--green">Use this reply</button>
+          </div>
+
+          <div class="em-chips">
+            <span class="em-chips-label">Quick start:</span>
+            <div class="em-chips-row">
+              <button class="em-chip">Confirming your request…</button>
+              <button class="em-chip">I need more information…</button>
+              <button class="em-chip">Escalating to our specialist…</button>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+    </div><!-- end em-body -->
+
+  </div><!-- end em-shell -->
+</div><!-- end overlay -->
+
+<script>
+  function showEmailMock() {
+    document.getElementById('email-mock-overlay').style.display = 'block';
+  }
+</script>
+
 </body>
 </html>

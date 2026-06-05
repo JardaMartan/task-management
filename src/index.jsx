@@ -136,16 +136,18 @@ class TaskManagementElement extends HTMLElement {
   }
 
   static get observedAttributes() {
-    return ['darkmode', 'accesstoken', 'orgid', 'datacenter', 'locale', 'tasktype', 'email'];
+    return ['darkmode', 'accesstoken', 'orgid', 'datacenter', 'locale', 'tasktype', 'email', 'view'];
   }
 
   set darkmode(value) {
     console.log('DarkMode setter:', value);
-    this.setAttribute('darkmode', value);
+    const strVal = String(value);
+    this.widgetAttributes.darkmode = strVal;
+    this.updateComponent();
   }
 
   get darkmode() {
-    return this.getAttribute('darkmode');
+    return this.widgetAttributes.darkmode;
   }
 
   set accesstoken(value) {
@@ -224,6 +226,15 @@ class TaskManagementElement extends HTMLElement {
 
   get email() {
     return this._email;
+  }
+
+  set view(value) {
+    this._view = value;
+    this.updateComponent();
+  }
+
+  get view() {
+    return this._view;
   }
 
   set styleConfig(value) {
@@ -391,6 +402,8 @@ class TaskManagementElement extends HTMLElement {
       this._taskType = newValue;
     } else if (name === 'email') {
       this._email = newValue;
+    } else if (name === 'view') {
+      this._view = newValue;
     } else if (name === 'datacenter') {
       console.log('TaskManagement: Attribute datacenter changed:', newValue);
       this._datacenter = newValue;
@@ -426,6 +439,7 @@ class TaskManagementElement extends HTMLElement {
       workspaceid: this._workspaceid,
       taskType: this._taskType,
       email: this._email,
+      view: this._view,
       task: this._task,
       selectedtaskid: this._selectedtaskid,
       cad: this._cad,
@@ -478,6 +492,7 @@ class TaskManagementElement extends HTMLElement {
       this._workspaceid = this.getAttribute('workspaceid') || this._workspaceid;
       this._taskType = this.getAttribute('tasktype') || this._taskType;
       this._email = this.getAttribute('email') || this._email;
+      this._view = this.getAttribute('view') || this._view;
 
       // Detect locale: explicit attribute > browser preference > default
       const localeAttr = this.getAttribute('locale');
@@ -521,6 +536,7 @@ class TaskManagementElement extends HTMLElement {
         workspaceid: this._workspaceid,
         taskType: this._taskType,
         email: this._email,
+        view: this._view,
         task: this._task,
         selectedtaskid: this._selectedtaskid,
         cad: this._cad,

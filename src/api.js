@@ -1897,3 +1897,138 @@ export const fetchCaseTaskContext = async ({
     errors: caseData ? [] : ['case-not-found'],
   };
 };
+
+// ─── Gmail API ────────────────────────────────────────────────────────────────
+
+const GMAIL_API_BASE = 'https://gmail.googleapis.com/gmail/v1/users/me';
+
+/**
+ * Exchange a Desktop CI token for a Gmail service-account token via the Token Broker.
+ * @param {string} tokenBrokerUrl - Cloud Function URL for /auth/gmail-token
+ * @param {string} desktopToken   - Webex CI bearer token from Desktop SDK
+ * @returns {{ gmailToken: string, expiresAt: number }}
+ */
+export const fetchGmailToken = async (tokenBrokerUrl, desktopToken) => {
+  const response = await fetch(`${tokenBrokerUrl}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${desktopToken}`,
+    },
+    body: JSON.stringify({ scope: 'gmail.readonly' }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Token Broker ${response.status}: ${text}`);
+  }
+
+  return response.json();
+};
+
+/**
+ * Fetch a full Gmail thread by threadId.
+ * @param {string} threadId
+ * @param {string} gmailToken
+ * @returns {object} Gmail threads.get response
+ */
+export const fetchEmailThread = async (threadId, gmailToken) => {
+  const url = `${GMAIL_API_BASE}/threads/${encodeURIComponent(threadId)}?format=full`;
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${gmailToken}` },
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Gmail threads.get ${response.status}: ${text}`);
+  }
+
+  return response.json();
+};
+
+/**
+ * List Gmail threads involving a customer email address.
+ * @param {string} customerEmail
+ * @param {string} gmailToken
+ * @returns {object} Gmail threads.list response
+ */
+export const fetchCustomerEmailThreads = async (customerEmail, gmailToken) => {
+  const query = encodeURIComponent(`from:${customerEmail} OR to:${customerEmail}`);
+  const url = `${GMAIL_API_BASE}/threads?q=${query}&maxResults=50`;
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${gmailToken}` },
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Gmail threads.list ${response.status}: ${text}`);
+  }
+
+  return response.json();
+};
+
+/**
+ * Fetch a single Gmail message by ID.
+ * @param {string} messageId
+ * @param {string} gmailToken
+ * @returns {object} Gmail messages.get response
+ */
+export const fetchEmailMessage = async (messageId, gmailToken) => {
+  const url = `${GMAIL_API_BASE}/messages/${encodeURIComponent(messageId)}?format=full`;
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${gmailToken}` },
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Gmail messages.get ${response.status}: ${text}`);
+  }
+
+  return response.json();
+};
+
+/**
+ * Fetch a Gmail attachment by messageId and attachmentId.
+ * @param {string} messageId
+ * @param {string} attachmentId
+ * @param {string} gmailToken
+ * @returns {{ size: number, data: string }} base64url-encoded attachment data
+ */
+export const fetchEmailAttachment = async (messageId, attachmentId, gmailToken) => {
+  const url = `${GMAIL_API_BASE}/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}`;
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${gmailToken}` },
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Gmail attachments.get ${response.status}: ${text}`);
+  }
+
+  return response.json();
+};
+
+/**
+ * POST an outbound email payload to a Webex Connect inbound webhook.
+ * @param {string} webhookUrl - Webex Connect webhook URL (from widget layout config)
+ * @param {object} payload    - { replyHtml, replyText, toAddress, subject, threadId, correlationId, ... }
+ */
+export const sendEmailViaWebexConnect = async (webhookUrl, payload) => {
+  const response = await fetch(webhookUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Webex Connect webhook ${response.status}: ${text}`);
+  }
+
+  // Response may be empty or JSON
+  const contentType = response.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    return response.json();
+  }
+  return { ok: true };
+};

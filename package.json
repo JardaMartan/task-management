@@ -4,8 +4,8 @@
     "description": "Task Management WebexCC Widget",
     "main": "src/index.jsx",
     "scripts": {
-        "build": "rollup -c && node scripts/inline-fonts.js",
-        "build:standalone": "BUILD_MODE=self-contained rollup -c && node scripts/inline-fonts.js",
+        "build": "rollup -c && node scripts/inline-fonts.js && cp src/panel-layout-headless.js dist/panel-layout-headless.js",
+        "build:standalone": "BUILD_MODE=self-contained rollup -c && node scripts/inline-fonts.js && cp src/panel-layout-headless.js dist/panel-layout-headless.js",
         "build:clean": "rm -rf dist && npm run build",
         "start": "webpack serve --mode development",
         "preview": "npm run build && npx http-server -p 4133 -o index.html --cors",

@@ -1,0 +1,825 @@
+/* =====================================================
+   Email Widget Layout
+   All structural/layout CSS; visual styling uses
+   Momentum UI tokens and component classes.
+   ===================================================== */
+
+/* ── Widget shell ─────────────────────────────────── */
+/* .email-widget uses .widget-shell (widget-layout.css) for
+   shell structure (padding, gap, background, flex column). */
+
+.email-widget__state-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 12px;
+  padding: 24px;
+}
+
+/* Two-column body (legacy) — .widget-body provides display:grid,
+   gap, padding, flex:1, min-height:0, overflow:hidden */
+.email-widget__body {
+  grid-template-columns: 1fr 400px;
+}
+
+/* Three-column body: thread list / reading + composer / AI rail */
+.email-widget__body--3col {
+  grid-template-columns: 280px 1fr 320px;
+}
+
+.email-widget__col {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.email-widget__col--left {
+  border-right: 1px solid var(--md-color-gray-20, #e8ebee);
+}
+
+.email-widget__col--right {
+  gap: 0;
+}
+
+/* .email-widget__col--threads and .email-widget__col--center use
+   .widget-panel for card chrome (bg, border, radius, shadow,
+   flex-column, overflow:hidden). Only email-specific overrides below. */
+
+.email-widget__col--threads {
+  overflow-y: auto;
+}
+
+.email-widget__col--center {
+  overflow-y: auto;
+}
+
+/* Rail column has a tinted background to distinguish the AI panel */
+.email-widget__col--rail {
+  background: var(--md-color-gray-05, #f8f9fa);
+  border-radius: 8px;
+  border: 1px solid var(--md-color-gray-20, #e8ebee);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  overflow-y: auto;
+}
+
+@media (max-width: 1100px) {
+  .email-widget__body--3col {
+    grid-template-columns: 240px 1fr 280px;
+  }
+}
+
+@media (max-width: 900px) {
+  .email-widget__body--3col {
+    grid-template-columns: 1fr;
+  }
+  .email-widget__col--threads,
+  .email-widget__col--rail {
+    display: none;
+  }
+}
+
+/* ── Column inner padding ─────────────────────────── */
+/* Momentum Card renders .md-card-section (not .md-card__content).           */
+.email-widget__col--threads .md-card-section,
+.email-widget__col--center .md-card-section,
+.email-widget__col--rail .md-card-section {
+  padding: 12px;
+  box-sizing: border-box;
+}
+
+/* Header card inner padding */
+.email-header .md-card-section {
+  padding: 12px 14px;
+  box-sizing: border-box;
+}
+
+/* ── Thread list (new) ────────────────────────────── */
+.thread-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.thread-list__item {
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  background: transparent;
+}
+
+.thread-list__item:hover {
+  background: var(--md-color-gray-10, #f0f2f4);
+}
+
+.thread-list__item--active {
+  background: var(--md-color-blue-05, #f0f7ff);
+  border-color: var(--md-color-blue-30, #b3dff5);
+}
+
+.thread-list__item--newest {
+  border-left: 3px solid var(--md-color-blue-50, #007aa3);
+}
+
+.thread-list__item-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.thread-list__from {
+  font-weight: 600;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.thread-list__date {
+  font-size: 11px;
+  color: var(--md-color-gray-50, #767676);
+  white-space: nowrap;
+}
+
+.thread-list__snippet {
+  font-size: 12px;
+  color: var(--md-color-gray-60, #545454);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+
+.thread-list__meta {
+  font-size: 11px;
+  color: var(--md-color-gray-50, #767676);
+  margin-top: 2px;
+}
+
+.thread-panel__other {
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--md-color-gray-15, #f0f2f4);
+}
+
+.thread-list--other {
+  margin-top: 6px;
+}
+
+.thread-list__item--other {
+  padding: 6px 10px;
+}
+
+/* ── Reading pane (center) ────────────────────────── */
+.reading-pane.md-card {
+  border-radius: 0;
+  margin: 0;
+}
+
+/* Shadow DOM host that replaces the old iframe */
+.email-viewer {
+  width: 100%;
+}
+
+.email-viewer__shadow-host {
+  display: block;
+  width: 100%;
+}
+
+.reading-pane__summary {
+  background: var(--md-color-blue-05, #f0f7ff);
+  border: 1px solid var(--md-color-blue-20, #b3dff5);
+  border-left: 3px solid var(--md-color-blue-50, #007aa3);
+  border-radius: 4px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+}
+
+.reading-pane__summary-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--md-color-blue-70, #00557b);
+  margin-bottom: 4px;
+}
+
+.reading-pane__summary-text {
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0;
+  color: var(--md-color-gray-80, #1c1c1c);
+}
+
+/* ── Email header ─────────────────────────────────── */
+.email-header.md-card {
+  border-radius: 8px;
+  border: 1px solid var(--md-color-gray-20, #e8ebee);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  margin: 0;
+}
+
+/* Priority accent bars based on sentiment */
+.email-header--accent-red.md-card {
+  border-left: 4px solid var(--md-color-red-50, #e84545);
+}
+.email-header--accent-orange.md-card {
+  border-left: 4px solid var(--md-color-orange-50, #f58219);
+}
+.email-header--accent-green.md-card {
+  border-left: 4px solid var(--md-color-green-50, #4db33d);
+}
+
+.email-header__subject-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.email-header__subject.md-h2 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.4;
+  flex: 1;
+}
+
+.email-header__badges {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.email-header__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  font-size: 12px;
+  color: var(--md-color-gray-60, #545454);
+}
+
+.email-header__field {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.email-header__field-icon {
+  color: var(--md-color-gray-40, #aaa);
+}
+
+/* ── Thread panel ─────────────────────────────────── */
+.thread-panel.md-card {
+  border-radius: 0;
+  margin: 0;
+  border-bottom: none;
+}
+
+.thread-panel__title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.thread-panel__title-row .md-h4 {
+  margin: 0;
+}
+
+.thread-panel__title-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Collapsible AI summary banner */
+.thread-panel__summary-banner {
+  background: var(--md-color-blue-05, #f0f7ff);
+  border: 1px solid var(--md-color-blue-20, #b3dff5);
+  border-left: 3px solid var(--md-color-blue-50, #007aa3);
+  border-radius: 4px;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+}
+
+.thread-panel__summary-text {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--md-color-gray-80, #1c1c1c);
+  margin: 0;
+}
+
+/* Left accent bar on the newest message */
+.thread-panel__group--newest > .md-accordion__header {
+  border-left: 3px solid var(--md-color-blue-50, #007aa3);
+}
+
+.thread-panel__msg-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  width: 100%;
+  gap: 8px;
+}
+
+.thread-panel__msg-from {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.thread-panel__msg-date {
+  font-size: 11px;
+  color: var(--md-color-gray-50, #767676);
+  white-space: nowrap;
+}
+
+.thread-panel__msg-snippet {
+  font-size: 12px;
+  color: var(--md-color-gray-50, #767676);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 90%;
+  margin-top: 2px;
+}
+
+/* Highlight the active message accordion group */
+.thread-panel__header--active {
+  background-color: var(--md-color-blue-05, #f0f7ff);
+}
+
+/* ── Customer panel ───────────────────────────────── */
+.customer-panel.md-card {
+  border-radius: 0;
+  margin: 0;
+  flex: 1;
+}
+
+/* ── OtherThreadsList ─────────────────────────────── */
+.other-threads--empty {
+  padding: 8px 12px;
+  color: var(--md-color-gray-50, #767676);
+}
+
+.other-threads__item--active .md-list-item {
+  background-color: var(--md-color-blue-05, #f0f7ff);
+}
+
+.other-threads__snippet {
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── JDS Timeline ─────────────────────────────────── */
+.jds-timeline--empty {
+  padding: 8px 12px;
+  color: var(--md-color-gray-50, #767676);
+}
+
+.jds-timeline__label {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.jds-timeline__time {
+  font-size: 11px;
+  color: var(--md-color-gray-50, #767676);
+}
+
+/* ── AI Panel ─────────────────────────────────────── */
+.ai-panel.md-card {
+  border-radius: 0;
+  margin: 0;
+  border-bottom: none;
+}
+
+.ai-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.ai-panel__header .md-h4 {
+  margin: 0;
+}
+
+.ai-panel__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ai-panel__summary {
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0 0 10px;
+  color: var(--md-color-gray-80, #1c1c1c);
+}
+
+.ai-panel__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.ai-panel__meta-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.ai-panel__meta-label {
+  color: var(--md-color-gray-60, #545454);
+}
+
+.ai-panel__suggested {
+  background: var(--md-color-green-05, #f0fdf4);
+  border: 1px solid var(--md-color-green-30, #bbf7d0);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-top: 8px;
+}
+
+.ai-panel__suggested-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--md-color-green-70, #15803d);
+  margin-bottom: 6px;
+}
+
+.ai-panel__suggested-text {
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0 0 8px;
+  color: var(--md-color-gray-80, #1c1c1c);
+}
+
+/* ── Reply Composer ───────────────────────────────── */
+.reply-composer.md-card {
+  border-radius: 0;
+  margin: 0;
+  flex: 1;
+}
+
+.reply-composer__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.reply-composer__header .md-h4 {
+  margin: 0;
+}
+
+.reply-composer__textarea-label {
+  display: none; /* visually hide — accessible via aria-label */
+}
+
+.reply-composer__textarea.md-input {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 8px 10px;
+  border: 1px solid var(--md-color-gray-30, #d0d4d9);
+  border-radius: 4px;
+  background: var(--md-color-white-100, #fff);
+  color: var(--md-color-gray-100, #000);
+  margin-bottom: 10px;
+}
+
+.reply-composer__textarea.md-input:focus {
+  outline: none;
+  border-color: var(--md-color-blue-50, #007aa3);
+  box-shadow: 0 0 0 2px var(--md-color-blue-20, #b3e0f0);
+}
+
+.reply-composer__ai-section {
+  margin-bottom: 10px;
+}
+
+.reply-composer__ai-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-end;
+  margin-top: 8px;
+  padding: 10px;
+  background: var(--md-color-gray-05, #f8f9fa);
+  border: 1px solid var(--md-color-gray-20, #e8ebee);
+  border-radius: 6px;
+}
+
+.reply-composer__footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--md-color-gray-20, #e8ebee);
+}
+
+.reply-composer__send-result {
+  font-size: 12px;
+}
+
+.reply-composer__send-result--success {
+  color: var(--md-color-green-60, #16a34a);
+}
+
+.reply-composer__send-result--error {
+  color: var(--md-color-red-60, #dc2626);
+}
+
+/* ── AI Panel chips ───────────────────────────────── */
+.ai-panel__chips {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--md-color-gray-15, #f0f2f4);
+}
+
+.ai-panel__chips-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--md-color-gray-50, #767676);
+  margin-bottom: 6px;
+}
+
+.ai-panel__chips-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ai-panel__chip-btn.md-button {
+  font-size: 11px;
+  border: 1px solid var(--md-color-gray-30, #d0d4d9);
+  border-radius: 999px;
+  padding: 3px 10px;
+  height: auto;
+  width: auto;
+  min-width: 0;
+  white-space: nowrap;
+  text-align: left;
+  line-height: 1.4;
+}
+
+.ai-panel__chip-btn.md-button:hover {
+  border-color: var(--md-color-blue-50, #007aa3);
+  color: var(--md-color-blue-50, #007aa3);
+  background: var(--md-color-blue-05, #f0f7ff);
+}
+
+/* ── Reply Composer enhancements ──────────────────── */
+
+/* Note mode — card shell gets a warm yellow tint */
+.reply-composer--note.md-card {
+  background: var(--md-color-yellow-05, #fffbeb);
+  border-left: 3px solid var(--md-color-orange-40, #f5a623);
+}
+
+.reply-composer__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Hint shown below header when note mode is active */
+.reply-composer__note-hint {
+  font-size: 11px;
+  color: var(--md-color-orange-60, #b45309);
+  background: var(--md-color-orange-05, #fffbeb);
+  border: 1px solid var(--md-color-orange-20, #fde68a);
+  border-radius: 4px;
+  padding: 4px 10px;
+  margin-bottom: 8px;
+}
+
+/* To: read-only line above textarea */
+.reply-composer__to-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--md-color-gray-60, #545454);
+  margin-bottom: 6px;
+  padding: 4px 6px;
+  background: var(--md-color-gray-05, #f8f9fa);
+  border-radius: 4px;
+  border: 1px solid var(--md-color-gray-15, #f0f2f4);
+}
+
+.reply-composer__to-label {
+  font-weight: 600;
+}
+
+.reply-composer__to-value {
+  color: var(--md-color-gray-80, #1c1c1c);
+}
+
+/* Yellow textarea in note mode */
+.reply-composer__textarea--note.md-input {
+  background: var(--md-color-yellow-05, #fffbeb) !important;
+  border-color: var(--md-color-orange-30, #fcd34d) !important;
+}
+
+.reply-composer__textarea--note.md-input:focus {
+  border-color: var(--md-color-orange-50, #f58219) !important;
+  box-shadow: 0 0 0 2px var(--md-color-orange-20, #fde68a) !important;
+}
+
+/* AI shimmer — same height as the 8-row textarea (~160px) */
+@keyframes email-shimmer {
+  0% { background-position: -600px 0; }
+  100% { background-position: 600px 0; }
+}
+
+.reply-composer__shimmer {
+  width: 100%;
+  height: 160px;
+  border-radius: 4px;
+  margin-bottom: 10px;
+  background: linear-gradient(
+    90deg,
+    var(--md-color-gray-10, #f0f2f4) 25%,
+    var(--md-color-gray-05, #f8f9fa) 50%,
+    var(--md-color-gray-10, #f0f2f4) 75%
+  );
+  background-size: 1200px 100%;
+  animation: email-shimmer 1.4s infinite linear;
+}
+
+/* =====================================================
+   Dark Mode Overrides
+   Scoped to .email-widget.md--dark
+
+   Momentum's md--dark automatically handles:
+     md-input  (107 rules) — textarea, form fields
+     md-list   (80 rules)  — list items, hover, selection
+     md-accordion (6 rules) — thread groups
+
+   We only add CSS for what Momentum does NOT cover:
+     md-card (0 dark rules, no dark prop), custom layout elements.
+   ===================================================== */
+
+/* Column panels (custom divs, not Momentum components) */
+.email-widget.md--dark {
+  background: var(--md-color-gray-95, #1c1c1c);
+}
+
+.email-widget.md--dark .email-widget__col--threads,
+.email-widget.md--dark .email-widget__col--center,
+.email-widget.md--dark .email-widget__col--rail {
+  background-color: var(--md-color-gray-90, #282828);
+  border-color: rgba(255,255,255,.12);
+  box-shadow: 0 1px 4px rgba(0,0,0,.4);
+}
+
+.email-widget.md--dark .email-widget__col--rail {
+  background-color: var(--md-color-gray-95, #1f1f1f);
+}
+
+/* md-card — no Momentum dark support, override explicitly */
+.email-widget.md--dark .md-card {
+  background-color: var(--md-color-gray-90, #282828);
+  color: #fff;
+  border-color: rgba(255,255,255,.12);
+}
+
+.email-widget.md--dark .email-widget__col--rail .md-card {
+  background-color: var(--md-color-gray-95, #1f1f1f);
+}
+
+/* Thread list items (custom, not md-list) */
+.email-widget.md--dark .thread-list__item:hover {
+  background: rgba(255,255,255,.08);
+}
+.email-widget.md--dark .thread-list__item--active {
+  background: rgba(0,160,209,.15);
+  border-color: rgba(0,160,209,.4);
+}
+.email-widget.md--dark .thread-list__date,
+.email-widget.md--dark .thread-list__meta,
+.email-widget.md--dark .thread-list__snippet {
+  color: rgba(255,255,255,.6);
+}
+.email-widget.md--dark .thread-panel__other {
+  border-top-color: rgba(255,255,255,.12);
+}
+
+/* AI summary / thread summary banners */
+.email-widget.md--dark .reading-pane__summary,
+.email-widget.md--dark .thread-panel__summary-banner {
+  background: rgba(0,122,163,.15);
+  border-color: rgba(0,160,209,.3);
+  border-left-color: #00a0d1;
+}
+.email-widget.md--dark .reading-pane__summary-label {
+  color: #5bcff2;
+}
+.email-widget.md--dark .reading-pane__summary-text,
+.email-widget.md--dark .thread-panel__summary-text {
+  color: rgba(255,255,255,.85);
+}
+
+/* Email header meta row (From/To/CC) — overrides the light-mode gray */
+.email-widget.md--dark .email-header__meta {
+  color: rgba(255,255,255,.6);
+}
+.email-widget.md--dark .email-header__field-icon {
+  color: rgba(255,255,255,.35);
+}
+
+/* AI metadata labels */
+.email-widget.md--dark .ai-panel__meta-label {
+  color: rgba(255,255,255,.55);
+}
+
+/* AI suggested reply block */
+.email-widget.md--dark .ai-panel__suggested {
+  background: rgba(0,120,60,.15);
+  border-color: rgba(77,179,61,.3);
+}
+.email-widget.md--dark .ai-panel__suggested-label {
+  color: #4ade80;
+}
+.email-widget.md--dark .ai-panel__suggested-text {
+  color: rgba(255,255,255,.85);
+}
+.email-widget.md--dark .ai-panel__chips {
+  border-top-color: rgba(255,255,255,.12);
+}
+
+/* Reply composer custom sections */
+.email-widget.md--dark .reply-composer__ai-controls {
+  background: rgba(255,255,255,.04);
+  border-color: rgba(255,255,255,.12);
+}
+.email-widget.md--dark .reply-composer__footer {
+  border-top-color: rgba(255,255,255,.12);
+}
+.email-widget.md--dark .reply-composer__to-line {
+  background: rgba(255,255,255,.06);
+  border-color: rgba(255,255,255,.12);
+  color: rgba(255,255,255,.6);
+}
+.email-widget.md--dark .reply-composer__to-value {
+  color: rgba(255,255,255,.9);
+}
+.email-widget.md--dark .reply-composer--note.md-card {
+  background-color: rgba(245,130,25,.08);
+  border-left-color: #f58219;
+}
+
+/* Shimmer in dark mode */
+.email-widget.md--dark .reply-composer__shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(255,255,255,.06) 25%,
+    rgba(255,255,255,.10) 50%,
+    rgba(255,255,255,.06) 75%
+  );
+  background-size: 1200px 100%;
+}
+
+/* Undo-send toast — sits between AI controls and footer */
+.reply-composer__undo-toast {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  background: var(--md-color-orange-05, #fff7ed);
+  border: 1px solid var(--md-color-orange-30, #fcd34d);
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--md-color-gray-80, #1c1c1c);
+}
+
+/* WrapUp modal field spacing */
+.wrapup-dialog__field {
+  margin-bottom: 16px;
+}

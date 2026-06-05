@@ -1,0 +1,882 @@
+/* =====================================================
+   Shared styles for view-mode renderings (cases, history,
+   chat) of the task-management widget.
+   ===================================================== */
+
+/* ── Generic placeholder ──────────────────────────── */
+.view-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  width: 100%;
+  padding: 32px;
+  gap: 12px;
+  text-align: center;
+  color: var(--md-color-gray-70, #2d2d2d);
+}
+
+.view-placeholder__icon {
+  font-size: 48px;
+  opacity: 0.7;
+}
+
+.view-placeholder__title {
+  margin: 0;
+}
+
+.view-placeholder__text {
+  max-width: 420px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--md-color-gray-60, #545454);
+  margin: 0;
+}
+
+/* ── Cases view ───────────────────────────────────────────────────────────── */
+/* Root structure provided by .view-panel (widget-layout.css).
+   Only cases-specific child styles remain here. */
+
+.cases-view__customer.md-card {
+  margin: 0;
+}
+
+.cases-view__customer .md-card-section {
+  padding: 12px 14px;
+}
+
+.cases-view__customer-name {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.cases-view__customer-meta {
+  font-size: 12px;
+  color: var(--md-color-gray-60, #545454);
+  margin-top: 2px;
+}
+
+.cases-view__group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cases-view__group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 2px;
+}
+
+.cases-view__group-head .md-h4 {
+  margin: 0;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--md-color-gray-60, #545454);
+}
+
+.cases-view__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cases-view__row {
+  border: 1px solid var(--md-color-gray-20, #e8ebee);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--md-color-white-100, #fff);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cases-view__row--active {
+  border-color: var(--md-color-blue-40, #2dadce);
+  box-shadow: 0 0 0 1px var(--md-color-blue-40, #2dadce);
+}
+
+.cases-view__row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cases-view__row-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.cases-view__row-meta {
+  font-size: 12px;
+  color: var(--md-color-gray-60, #545454);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.cases-view__row-desc {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--md-color-gray-80, #1c1c1c);
+  background: var(--md-color-gray-05, #f8f9fa);
+  border-radius: 4px;
+  padding: 6px 8px;
+}
+
+.cases-view__row-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.cases-view__loading,
+.cases-view__empty {
+  font-size: 12px;
+  color: var(--md-color-gray-50, #767676);
+  padding: 8px 4px;
+}
+
+/* ── History view ─────────────────────────────────── */
+/* Root structure provided by .view-panel (widget-layout.css). */
+
+.history-view__summary.md-card {
+  margin: 0;
+  background: var(--md-color-blue-05, #f0f7ff);
+  border-left: 3px solid var(--md-color-blue-50, #007aa3);
+}
+
+.history-view__summary .md-card-section {
+  padding: 12px 14px;
+}
+
+.history-view__summary-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--md-color-blue-70, #00557b);
+  margin-bottom: 4px;
+}
+
+.history-view__summary-text {
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0;
+  color: var(--md-color-gray-80, #1c1c1c);
+}
+
+.history-view__empty {
+  font-size: 13px;
+  color: var(--md-color-gray-60, #545454);
+  text-align: center;
+  padding: 16px;
+}
+
+.history-view__timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 4px;
+  position: relative;
+}
+
+.history-view__timeline::before {
+  content: '';
+  position: absolute;
+  left: 16px;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  background: var(--md-color-gray-20, #e8ebee);
+}
+
+.history-view__item {
+  position: relative;
+  padding: 8px 0 8px 44px;
+  display: flex;
+  gap: 10px;
+}
+
+.history-view__dot {
+  position: absolute;
+  left: 4px;
+  top: 8px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--md-color-white-100, #fff);
+  border: 2px solid var(--md-color-gray-30, #d0d4d9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--md-color-gray-70, #2d2d2d);
+  z-index: 1;
+}
+
+.history-view__dot--call,
+.history-view__dot--phone,
+.history-view__dot--voice {
+  border-color: var(--md-color-green-50, #4db33d);
+  color: var(--md-color-green-60, #16a34a);
+}
+
+.history-view__dot--email {
+  border-color: var(--md-color-purple-50, #9854cb);
+  color: var(--md-color-purple-60, #7c3aed);
+}
+
+.history-view__dot--chat,
+.history-view__dot--sms {
+  border-color: var(--md-color-blue-50, #007aa3);
+  color: var(--md-color-blue-60, #0076d6);
+}
+
+.history-view__body {
+  flex: 1;
+  min-width: 0;
+  background: var(--md-color-white-100, #fff);
+  border: 1px solid var(--md-color-gray-20, #e8ebee);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+.history-view__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.history-view__title {
+  font-weight: 600;
+  font-size: 13px;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.history-view__when {
+  font-size: 11px;
+  color: var(--md-color-gray-50, #767676);
+  white-space: nowrap;
+}
+
+.history-view__summary-line {
+  font-size: 12px;
+  color: var(--md-color-gray-70, #2d2d2d);
+  margin-top: 4px;
+  line-height: 1.5;
+}
+
+.history-view__details {
+  font-size: 11px;
+  color: var(--md-color-gray-60, #545454);
+  margin-top: 2px;
+}
+
+/* ── Dark mode overrides ──────────────────────────── */
+/* Cases customer card — Momentum md-card has no dark rules; override manually */
+.md--dark .cases-view__customer.md-card {
+  background: var(--md-color-gray-80, #2d2d2d);
+  border-color: rgba(255,255,255,.10);
+  box-shadow: none;
+}
+.md--dark .cases-view__customer-name {
+  color: rgba(255,255,255,.9);
+}
+.md--dark .cases-view__customer-meta {
+  color: rgba(255,255,255,.55);
+}
+
+/* History AI summary card */
+.md--dark .history-view__summary.md-card {
+  background: rgba(0,122,163,.18);
+  border-left-color: rgba(0,160,209,.6);
+}
+.md--dark .history-view__summary-label {
+  color: rgba(0,200,255,.8);
+}
+.md--dark .history-view__summary-text {
+  color: rgba(255,255,255,.85);
+}
+
+/* History timeline items */
+.md--dark .history-view__body {
+  background: var(--md-color-gray-80, #2d2d2d);
+  border-color: rgba(255,255,255,.08);
+}
+.md--dark .history-view__title {
+  color: rgba(255,255,255,.88);
+}
+.md--dark .history-view__summary-line {
+  color: rgba(255,255,255,.7);
+}
+.md--dark .history-view__details {
+  color: rgba(255,255,255,.5);
+}
+.md--dark .history-view__when {
+  color: rgba(255,255,255,.4);
+}
+.md--dark .history-view__timeline::before {
+  background: rgba(255,255,255,.10);
+}
+.md--dark .history-view__dot {
+  background: var(--md-color-gray-80, #2d2d2d);
+  border-color: rgba(255,255,255,.2);
+}
+
+/* Cases rows */
+.md--dark .cases-view__row {
+  background: var(--md-color-gray-80, #2d2d2d);
+  border-color: rgba(255,255,255,.08);
+  color: rgba(255,255,255,.88);
+}
+.md--dark .cases-view__row-desc {
+  background: rgba(255,255,255,.04);
+  color: rgba(255,255,255,.65);
+}
+
+/* ── Analytics bar ────────────────────────────────── */
+/*
+ * Horizontal strip that sits above the case list / history timeline.
+ * Horizontally scrollable so it never breaks layout at any panel width.
+ */
+
+.analytics-bar {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  border-radius: 10px;
+  border: 1px solid var(--md-color-gray-20, #e8ebee);
+  background: var(--md-color-white-100, #fff);
+  padding: 10px 4px;
+  flex-shrink: 0;
+  box-shadow: 0 1px 4px rgba(0,0,0,.06);
+}
+
+.analytics-bar--dark {
+  background: var(--md-color-gray-90, #282828);
+  border-color: rgba(255,255,255,.1);
+  box-shadow: 0 1px 4px rgba(0,0,0,.3);
+}
+
+/* Hide scrollbar on webkit */
+.analytics-bar::-webkit-scrollbar { height: 4px; }
+.analytics-bar::-webkit-scrollbar-thumb { background: rgba(0,0,0,.15); border-radius: 2px; }
+.analytics-bar--dark::-webkit-scrollbar-thumb { background: rgba(255,255,255,.15); }
+
+.analytics-divider {
+  width: 1px;
+  flex-shrink: 0;
+  margin: 2px 6px;
+  align-self: stretch;
+  background: rgba(0,0,0,.07);
+}
+
+.analytics-bar--dark .analytics-divider {
+  background: rgba(255,255,255,.08);
+}
+
+/* ── Section ── */
+.analytics-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 2px 12px;
+  flex-shrink: 0;
+  min-width: 120px;
+}
+
+.analytics-section--sparklines {
+  min-width: 140px;
+}
+
+.analytics-section--kpis {
+  min-width: 200px;
+}
+
+.analytics-section__title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--md-color-gray-50, #767676);
+  white-space: nowrap;
+}
+
+.analytics-bar--dark .analytics-section__title {
+  color: rgba(255,255,255,.45);
+}
+
+.analytics-section__content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.analytics-section__content--row {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ── Donut centre label ── */
+.analytics-donut-center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.analytics-donut-center__big {
+  font-size: 14px;
+  font-weight: 700;
+  color: inherit;
+}
+
+.analytics-donut-center__small {
+  font-size: 9px;
+  color: var(--md-color-gray-50, #767676);
+}
+
+.analytics-bar--dark .analytics-donut-center__small {
+  color: rgba(255,255,255,.45);
+}
+
+/* ── Legend ── */
+.analytics-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.analytics-legend__item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.analytics-legend__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.analytics-legend__text {
+  flex: 1;
+  color: var(--md-color-gray-70, #2d2d2d);
+}
+
+.analytics-bar--dark .analytics-legend__text {
+  color: rgba(255,255,255,.75);
+}
+
+.analytics-legend__count {
+  font-weight: 600;
+  color: var(--md-color-gray-80, #1c1c1c);
+  min-width: 18px;
+  text-align: right;
+}
+
+.analytics-bar--dark .analytics-legend__count {
+  color: rgba(255,255,255,.9);
+}
+
+/* ── KPI grid ── */
+.analytics-kpi-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.analytics-kpi {
+  padding: 4px 6px;
+  border-radius: 4px;
+  background: var(--md-color-gray-05, #f4f5f7);
+}
+
+.analytics-bar--dark .analytics-kpi {
+  background: rgba(255,255,255,.05);
+}
+
+.analytics-kpi__value {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.analytics-kpi__label {
+  font-size: 10px;
+  color: var(--md-color-gray-60, #545454);
+  white-space: nowrap;
+}
+
+.analytics-bar--dark .analytics-kpi__label {
+  color: rgba(255,255,255,.5);
+}
+
+.analytics-kpi__sub {
+  font-size: 9px;
+  color: var(--md-color-gray-50, #767676);
+}
+
+.analytics-bar--dark .analytics-kpi__sub {
+  color: rgba(255,255,255,.35);
+}
+
+/* ── Sparkline row ── */
+.analytics-sparkline-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.analytics-sparkline-label {
+  font-size: 10px;
+  white-space: nowrap;
+  min-width: 64px;
+  color: var(--md-color-gray-50, #767676);
+}
+
+.analytics-bar--dark .analytics-sparkline-label {
+  color: rgba(255,255,255,.45);
+}
+
+/* ── Weekday labels ── */
+.analytics-weekday-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 9px;
+  margin-top: 2px;
+  color: var(--md-color-gray-50, #767676);
+}
+
+.analytics-bar--dark .analytics-weekday-labels {
+  color: rgba(255,255,255,.45);
+}
+
+/* ── Donut wrapper (replaces inline style={{ position: relative, flexShrink: 0 }}) ── */
+.analytics-donut-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+/* ── Cases list inside analytics bar (replaces inline flex wrapper) ── */
+.analytics-cases-list {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* ── Case badge (shared across all analytics bars) ── */
+.analytics-case-badge {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: rgba(0,0,0,.04);
+  border: 1px solid rgba(0,0,0,.10);
+  border-radius: 6px;
+  padding: 5px 8px;
+  min-width: 120px;
+}
+
+.analytics-bar--dark .analytics-case-badge {
+  background: rgba(255,255,255,.06);
+  border-color: rgba(255,255,255,.10);
+}
+
+.analytics-case-badge__id {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  /* color set via CSS custom property --badge-color */
+  color: var(--badge-color, var(--md-color-blue-50, #007aa3));
+}
+
+.analytics-case-badge__topic {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--md-color-gray-80, #1c1c1c);
+}
+
+.analytics-bar--dark .analytics-case-badge__topic {
+  color: rgba(255,255,255,.8);
+}
+
+.analytics-case-badge__meta {
+  font-size: 10px;
+  color: var(--md-color-gray-50, #767676);
+}
+
+.analytics-bar--dark .analytics-case-badge__meta {
+  color: rgba(255,255,255,.5);
+}
+
+/* ── Widget panel, header, subheader ─────────────────────────── */
+/* Canonical definitions moved to widget-layout.css.
+   See .widget-panel, .widget-panel__header, .widget-panel__subheader there. */
+
+/* ── Widget body — 3-column grid wrapper used by chat & voice ── */
+/* No padding here — outer gutter is provided by parent .widget-shell.
+   Each widget sets grid-template-columns on its own child selector. */
+.widget-body {
+  display: grid;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  gap: var(--tm-col-gap);
+  box-sizing: border-box;
+  background: var(--tm-bg-shell);
+}
+
+.md--dark .widget-body {
+  background: var(--tm-bg-shell-dark);
+}
+
+/* ── Analytics collapse toggle ─────────────────────── */
+.analytics-collapse {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.analytics-collapse__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 5px 10px;
+  background: rgba(0,0,0,.04);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--md-color-gray-60, #545454);
+  transition: background 0.15s ease;
+  box-sizing: border-box;
+}
+
+.analytics-collapse__toggle:hover {
+  background: rgba(0,0,0,.08);
+}
+
+.analytics-collapse--dark .analytics-collapse__toggle {
+  color: rgba(255,255,255,.55);
+  background: rgba(255,255,255,.05);
+}
+
+.analytics-collapse--dark .analytics-collapse__toggle:hover {
+  background: rgba(255,255,255,.10);
+}
+
+.analytics-collapse__label {
+  font-size: 11px;
+}
+
+.analytics-collapse__chevron {
+  font-size: 10px;
+  opacity: 0.7;
+  transition: transform 0.2s ease;
+  display: inline-block;
+}
+
+.analytics-collapse--open .analytics-collapse__chevron {
+  transform: rotate(0deg);
+}
+
+.analytics-collapse--closed .analytics-collapse__chevron {
+  transform: rotate(-90deg);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   Case detail — default TaskManagement view (not a widget widget,
+   just the in-panel case/notes editor).
+   All spacing and layout lives here; components are unstyled divs.
+   ══════════════════════════════════════════════════════════════ */
+
+/* Root scroll container */
+.case-detail {
+  min-height: 100%;
+  width: 100%;
+  padding: 16px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  font-family: var(--md-font-family, 'CiscoSansTT', sans-serif);
+}
+
+/* Toolbar row at top: back button + status badge */
+.case-detail__toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.case-detail__toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Auto-fit grid inside the fields card */
+.case-detail__fields-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+/* Single field label + value pair */
+.case-detail__field-value {
+  margin-top: 4px;
+}
+
+/* Constrain the status select */
+.case-detail__status-select {
+  max-width: 240px;
+}
+
+/* Full-width action row at end of a grid card */
+.case-detail__toggle-row {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 2px;
+}
+
+/* Card header: title left, action right */
+.case-detail__card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.case-detail__card-title {
+  margin: 0;
+  font-size: 16px;
+}
+
+.case-detail__card-meta {
+  font-size: 12px;
+  color: var(--md-color-gray-60, #545454);
+}
+
+/* Customer info grid */
+.case-detail__customer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+/* Enrichment source note below customer grid */
+.case-detail__source-note {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--md-color-gray-60, #545454);
+}
+
+/* Vertical list of related/history items */
+.case-detail__item-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Single item card */
+.case-detail__item {
+  border-radius: 8px;
+  padding: 10px;
+  border: 1px solid var(--md-color-gray-15, #eef0f2);
+  background: var(--md-color-gray-05, #f8f9fa);
+}
+
+.case-detail__item--clickable {
+  cursor: pointer;
+}
+
+.case-detail__item-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.case-detail__item-id {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.case-detail__item-date {
+  font-size: 12px;
+  margin-top: 4px;
+  color: var(--md-color-gray-60, #545454);
+}
+
+.case-detail__item-actions {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Expanded body */
+.case-detail__item-body {
+  margin-top: 8px;
+}
+
+.case-detail__item-desc {
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+.case-detail__item-meta {
+  font-size: 12px;
+  margin-top: 4px;
+  color: var(--md-color-gray-60, #545454);
+}
+
+/* Description field: extra bottom gap before textarea */
+.case-detail__desc-value {
+  margin-top: 4px;
+  margin-bottom: 12px;
+}
+
+/* Save / submit button row */
+.case-detail__save-row {
+  margin-top: 8px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* Load more button spacer */
+.case-detail__load-more {
+  margin-top: 10px;
+}
