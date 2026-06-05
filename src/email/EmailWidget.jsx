@@ -15,7 +15,7 @@ import './email.css';
 
 const EmailWidget = ({ interactionId, callAssociatedDetails, darkMode, mockMode }) => {
   const dispatch = useDispatch();
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const [analyticsOpen, setAnalyticsOpen] = useState(true);
 
   const { isFetchingEmail, isFetchingToken, error, activeEmail, wrapUp } = useSelector(
@@ -24,7 +24,7 @@ const EmailWidget = ({ interactionId, callAssociatedDetails, darkMode, mockMode 
 
   useEffect(() => {
     if (mockMode) {
-      dispatch(setMockEmailData());
+      dispatch(setMockEmailData(locale));
       return () => { dispatch(resetEmail()); };
     }
     if (interactionId) {
@@ -33,7 +33,7 @@ const EmailWidget = ({ interactionId, callAssociatedDetails, darkMode, mockMode 
     return () => {
       dispatch(resetEmail());
     };
-  }, [interactionId, mockMode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [interactionId, mockMode, locale]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (isFetchingToken || isFetchingEmail) {
     return (

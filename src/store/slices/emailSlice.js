@@ -1,4 +1,5 @@
 import { createSlice } from '@reduxjs/toolkit';
+import { getMockData } from '../../mock/mockData';
 import {
   subscribeToCustomerEvents,
   fetchGmailToken as apiFetchGmailToken,
@@ -168,88 +169,14 @@ const emailSlice = createSlice({
       state.error = action.payload;
     },
     resetEmail: () => ({ ...initialState }),
-    setMockEmailData: (state) => {
-      const bodyHtml = `
-        <div style="font-family:sans-serif;font-size:14px;line-height:1.6;color:#1a1a2e;">
-          <p>Hello Support Team,</p>
-          <p>I am writing to urgently follow up on the payment processing failure for
-            <strong>Invoice #INV-2024-0892</strong> ($12,500.00). This is now our
-            <strong>third attempt</strong> to resolve this issue and the payment has
-            still not cleared our account.</p>
-          <p>The payment was originally initiated on <strong>29 May 2025</strong> via
-            SEPA transfer (ref: SEPA-20250529-8821). Our finance team has confirmed
-            the funds were debited from our account, yet your system shows no record
-            of the transaction.</p>
-          <ul>
-            <li>Invoice number: INV-2024-0892</li>
-            <li>Amount: $12,500.00</li>
-            <li>IBAN: DE89 3704 0044 0532 0130 00</li>
-            <li>Reference: SEPA-20250529-8821</li>
-          </ul>
-          <p>Please treat this as a <strong>priority case</strong>. I am attaching the
-            original invoice and bank confirmation for your reference.</p>
-          <p>Best regards,<br/>Sarah Johnson<br/>Finance Manager, ACME Corp</p>
-        </div>`;
-
-      const msg1 = {
-        messageId: 'mock-msg-001',
-        threadId: 'mock-thread-001',
-        from: 'Sarah Johnson <sarah.j@acme-corp.com>',
-        to: 'support@moneta-bank.com',
-        cc: 'john.doe@acme-corp.com',
-        subject: 'Urgent: Invoice #INV-2024-0892 — Payment Not Processed',
-        date: 'Thu, 5 Jun 2025 14:22',
-        snippet: 'This is our third attempt to resolve the payment failure for Invoice #INV-2024-0892 ($12,500.00). SEPA ref: SEPA-20250529-8821.',
-        bodyHtml,
-        bodyText: '',
-        attachments: [
-          { attachmentId: 'mock-att-1', filename: 'invoice_INV-2024-0892.pdf', mimeType: 'application/pdf', size: 45820 },
-          { attachmentId: 'mock-att-2', filename: 'bank_confirmation_SEPA.pdf', mimeType: 'application/pdf', size: 23440 },
-        ],
-      };
-
-      const msg2 = {
-        messageId: 'mock-msg-000',
-        threadId: 'mock-thread-001',
-        from: 'Support Team <support@moneta-bank.com>',
-        to: 'sarah.j@acme-corp.com',
-        cc: '',
-        subject: 'Re: Invoice #INV-2024-0892 — Payment Not Processed',
-        date: 'Wed, 4 Jun 2025 10:05',
-        snippet: 'Dear Sarah, we have received your query and our payments team is looking into this matter. We will update you within 24 hours.',
-        bodyHtml: '<p>Dear Sarah,</p><p>We have received your query and our payments team is looking into this. We will update you within 24 hours.</p><p>Kind regards,<br/>Moneta Bank Support</p>',
-        bodyText: '',
-        attachments: [],
-      };
-
-      const msg3 = {
-        messageId: 'mock-msg-002',
-        threadId: 'mock-thread-001',
-        from: 'Sarah Johnson <sarah.j@acme-corp.com>',
-        to: 'support@moneta-bank.com',
-        cc: '',
-        subject: 'Re: Invoice #INV-2024-0892 — Payment Not Processed',
-        date: 'Wed, 4 Jun 2025 16:48',
-        snippet: 'Still no update. Can you please escalate this to a supervisor?',
-        bodyHtml: '<p>Hi,</p><p>I still have not received an update. Can you please escalate this to a supervisor? We cannot close our books until this is resolved.</p><p>Sarah</p>',
-        bodyText: '',
-        attachments: [],
-      };
-
-      state.activeEmail = msg1;
-      state.thread = [msg2, msg3, msg1];
-      state.aiEnrichment = {
-        summary: 'Customer reports repeated payment failure for Invoice #INV-2024-0892 ($12,500). Third follow-up in 5 days. SEPA transfer debited from customer account but not reflected in system. Customer escalating to supervisor level.',
-        category: 'Payment Issue',
-        sentiment: 'urgent',
-        confidence: 0.94,
-        suggestedReply: 'Dear Sarah, thank you for your follow-up. I have escalated your case (ref: INC-20250605-4421) to our payments investigation team as a priority. A senior specialist will contact you directly within 2 business hours. We sincerely apologise for the inconvenience and delay.',
-        source: 'ai',
-      };
+    setMockEmailData: (state, action) => {
+      const locale = action.payload || 'en';
+      const m = getMockData(locale).email;
+      state.activeEmail = m.activeEmail;
+      state.thread = m.thread;
+      state.aiEnrichment = m.aiEnrichment;
       state.aiReplyDraft = '';
-      state.customerThreads = [
-        { threadId: 'mock-thread-prev', subject: 'Account access issue — resolved', date: 'May 12, 2025', snippet: 'Thank you for your help, the issue is now resolved.' },
-      ];
+      state.customerThreads = m.customerThreads;
       state.isFetchingToken = false;
       state.isFetchingEmail = false;
       state.error = null;

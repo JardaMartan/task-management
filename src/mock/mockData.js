@@ -187,6 +187,35 @@ const EN = {
     aiSummary: `Sarah Johnson (ACME Corp Ltd, Finance Manager) is a high-value customer with a pattern of payment processing issues. Current active case ${REF.case1} is her third escalation for Invoice #${REF.invoice} (${REF.amount}). History shows 2 prior resolved cases (card block, SEPA delay) and an open login issue. Sentiment is urgent — immediate payment team escalation and proactive callback recommended.`,
   },
 
+  email: {
+    activeEmail: {
+      messageId: 'mock-msg-001', threadId: 'mock-thread-001',
+      from: `Sarah Johnson <sarah.j@acme-corp.com>`, to: 'support@moneta-bank.com', cc: 'john.doe@acme-corp.com',
+      subject: `Urgent: Invoice #${REF.invoice} — Payment Not Processed`,
+      date: 'Thu, 5 Jun 2025 14:22',
+      snippet: `Third attempt to resolve payment failure for Invoice #${REF.invoice} (${REF.amount}). SEPA ref: ${REF.sepaRef}.`,
+      bodyHtml: `<div style="font-family:sans-serif;font-size:14px;line-height:1.6;color:#1a1a2e;"><p>Hello Support Team,</p><p>I am writing to urgently follow up on the payment processing failure for <strong>Invoice #${REF.invoice}</strong> (${REF.amount}). This is now our <strong>third attempt</strong> to resolve this issue.</p><p>SEPA transfer ref: ${REF.sepaRef}, initiated 29 May 2025. Funds debited but not reflected in system.</p><ul><li>Invoice: ${REF.invoice}</li><li>Amount: ${REF.amount}</li><li>Reference: ${REF.sepaRef}</li></ul><p>Please treat this as a <strong>priority case</strong>. Invoice and bank confirmation attached.</p><p>Best regards,<br/>Sarah Johnson<br/>Finance Manager, ACME Corp</p></div>`,
+      bodyText: '', attachments: [
+        { attachmentId: 'mock-att-1', filename: `invoice_${REF.invoice}.pdf`, mimeType: 'application/pdf', size: 45820 },
+        { attachmentId: 'mock-att-2', filename: 'bank_confirmation_SEPA.pdf', mimeType: 'application/pdf', size: 23440 },
+      ],
+    },
+    thread: [
+      { messageId: 'mock-msg-000', threadId: 'mock-thread-001', from: 'Support Team <support@moneta-bank.com>', to: 'sarah.j@acme-corp.com', cc: '', subject: `Re: Invoice #${REF.invoice} — Payment Not Processed`, date: 'Wed, 4 Jun 2025 10:05', snippet: 'We have received your query and our payments team is looking into this matter.', bodyHtml: '<p>Dear Sarah,</p><p>We have received your query and our payments team is looking into this. We will update you within 24 hours.</p><p>Kind regards,<br/>Moneta Bank Support</p>', bodyText: '', attachments: [] },
+      { messageId: 'mock-msg-002', threadId: 'mock-thread-001', from: `Sarah Johnson <sarah.j@acme-corp.com>`, to: 'support@moneta-bank.com', cc: '', subject: `Re: Invoice #${REF.invoice} — Payment Not Processed`, date: 'Wed, 4 Jun 2025 16:48', snippet: 'Still no update. Can you please escalate this to a supervisor?', bodyHtml: '<p>Hi,</p><p>I still have not received an update. Can you please escalate to a supervisor? We cannot close our books until this is resolved.</p><p>Sarah</p>', bodyText: '', attachments: [] },
+      { messageId: 'mock-msg-001', threadId: 'mock-thread-001', from: `Sarah Johnson <sarah.j@acme-corp.com>`, to: 'support@moneta-bank.com', cc: 'john.doe@acme-corp.com', subject: `Urgent: Invoice #${REF.invoice} — Payment Not Processed`, date: 'Thu, 5 Jun 2025 14:22', snippet: `Third attempt to resolve payment failure for Invoice #${REF.invoice} (${REF.amount}). SEPA ref: ${REF.sepaRef}.`, bodyHtml: `<div style="font-family:sans-serif;font-size:14px;line-height:1.6;color:#1a1a2e;"><p>Hello Support Team,</p><p>Urgently following up on Invoice #${REF.invoice} (${REF.amount}) — third attempt. SEPA ref: ${REF.sepaRef}.</p><p>Please treat as priority. Invoice and bank confirmation attached.</p><p>Best regards,<br/>Sarah Johnson<br/>Finance Manager, ACME Corp</p></div>`, bodyText: '', attachments: [{ attachmentId: 'mock-att-1', filename: `invoice_${REF.invoice}.pdf`, mimeType: 'application/pdf', size: 45820 }, { attachmentId: 'mock-att-2', filename: 'bank_confirmation_SEPA.pdf', mimeType: 'application/pdf', size: 23440 }] },
+    ],
+    aiEnrichment: {
+      summary: `Customer reports repeated payment failure for Invoice #${REF.invoice} (${REF.amount}). Third follow-up in 5 days. SEPA transfer debited but not in system. Escalating to supervisor.`,
+      category: 'Payment Issue', sentiment: 'urgent', confidence: 0.94,
+      suggestedReply: `Dear Sarah, thank you for your follow-up. I have escalated your case (ref: INC-20250605-4421) to our payments investigation team as a priority. A senior specialist will contact you directly within 2 business hours. We sincerely apologise for the inconvenience and delay.`,
+      source: 'ai',
+    },
+    customerThreads: [
+      { threadId: 'mock-thread-prev', subject: 'Account access issue — resolved', date: 'May 12, 2025', snippet: 'Thank you for your help, the issue is now resolved.' },
+    ],
+  },
+
   // ── Analytics bars ──────────────────────────────────────────────────────
   analytics: {
     cases: {
@@ -220,6 +249,14 @@ const EN = {
       volumeTrend: [3, 4, 5, 3, 6, 2, 1], ahtTrend: [4.8, 5.2, 3.9, 6.1, 5.5, 4.2, 3.7],
       openCases: [ { id: REF.case1, status: 'In Progress', topic: 'Payment Processing', priority: 'High', color: '#f5a623' }, { id: REF.case2, status: 'Open', topic: 'Login Access', priority: 'Medium', color: '#00a0d1' }, { id: REF.case3, status: 'In Progress', topic: 'Overdraft Dispute', priority: 'High', color: '#f5a623' } ],
       totalConversations: 48, avgFirstResponseSec: 18, slaMet: 91, csat: 4.4, conversationsThisMonth: 48,
+    },
+    email: {
+      threadStatus: [ { label: 'Active', value: 2, color: '#00a0d1' }, { label: 'Awaiting Customer', value: 1, color: '#f5a623' }, { label: 'Resolved', value: 8, color: '#4ade80' } ],
+      topicMix: [ { label: 'Payment Issue', value: 5, color: '#a78bfa' }, { label: 'Account Access', value: 3, color: '#60a5fa' }, { label: 'Dispute', value: 2, color: '#f472b6' }, { label: 'General', value: 1, color: '#9ca3af' } ],
+      sentiment: [ { label: 'Positive', value: 3, color: '#4ade80' }, { label: 'Neutral', value: 5, color: '#9ca3af' }, { label: 'Negative', value: 3, color: '#e8453c' } ],
+      volumeTrend: [2, 1, 3, 2, 2, 1, 2], replyTimeTrend: [4.2, 3.8, 5.1, 4.7, 3.9, 4.4, 3.6],
+      openCases: [ { id: REF.case1, status: 'In Progress', topic: 'Payment Processing', priority: 'High', color: '#f5a623' }, { id: REF.case2, status: 'Open', topic: 'Login Access', priority: 'Medium', color: '#00a0d1' }, { id: REF.case3, status: 'In Progress', topic: 'Overdraft Dispute', priority: 'High', color: '#f5a623' } ],
+      avgFirstReplyH: 4.1, slaMet: 87, csat: 4.2, emailsThisMonth: 11, totalThreads: 11,
     },
   },
 };
@@ -364,6 +401,35 @@ const DE = {
     aiSummary: `Anna Müller (Bavarian Tech GmbH, Finanzdirektorin) ist eine hochwertige Kundin mit einem Muster von Zahlungsabwicklungsproblemen. Der aktive Fall ${REF.case1} ist ihre dritte Eskalation für Rechnung #${REF.invoice} (${REF.amount}). Die Geschichte zeigt 2 zuvor gelöste Fälle (Kartensperre, SEPA-Verzögerung) und ein offenes Login-Problem. Stimmung dringend — sofortige Eskalation an das Zahlungs-Team und proaktiver Rückruf empfohlen.`,
   },
 
+  email: {
+    activeEmail: {
+      messageId: 'mock-msg-001', threadId: 'mock-thread-001',
+      from: `Anna Müller <a.mueller@bavarian-tech.de>`, to: 'support@moneta-bank.com', cc: 'buchhaltung@bavarian-tech.de',
+      subject: `Dringend: Rechnung #${REF.invoice} – Zahlung nicht verbucht`,
+      date: 'Do., 5. Jun 2025 14:22',
+      snippet: `Dritter Versuch, Zahlungsfehler für Rechnung #${REF.invoice} (${REF.amount}) zu lösen. SEPA-Ref.: ${REF.sepaRef}.`,
+      bodyHtml: `<div style="font-family:sans-serif;font-size:14px;line-height:1.6;color:#1a1a2e;"><p>Sehr geehrtes Support-Team,</p><p>ich schreibe Ihnen dringend bezüglich des Zahlungsfehlers für <strong>Rechnung #${REF.invoice}</strong> (${REF.amount}). Dies ist unser <strong>dritter Versuch</strong>, dieses Problem zu lösen.</p><p>SEPA-Überweisung Ref.: ${REF.sepaRef}, initiiert am 29. Mai 2025. Gelder belastet, aber im System nicht verbucht.</p><ul><li>Rechnung: ${REF.invoice}</li><li>Betrag: ${REF.amount}</li><li>Referenz: ${REF.sepaRef}</li></ul><p>Bitte behandeln Sie dies als <strong>Prioritätsfall</strong>. Rechnung und Bankbestätigung beigefügt.</p><p>Mit freundlichen Grüßen,<br/>Anna Müller<br/>Finanzdirektorin, Bavarian Tech GmbH</p></div>`,
+      bodyText: '', attachments: [
+        { attachmentId: 'mock-att-1', filename: `rechnung_${REF.invoice}.pdf`, mimeType: 'application/pdf', size: 45820 },
+        { attachmentId: 'mock-att-2', filename: 'bank_bestaetigung_SEPA.pdf', mimeType: 'application/pdf', size: 23440 },
+      ],
+    },
+    thread: [
+      { messageId: 'mock-msg-000', threadId: 'mock-thread-001', from: 'Support-Team <support@moneta-bank.com>', to: 'a.mueller@bavarian-tech.de', cc: '', subject: `Re: Rechnung #${REF.invoice} – Zahlung nicht verbucht`, date: 'Mi., 4. Jun 2025 10:05', snippet: 'Wir haben Ihre Anfrage erhalten und unser Zahlungs-Team kümmert sich darum.', bodyHtml: '<p>Sehr geehrte Frau Müller,</p><p>wir haben Ihre Anfrage erhalten und unser Zahlungs-Team prüft dies. Wir werden Sie innerhalb von 24 Stunden informieren.</p><p>Mit freundlichen Grüßen,<br/>Moneta Bank Support</p>', bodyText: '', attachments: [] },
+      { messageId: 'mock-msg-002', threadId: 'mock-thread-001', from: `Anna Müller <a.mueller@bavarian-tech.de>`, to: 'support@moneta-bank.com', cc: '', subject: `Re: Rechnung #${REF.invoice} – Zahlung nicht verbucht`, date: 'Mi., 4. Jun 2025 16:48', snippet: 'Noch keine Rückmeldung. Können Sie bitte eskalieren?', bodyHtml: '<p>Hallo,</p><p>ich habe immer noch kein Update erhalten. Können Sie das bitte an einen Vorgesetzten eskalieren? Wir können unsere Bücher nicht abschließen, bis dies gelöst ist.</p><p>A. Müller</p>', bodyText: '', attachments: [] },
+      { messageId: 'mock-msg-001', threadId: 'mock-thread-001', from: `Anna Müller <a.mueller@bavarian-tech.de>`, to: 'support@moneta-bank.com', cc: 'buchhaltung@bavarian-tech.de', subject: `Dringend: Rechnung #${REF.invoice} – Zahlung nicht verbucht`, date: 'Do., 5. Jun 2025 14:22', snippet: `Dritter Versuch, Zahlungsfehler für Rechnung #${REF.invoice} (${REF.amount}) zu lösen.`, bodyHtml: `<div style="font-family:sans-serif;font-size:14px;line-height:1.6;color:#1a1a2e;"><p>Sehr geehrtes Support-Team,</p><p>Dringender Rückruf zu Rechnung #${REF.invoice} (${REF.amount}) — dritter Versuch. SEPA-Ref.: ${REF.sepaRef}.</p><p>Bitte als Priorität behandeln. Rechnung und Bankbestätigung beigefügt.</p><p>Mit freundlichen Grüßen,<br/>Anna Müller<br/>Finanzdirektorin, Bavarian Tech GmbH</p></div>`, bodyText: '', attachments: [{ attachmentId: 'mock-att-1', filename: `rechnung_${REF.invoice}.pdf`, mimeType: 'application/pdf', size: 45820 }, { attachmentId: 'mock-att-2', filename: 'bank_bestaetigung_SEPA.pdf', mimeType: 'application/pdf', size: 23440 }] },
+    ],
+    aiEnrichment: {
+      summary: `Kundin meldet wiederholten Zahlungsfehler für Rechnung #${REF.invoice} (${REF.amount}). Dritte Nachfrage in 5 Tagen. SEPA-Überweisung belastet, aber nicht im System. Eskalation an Vorgesetzten.`,
+      category: 'Zahlungsproblem', sentiment: 'urgent', confidence: 0.94,
+      suggestedReply: `Sehr geehrte Frau Müller, vielen Dank für Ihre Nachricht. Ich habe Ihren Fall (Ref.: INC-20250605-4421) als Priorität an unser Zahlungs-Untersuchungsteam eskaliert. Ein Senior-Spezialist wird Sie direkt innerhalb von 2 Geschäftsstunden kontaktieren. Wir entschuldigen uns aufrichtig für die Unannehmlichkeiten.`,
+      source: 'ai',
+    },
+    customerThreads: [
+      { threadId: 'mock-thread-prev', subject: 'Kontozugang — gelöst', date: '12. Mai 2025', snippet: 'Vielen Dank für Ihre Hilfe, das Problem ist nun gelöst.' },
+    ],
+  },
+
   analytics: {
     cases: {
       byStatus:   [ { label: 'Offen', value: 14, color: '#f5a623' }, { label: 'In Bearbeitung', value: 9, color: '#00a0d1' }, { label: 'Gelöst', value: 22, color: '#4ade80' }, { label: 'Geschlossen', value: 31, color: '#9ca3af' } ],
@@ -396,6 +462,14 @@ const DE = {
       volumeTrend: [3, 4, 5, 3, 6, 2, 1], ahtTrend: [4.8, 5.2, 3.9, 6.1, 5.5, 4.2, 3.7],
       openCases: [ { id: REF.case1, status: 'In Bearbeitung', topic: 'Zahlungsabwicklung', priority: 'Hoch', color: '#f5a623' }, { id: REF.case2, status: 'Offen', topic: 'Login-Zugang', priority: 'Mittel', color: '#00a0d1' }, { id: REF.case3, status: 'In Bearbeitung', topic: 'Überziehungsstreit', priority: 'Hoch', color: '#f5a623' } ],
       totalConversations: 48, avgFirstResponseSec: 18, slaMet: 91, csat: 4.4, conversationsThisMonth: 48,
+    },
+    email: {
+      threadStatus: [ { label: 'Aktiv', value: 2, color: '#00a0d1' }, { label: 'Wartet auf Kunden', value: 1, color: '#f5a623' }, { label: 'Gelöst', value: 8, color: '#4ade80' } ],
+      topicMix: [ { label: 'Zahlungsproblem', value: 5, color: '#a78bfa' }, { label: 'Kontozugang', value: 3, color: '#60a5fa' }, { label: 'Streit', value: 2, color: '#f472b6' }, { label: 'Allgemein', value: 1, color: '#9ca3af' } ],
+      sentiment: [ { label: 'Positiv', value: 3, color: '#4ade80' }, { label: 'Neutral', value: 5, color: '#9ca3af' }, { label: 'Negativ', value: 3, color: '#e8453c' } ],
+      volumeTrend: [2, 1, 3, 2, 2, 1, 2], replyTimeTrend: [4.2, 3.8, 5.1, 4.7, 3.9, 4.4, 3.6],
+      openCases: [ { id: REF.case1, status: 'In Bearbeitung', topic: 'Zahlungsabwicklung', priority: 'Hoch', color: '#f5a623' }, { id: REF.case2, status: 'Offen', topic: 'Login-Zugang', priority: 'Mittel', color: '#00a0d1' }, { id: REF.case3, status: 'In Bearbeitung', topic: 'Überziehungsstreit', priority: 'Hoch', color: '#f5a623' } ],
+      avgFirstReplyH: 4.1, slaMet: 87, csat: 4.2, emailsThisMonth: 11, totalThreads: 11,
     },
   },
 };
@@ -540,6 +614,35 @@ const CS = {
     aiSummary: `Jana Nováková (Praha Systems s.r.o., finanční ředitelka) je hodnotná zákaznice s opakujícími se problémy se zpracováním plateb. Aktivní případ ${REF.case1} je její třetí eskalace pro fakturu #${REF.invoice} (${REF.amount}). Historie ukazuje 2 dříve vyřešené případy (blokace karty, zpoždění SEPA) a otevřený přihlašovací problém. Nálada je urgentní — doporučena okamžitá eskalace na platební tým a proaktivní zpětné volání.`,
   },
 
+  email: {
+    activeEmail: {
+      messageId: 'mock-msg-001', threadId: 'mock-thread-001',
+      from: `Jana Nováková <j.novakova@praha-systems.cz>`, to: 'support@moneta-bank.com', cc: 'finance@praha-systems.cz',
+      subject: `Urgentní: Faktura #${REF.invoice} – Platba nebyla zaúčtována`,
+      date: 'Čt, 5. 6. 2025 14:22',
+      snippet: `Třetí pokus o vyřešení selhání platby za fakturu #${REF.invoice} (${REF.amount}). SEPA ref.: ${REF.sepaRef}.`,
+      bodyHtml: `<div style="font-family:sans-serif;font-size:14px;line-height:1.6;color:#1a1a2e;"><p>Dobrý den, vážený tým podpory,</p><p>píšu vám v naléhavé věci opakovaného selhání zpracování platby za <strong>Fakturu #${REF.invoice}</strong> (${REF.amount}). Toto je náš <strong>třetí pokus</strong> o vyřešení tohoto problému.</p><p>SEPA převod ref.: ${REF.sepaRef}, zadán 29. května 2025. Prostředky odepsány, ale v systému nezaúčtovány.</p><ul><li>Faktura: ${REF.invoice}</li><li>Částka: ${REF.amount}</li><li>Reference: ${REF.sepaRef}</li></ul><p>Prosím, považujte tento případ za <strong>prioritní</strong>. Faktura a bankovní potvrzení přiloženy.</p><p>S pozdravem,<br/>Jana Nováková<br/>Finanční ředitelka, Praha Systems s.r.o.</p></div>`,
+      bodyText: '', attachments: [
+        { attachmentId: 'mock-att-1', filename: `faktura_${REF.invoice}.pdf`, mimeType: 'application/pdf', size: 45820 },
+        { attachmentId: 'mock-att-2', filename: 'potvrzeni_banky_SEPA.pdf', mimeType: 'application/pdf', size: 23440 },
+      ],
+    },
+    thread: [
+      { messageId: 'mock-msg-000', threadId: 'mock-thread-001', from: 'Tým podpory <support@moneta-bank.com>', to: 'j.novakova@praha-systems.cz', cc: '', subject: `Re: Faktura #${REF.invoice} – Platba nebyla zaúčtována`, date: 'St, 4. 6. 2025 10:05', snippet: 'Obdrželi jsme váš dotaz a náš platební tým se věcí zabývá.', bodyHtml: '<p>Vážená paní Nováková,</p><p>obdrželi jsme váš dotaz a náš platební tým věc prošetřuje. Do 24 hodin vás budeme informovat.</p><p>S pozdravem,<br/>Tým podpory Moneta Bank</p>', bodyText: '', attachments: [] },
+      { messageId: 'mock-msg-002', threadId: 'mock-thread-001', from: `Jana Nováková <j.novakova@praha-systems.cz>`, to: 'support@moneta-bank.com', cc: '', subject: `Re: Faktura #${REF.invoice} – Platba nebyla zaúčtována`, date: 'St, 4. 6. 2025 16:48', snippet: 'Stále žádná odpověď. Můžete prosím eskalovat?', bodyHtml: '<p>Dobrý den,</p><p>stále jsem neobdržela žádnou aktualizaci. Můžete prosím eskalovat na nadřízeného? Nemůžeme uzavřít naše knihy, dokud není toto vyřešeno.</p><p>Jana Nováková</p>', bodyText: '', attachments: [] },
+      { messageId: 'mock-msg-001', threadId: 'mock-thread-001', from: `Jana Nováková <j.novakova@praha-systems.cz>`, to: 'support@moneta-bank.com', cc: 'finance@praha-systems.cz', subject: `Urgentní: Faktura #${REF.invoice} – Platba nebyla zaúčtována`, date: 'Čt, 5. 6. 2025 14:22', snippet: `Třetí pokus o vyřešení selhání platby za fakturu #${REF.invoice} (${REF.amount}).`, bodyHtml: `<div style="font-family:sans-serif;font-size:14px;line-height:1.6;color:#1a1a2e;"><p>Dobrý den, vážený tým podpory,</p><p>Urgentní upomínka k Faktuře #${REF.invoice} (${REF.amount}) — třetí pokus. SEPA ref.: ${REF.sepaRef}.</p><p>Prosím o prioritní zpracování. Faktura a bankovní potvrzení přiloženy.</p><p>S pozdravem,<br/>Jana Nováková<br/>Finanční ředitelka, Praha Systems s.r.o.</p></div>`, bodyText: '', attachments: [{ attachmentId: 'mock-att-1', filename: `faktura_${REF.invoice}.pdf`, mimeType: 'application/pdf', size: 45820 }, { attachmentId: 'mock-att-2', filename: 'potvrzeni_banky_SEPA.pdf', mimeType: 'application/pdf', size: 23440 }] },
+    ],
+    aiEnrichment: {
+      summary: `Zákaznice hlásí opakované selhání platby za fakturu #${REF.invoice} (${REF.amount}). Třetí dotaz za 5 dní. SEPA převod odepsán, ale nezaúčtován v systému. Eskalace na vedúcho.`,
+      category: 'Problém s platbou', sentiment: 'urgent', confidence: 0.94,
+      suggestedReply: `Vážená paní Nováková, děkujeme za Váš podnět. Váš případ (ref.: INC-20250605-4421) jsem jako prioritu eskaloval na náš tým pro vyšetřování plateb. Senior specialista vás přímo kontaktuje do 2 pracovních hodin. Upřímně se omlouváme za způsobené potíže.`,
+      source: 'ai',
+    },
+    customerThreads: [
+      { threadId: 'mock-thread-prev', subject: 'Přístup k účtu — vyřešeno', date: '12. května 2025', snippet: 'Děkuji za vaši pomoc, problém je nyní vyřešen.' },
+    ],
+  },
+
   analytics: {
     cases: {
       byStatus:   [ { label: 'Otevřený', value: 14, color: '#f5a623' }, { label: 'Probíhá', value: 9, color: '#00a0d1' }, { label: 'Vyřešený', value: 22, color: '#4ade80' }, { label: 'Uzavřený', value: 31, color: '#9ca3af' } ],
@@ -573,7 +676,14 @@ const CS = {
       openCases: [ { id: REF.case1, status: 'Probíhá', topic: 'Zpracování plateb', priority: 'Vysoká', color: '#f5a623' }, { id: REF.case2, status: 'Otevřený', topic: 'Přístup k přihlášení', priority: 'Střední', color: '#00a0d1' }, { id: REF.case3, status: 'Probíhá', topic: 'Spor o kontokorent', priority: 'Vysoká', color: '#f5a623' } ],
       totalConversations: 48, avgFirstResponseSec: 18, slaMet: 91, csat: 4.4, conversationsThisMonth: 48,
     },
-  },
+    email: {
+      threadStatus: [ { label: 'Aktivní', value: 2, color: '#00a0d1' }, { label: 'Čeká na zákazníka', value: 1, color: '#f5a623' }, { label: 'Vyřešeno', value: 8, color: '#4ade80' } ],
+      topicMix: [ { label: 'Problém s platbou', value: 5, color: '#a78bfa' }, { label: 'Přístup k účtu', value: 3, color: '#60a5fa' }, { label: 'Spor', value: 2, color: '#f472b6' }, { label: 'Obecné', value: 1, color: '#9ca3af' } ],
+      sentiment: [ { label: 'Pozitivní', value: 3, color: '#4ade80' }, { label: 'Neutrální', value: 5, color: '#9ca3af' }, { label: 'Negativní', value: 3, color: '#e8453c' } ],
+      volumeTrend: [2, 1, 3, 2, 2, 1, 2], replyTimeTrend: [4.2, 3.8, 5.1, 4.7, 3.9, 4.4, 3.6],
+      openCases: [ { id: REF.case1, status: 'Probíhá', topic: 'Zpracování plateb', priority: 'Vysoká', color: '#f5a623' }, { id: REF.case2, status: 'Otevřený', topic: 'Přístup k přihlášení', priority: 'Střední', color: '#00a0d1' }, { id: REF.case3, status: 'Probíhá', topic: 'Spor o kontokoren', priority: 'Vysoká', color: '#f5a623' } ],
+      avgFirstReplyH: 4.1, slaMet: 87, csat: 4.2, emailsThisMonth: 11, totalThreads: 11,
+    },  },
 };
 
 // ═══════════════════════════════════════════════════════════════════════════

@@ -1,5 +1,7 @@
 import React from 'react';
 import PropTypes from 'prop-types';
+import { useI18n } from '../i18n/I18nContext';
+import { getMockData } from '../mock/mockData';
 
 // ─── Inline SVG mini-charts (no external dep) ─────────────────────────────
 
@@ -73,47 +75,6 @@ const StackBar = ({ segments, height = 8, radius = 4 }) => {
   );
 };
 
-// ─── Mock data — Moneta Bank / Sarah Johnson narrative ─────────────────────
-
-const MOCK_EMAIL = {
-  customer: 'Sarah Johnson',
-  // Email thread status (last 30 days, this customer)
-  threadStatus: [
-    { label: 'Active', value: 2, color: '#00a0d1' },
-    { label: 'Awaiting Customer', value: 1, color: '#f5a623' },
-    { label: 'Resolved', value: 8, color: '#4ade80' },
-  ],
-  totalThreads: 11,
-  // Topic mix
-  topicMix: [
-    { label: 'Payment Issue', value: 5, color: '#a78bfa' },
-    { label: 'Account Access', value: 3, color: '#60a5fa' },
-    { label: 'Dispute', value: 2, color: '#f472b6' },
-    { label: 'General', value: 1, color: '#9ca3af' },
-  ],
-  // Customer sentiment in inbound emails (tone analysis)
-  sentiment: [
-    { label: 'Positive', value: 3, color: '#4ade80' },
-    { label: 'Neutral', value: 5, color: '#9ca3af' },
-    { label: 'Negative', value: 3, color: '#e8453c' },
-  ],
-  // 7-day inbound email volume (Mon→Sun)
-  volumeTrend: [2, 1, 3, 2, 2, 1, 2],
-  // 7-day avg first-reply time in hours
-  replyTimeTrend: [4.2, 3.8, 5.1, 4.7, 3.9, 4.4, 3.6],
-  // Open cases linked to this customer
-  openCases: [
-    { id: 'CASE-2024-0892', status: 'In Progress', topic: 'Payment Processing', priority: 'High', color: '#f5a623' },
-    { id: 'CASE-2024-0784', status: 'Open', topic: 'Login Access', priority: 'Medium', color: '#00a0d1' },
-    { id: 'CASE-2024-0651', status: 'In Progress', topic: 'Overdraft Dispute', priority: 'High', color: '#f5a623' },
-  ],
-  // KPIs
-  avgFirstReplyH: 4.1,
-  slaMet: 87,       // % threads within SLA
-  csat: 4.2,        // out of 5
-  emailsThisMonth: 11,
-};
-
 // ─── Sub-components ────────────────────────────────────────────────────────
 
 const KpiTile = ({ label, value, sub, accent }) => (
@@ -161,7 +122,8 @@ const CaseBadge = ({ caseItem }) => (
  * - KPIs: Avg First Reply, SLA %, CSAT, Threads/month
  */
 const EmailAnalyticsBar = ({ darkMode, data: dataProp }) => {
-  const d = dataProp || MOCK_EMAIL;
+  const { locale } = useI18n();
+  const d = dataProp || getMockData(locale).analytics.email;
 
   return (
     <div className={`analytics-bar analytics-bar--email${darkMode ? ' analytics-bar--dark' : ''}`}>
