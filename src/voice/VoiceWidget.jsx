@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import PropTypes from 'prop-types';
 import VoiceAnalyticsBar from './VoiceAnalyticsBar';
+import { useI18n } from '../i18n/I18nContext';
 import './voice.css';
 
 // ─── Mock call history ────────────────────────────────────────────────────
@@ -144,6 +145,7 @@ const SentimentDot = ({ sentiment }) => {
 // ─── Main widget ───────────────────────────────────────────────────────────
 
 const VoiceWidget = ({ darkMode }) => {
+  const { t } = useI18n();
   const [analyticsOpen, setAnalyticsOpen] = useState(true);
   const [selectedCallId, setSelectedCallId] = useState('call-1');
   const selectedCall = MOCK_CALLS.find(c => c.id === selectedCallId) || MOCK_CALLS[0];
@@ -158,7 +160,7 @@ const VoiceWidget = ({ darkMode }) => {
           onClick={() => setAnalyticsOpen(o => !o)}
           aria-expanded={analyticsOpen}
         >
-          <span className="analytics-collapse__label">Customer Analytics</span>
+          <span className="analytics-collapse__label">{t('analytics.customerAnalytics')}</span>
           <span className="analytics-collapse__chevron">{analyticsOpen ? '▲' : '▼'}</span>
         </button>
         {analyticsOpen && <VoiceAnalyticsBar darkMode={darkMode} />}
@@ -175,7 +177,7 @@ const VoiceWidget = ({ darkMode }) => {
         </div>
         <div className="voice__call-header-center">
           <span className={`voice__direction-badge voice__direction-badge--${selectedCall.direction}`}>
-            {selectedCall.direction === 'inbound' ? '↙ Inbound' : '↗ Outbound'}
+            {selectedCall.direction === 'inbound' ? t('voice.directionInbound') : t('voice.directionOutbound')}
           </span>
           <span className="voice__queue-label">{selectedCall.queue}</span>
         </div>
@@ -201,7 +203,7 @@ const VoiceWidget = ({ darkMode }) => {
 
         {/* ── Left: call history list ─────────────────── */}
         <div className="voice__call-list widget-panel">
-          <div className="widget-panel__header">Call History</div>
+          <div className="widget-panel__header">{t('voice.callHistory')}</div>
           {MOCK_CALLS.map(call => (
             <div
               key={call.id}
@@ -212,7 +214,7 @@ const VoiceWidget = ({ darkMode }) => {
                 <SentimentDot sentiment={call.sentiment} />
                 <span className="voice__call-item-dir">{call.direction === 'inbound' ? '↙' : '↗'}</span>
                 <span className="voice__call-item-time">{call.started}</span>
-                {call.active && <span className="voice__live-badge">LIVE</span>}
+                {call.active && <span className="voice__live-badge">{t('voice.live')}</span>}
               </div>
               <div className="voice__call-item-dur">{fmtDuration(call.durationSec)}</div>
               <div className="voice__call-item-queue">{call.queue}</div>
@@ -228,8 +230,8 @@ const VoiceWidget = ({ darkMode }) => {
         {/* ── Centre: transcript ─────────────────────── */}
         <div className="voice__transcript widget-panel">
           <div className="widget-panel__header">
-            Transcript
-            {selectedCall.active && <span className="voice__live-badge voice__live-badge--sm">● LIVE</span>}
+            {t('voice.transcript')}
+            {selectedCall.active && <span className="voice__live-badge voice__live-badge--sm">● {t('voice.live')}</span>}
           </div>
           <div className="voice__transcript-scroll">
             {MOCK_TRANSCRIPT.map(entry => {
@@ -259,11 +261,11 @@ const VoiceWidget = ({ darkMode }) => {
           {/* AI Summary */}
           <div className="voice__ai-summary widget-rail-card">
             <div className="widget-panel__header">
-              <span className="voice__ai-icon">✦</span> AI Summary
+              <span className="voice__ai-icon">✦</span> {t('voice.ai.summary')}
             </div>
             <div className="voice__ai-headline">{AI_SUMMARY.headline}</div>
             <div className="voice__ai-intent">
-              Intent: <strong>{AI_SUMMARY.intent}</strong>
+              {t('voice.ai.intent')}: <strong>{AI_SUMMARY.intent}</strong>
             </div>
             <ul className="voice__ai-points">
               {AI_SUMMARY.points.map((pt, i) => (
@@ -274,7 +276,7 @@ const VoiceWidget = ({ darkMode }) => {
 
           {/* Suggested Actions */}
           <div className="voice__ai-actions widget-rail-card">
-            <div className="widget-panel__subheader">Suggested Actions</div>
+            <div className="widget-panel__subheader">{t('voice.ai.suggestedActions')}</div>
             {AI_SUMMARY.suggestedActions.map(action => (
               <button
                 key={action.id}
@@ -289,7 +291,7 @@ const VoiceWidget = ({ darkMode }) => {
 
           {/* Related Cases */}
           <div className="voice__cases widget-rail-card">
-            <div className="widget-panel__subheader">Related Cases</div>
+            <div className="widget-panel__subheader">{t('voice.ai.relatedCases')}</div>
             {OPEN_CASES.map(c => (
               <div key={c.id} className="voice__case-item">
                 <div className="voice__case-item-top">

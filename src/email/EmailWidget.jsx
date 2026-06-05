@@ -72,7 +72,7 @@ const EmailWidget = ({ interactionId, callAssociatedDetails, darkMode, mockMode 
           onClick={() => setAnalyticsOpen((o) => !o)}
           aria-expanded={analyticsOpen}
         >
-          <span className="analytics-collapse__label">Customer Analytics</span>
+          <span className="analytics-collapse__label">{t('analytics.customerAnalytics')}</span>
           <span className="analytics-collapse__chevron">{analyticsOpen ? '▲' : '▼'}</span>
         </button>
         {analyticsOpen && <EmailAnalyticsBar darkMode={darkMode} />}

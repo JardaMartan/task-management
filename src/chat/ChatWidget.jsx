@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import PropTypes from 'prop-types';
 import ChatAnalyticsBar from './ChatAnalyticsBar';
+import { useI18n } from '../i18n/I18nContext';
 import './chat.css';
 
 // ─── Channel metadata ──────────────────────────────────────────────────────
@@ -160,6 +161,7 @@ const ChatBubble = ({ message, darkMode }) => (
  *                  RCS, In-App chat.
  */
 const ChatWidget = ({ darkMode, mockMode }) => {
+  const { t } = useI18n();
   const [analyticsOpen, setAnalyticsOpen] = useState(true);
   const [activeConvId, setActiveConvId] = useState('conv-1');
   const [inputText, setInputText] = useState('');
@@ -200,7 +202,7 @@ const ChatWidget = ({ darkMode, mockMode }) => {
           onClick={() => setAnalyticsOpen((o) => !o)}
           aria-expanded={analyticsOpen}
         >
-          <span className="analytics-collapse__label">Customer Analytics</span>
+          <span className="analytics-collapse__label">{t('analytics.customerAnalytics')}</span>
           <span className="analytics-collapse__chevron">{analyticsOpen ? '▲' : '▼'}</span>
         </button>
         {analyticsOpen && <ChatAnalyticsBar darkMode={darkMode} />}
@@ -219,7 +221,7 @@ const ChatWidget = ({ darkMode, mockMode }) => {
             <span className="chat-session-header__timer-dot" />
             14:22
           </span>
-          <span>Interaction #{activeConv.id.replace('conv-', '20240')}</span>
+          <span>{t('chat.interaction')} #{activeConv.id.replace('conv-', '20240')}</span>
           {activeConv.caseId && (
             <span className="chat-session-header__case-link">{activeConv.caseId}</span>
           )}
@@ -231,7 +233,7 @@ const ChatWidget = ({ darkMode, mockMode }) => {
 
         {/* ── Left: conversation list ── */}
         <div className="chat-widget__conversations widget-panel">
-          <div className="chat-conv-list__header">Conversations</div>
+          <div className="chat-conv-list__header">{t('chat.conversations')}</div>
           <ul className="chat-conv-list">
             {MOCK_CONVERSATIONS.map((conv) => (
               <ConvItem
@@ -259,7 +261,7 @@ const ChatWidget = ({ darkMode, mockMode }) => {
                   <div className="chat-typing__dot" />
                   <div className="chat-typing__dot" />
                 </div>
-                <span>Sarah is typing…</span>
+                <span>{activeConv.customer} {t('chat.typing')}</span>
               </div>
             )}
           </div>
@@ -267,13 +269,13 @@ const ChatWidget = ({ darkMode, mockMode }) => {
           <div className="chat-composer">
             <textarea
               className="chat-composer__input"
-              placeholder="Type a reply…"
+              placeholder={t('chat.composer.placeholder')}
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               onKeyDown={handleKeyDown}
               rows={1}
             />
-            <button className="chat-composer__send" onClick={handleSend}>Send</button>
+            <button className="chat-composer__send" onClick={handleSend}>{t('chat.composer.send')}</button>
           </div>
         </div>
 
@@ -282,7 +284,7 @@ const ChatWidget = ({ darkMode, mockMode }) => {
 
           {/* AI suggested replies */}
           <div className="chat-rail__section widget-rail-card widget-rail-card__content">
-            <div className="chat-rail__section-title">AI Suggested Replies</div>
+            <div className="chat-rail__section-title">{t('chat.ai.suggestedReplies')}</div>
             {AI_SUGGESTIONS.map((s, i) => (
               <div
                 key={i}
@@ -300,7 +302,7 @@ const ChatWidget = ({ darkMode, mockMode }) => {
 
           {/* Linked open cases */}
           <div className="chat-rail__section widget-rail-card widget-rail-card__content">
-            <div className="chat-rail__section-title">Open Cases</div>
+            <div className="chat-rail__section-title">{t('chat.ai.openCases')}</div>
             {OPEN_CASES.map((c) => (
               <div key={c.id} className="chat-case-item">
                 <span className="chat-case-item__id" style={{ '--case-color': c.color }}>
