@@ -54,7 +54,12 @@
 }
 
 .email-widget__col--center {
-  /* entire column scrolls as one unit */
+  overflow-y: auto;
+}
+
+/* Combined selector (2 classes) beats .widget-panel (1 class) — ensures
+   overflow:hidden from widget-panel does not block column scroll */
+.email-widget__col--center.widget-panel {
   overflow-y: auto;
 }
 
