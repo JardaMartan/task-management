@@ -49,11 +49,13 @@
    flex-column, overflow:hidden). Only email-specific overrides below. */
 
 .email-widget__col--threads {
-  overflow-y: auto;
+  /* scroll is handled by the thread-panel card inside */
+  overflow: hidden;
 }
 
 .email-widget__col--center {
-  overflow-y: auto;
+  /* scroll is handled by the reading-pane card; reply composer is pinned below */
+  overflow: hidden;
 }
 
 /* Rail column has a tinted background to distinguish the AI panel */
@@ -181,6 +183,18 @@
 .reading-pane.md-card {
   border-radius: 0;
   margin: 0;
+  /* Fill available space in the center column, leaving room for the reply composer */
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.reading-pane .md-card-section {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 /* Shadow DOM host that replaces the old iframe */
@@ -284,6 +298,18 @@
   border-radius: 0;
   margin: 0;
   border-bottom: none;
+  /* Fill the left column and become the scroll container */
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.thread-panel .md-card-section {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .thread-panel__title-row {
@@ -474,7 +500,8 @@
 .reply-composer.md-card {
   border-radius: 0;
   margin: 0;
-  flex: 1;
+  /* Pinned at the bottom of the center column; reading pane above takes flex:1 */
+  flex: 0 0 auto;
 }
 
 .reply-composer__header {
