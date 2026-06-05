@@ -4,6 +4,7 @@ import { useSelector } from 'react-redux';
 import { Badge, Card, CardSection, Icon } from '@momentum-ui/react';
 import { useI18n } from '../i18n/I18nContext';
 import HistoryAnalyticsBar from './HistoryAnalyticsBar';
+import { getMockData } from '../mock/mockData';
 
 const CHANNEL_ICONS = {
   call: 'handset_16',
@@ -84,103 +85,16 @@ const normalizeEvents = (caseEvents, emailEvents) => {
   return out;
 };
 
-// ─── Mock data (Moneta Bank / ACME Corp context) ───────────────────────────
-
-const now = Date.now();
-const MOCK_HISTORY_EVENTS = [
-  {
-    id: 'hist-1',
-    ts: new Date(now - 5 * 60000).toISOString(),
-    channel: 'email',
-    title: 'Urgent: Invoice #INV-2024-0892 – Payment Not Processed',
-    summary: 'Third escalation. SEPA transfer ref SEPA-20250529-8821 debited but not reflected in system. Invoice and bank confirmation attached.',
-  },
-  {
-    id: 'hist-2',
-    ts: new Date(now - 3 * 3600000).toISOString(),
-    channel: 'phone',
-    title: 'Inbound call – payment processing follow-up',
-    summary: 'Customer called to follow up on CASE-2024-0892. Transferred to payments team after 4 min hold. Total duration: 8m 22s.',
-  },
-  {
-    id: 'hist-3',
-    ts: new Date(now - 26 * 3600000).toISOString(),
-    channel: 'email',
-    title: 'Still no update. Can you please escalate?',
-    summary: 'Customer escalating to supervisor level. No resolution after 24h since case was opened.',
-  },
-  {
-    id: 'hist-4',
-    ts: new Date(now - 2 * 86400000).toISOString(),
-    channel: 'email',
-    title: 'Dear Sarah, we have received your query',
-    summary: 'Support acknowledgment email. Case CASE-2024-0892 opened. Expected resolution within 3 business days.',
-  },
-  {
-    id: 'hist-5',
-    ts: new Date(now - 8 * 86400000).toISOString(),
-    channel: 'webchat',
-    title: 'Online banking access issue – webchat',
-    summary: 'Customer reported login failure after password reset via Moneta Bank webchat. 2FA SMS not delivered. Issue resolved in session — new authenticator app set up.',
-  },
-  {
-    id: 'hist-6',
-    ts: new Date(now - 14 * 86400000).toISOString(),
-    channel: 'whatsapp',
-    title: 'Overdraft fee dispute – WhatsApp',
-    summary: 'Customer contacted via WhatsApp to query €45 overdraft fee (8 May). Explained payment processor delay. Back-office review authorised — fee waived as goodwill gesture.',
-  },
-  {
-    id: 'hist-7',
-    ts: new Date(now - 21 * 86400000).toISOString(),
-    channel: 'sms',
-    title: 'SMS confirmation: case update',
-    summary: 'Outbound SMS sent to +49 89 1234 5678 confirming CASE-2024-0651 escalation. Customer replied: "Thank you, waiting for update."',
-  },
-  {
-    id: 'hist-8',
-    ts: new Date(now - 35 * 86400000).toISOString(),
-    channel: 'apple',
-    title: 'Monthly statement query – Apple Messages',
-    summary: 'Customer asked for clarification of April statement line item via Apple Messages for Business. Explained currency conversion fee on USD purchase. Customer satisfied.',
-  },
-  {
-    id: 'hist-9',
-    ts: new Date(now - 42 * 86400000).toISOString(),
-    channel: 'in-app',
-    title: 'Card limit increase request – In-App chat',
-    summary: 'Customer requested temporary credit card limit increase to €20,000 for upcoming procurement via Moneta mobile app chat. Approved after identity verification. Limit active for 7 days.',
-  },
-  {
-    id: 'hist-10',
-    ts: new Date(now - 63 * 86400000).toISOString(),
-    channel: 'phone',
-    title: 'Inbound call – card blocked abroad',
-    summary: 'Card blocked during international travel (USA). Identity verified via video call. Card reactivated within 20 minutes. CASE-2024-0445 opened and resolved.',
-  },
-  {
-    id: 'hist-11',
-    ts: new Date(now - 71 * 86400000).toISOString(),
-    channel: 'rcs',
-    title: 'Travel notification – RCS',
-    summary: 'Customer sent travel notification for US trip via RCS messaging. Card cleared for international use. Fraud alerts suppressed for 14 days.',
-  },
-  {
-    id: 'hist-12',
-    ts: new Date(now - 81 * 86400000).toISOString(),
-    channel: 'email',
-    title: 'SEPA transfer delay enquiry',
-    summary: 'Customer enquired about delayed payment to supplier. AML screening threshold triggered. Funds cleared after 3 business days. Apology letter sent.',
-  },
-];
-
-const MOCK_AI_SUMMARY = 'Sarah Johnson (ACME Corp Finance Manager) is a high-value customer with a pattern of payment processing issues. Current active case CASE-2024-0892 is her third escalation for Invoice #INV-2024-0892 ($12,500). History shows 2 prior resolved cases (card block, SEPA delay) and an open login issue. Sentiment is urgent — immediate payment team escalation and proactive callback recommended.';
-
-// ─── Component ─────────────────────────────────────────────────────────────
+// ─── Component ───────────────────────────────────────────────────────────────
 
 const HistoryView = ({ darkMode, mockMode }) => {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const [analyticsOpen, setAnalyticsOpen] = useState(true);
+
+  // Mock data (locale-aware)
+  const mockData = getMockData(locale);
+  const MOCK_HISTORY_EVENTS = mockData.history.events;
+  const MOCK_AI_SUMMARY = mockData.history.aiSummary;
 
   // Always call hooks (hook order must be stable)
   const caseHistory  = useSelector((s) => s.widget.caseWorkflow?.visibleHistory) || [];

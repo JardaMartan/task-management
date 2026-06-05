@@ -1,6 +1,6 @@
 import React from 'react';
-import PropTypes from 'prop-types';
-
+import PropTypes from 'prop-types';import { useI18n } from '../i18n/I18nContext';
+import { getMockData } from '../mock/mockData';
 // ─── Inline SVG mini-charts ────────────────────────────────────────────────
 
 /** Donut chart */
@@ -99,42 +99,6 @@ const StackBar = ({ segments, height = 8, radius = 4 }) => {
   );
 };
 
-// ─── Mock data ─────────────────────────────────────────────────────────────
-
-const MOCK_HISTORY = {
-  byChannel: [
-    { label: 'Phone', value: 38, color: '#4ade80' },
-    { label: 'Email', value: 27, color: '#a78bfa' },
-    { label: 'Chat', value: 19, color: '#60a5fa' },
-    { label: 'SMS', value: 8, color: '#f472b6' },
-    { label: 'Task', value: 6, color: '#fbbf24' },
-  ],
-  byOutcome: [
-    { label: 'Resolved', value: 58, color: '#4ade80' },
-    { label: 'Escalated', value: 14, color: '#f5a623' },
-    { label: 'Pending', value: 11, color: '#60a5fa' },
-    { label: 'Abandoned', value: 7, color: '#e8453c' },
-    { label: 'Transferred', value: 8, color: '#9ca3af' },
-  ],
-  // Interactions per day last 7 days
-  volumeTrend: [12, 18, 15, 22, 19, 14, 17],
-  // Avg handle time per day (minutes)
-  ahtTrend: [6.2, 7.1, 5.8, 8.4, 6.9, 5.5, 7.3],
-  // Sentiment distribution (last 30 days)
-  sentiment: [
-    { label: 'Positive', value: 41, color: '#4ade80' },
-    { label: 'Neutral', value: 34, color: '#9ca3af' },
-    { label: 'Negative', value: 23, color: '#e8453c' },
-  ],
-  // Weekday distribution (Mon–Sun)
-  weekdayVolume: [21, 19, 23, 18, 22, 9, 5],
-  totalInteractions: 98,
-  avgHandleTimeMin: 6.7,
-  repeatContactRate: 22, // %
-  escalationRate: 14, // %
-  resolutionRate: 76, // %
-};
-
 // ─── Legend ────────────────────────────────────────────────────────────────
 
 const Legend = ({ items }) => (
@@ -172,7 +136,8 @@ const KpiTile = ({ label, value, sub, accent }) => (
  * - KPIs: resolution rate, escalation rate, repeat contacts, avg handle time
  */
 const HistoryAnalyticsBar = ({ darkMode, data: dataProp }) => {
-  const d = dataProp || MOCK_HISTORY;
+  const { locale } = useI18n();
+  const d = dataProp || getMockData(locale).analytics.history;
   const weekdays = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
 
   return (

@@ -2,130 +2,8 @@ import React, { useState } from 'react';
 import PropTypes from 'prop-types';
 import VoiceAnalyticsBar from './VoiceAnalyticsBar';
 import { useI18n } from '../i18n/I18nContext';
+import { getMockData } from '../mock/mockData';
 import './voice.css';
-
-// ─── Mock call history ────────────────────────────────────────────────────
-
-const MOCK_CALLS = [
-  {
-    id: 'call-1', active: true,
-    customer: 'Sarah Johnson',
-    phone: '+49 89 1234 5678',
-    started: '09:41',
-    durationSec: 847,
-    direction: 'inbound',
-    queue: 'Priority Banking',
-    caseId: 'CASE-2024-0892',
-    sentiment: 'negative',
-    outcome: null, // still active
-  },
-  {
-    id: 'call-2', active: false,
-    customer: 'Sarah Johnson',
-    phone: '+49 89 1234 5678',
-    started: '2025-05-29',
-    durationSec: 312,
-    direction: 'outbound',
-    queue: 'Callback',
-    caseId: 'CASE-2024-0784',
-    sentiment: 'positive',
-    outcome: 'Resolved',
-  },
-  {
-    id: 'call-3', active: false,
-    customer: 'Sarah Johnson',
-    phone: '+49 89 1234 5678',
-    started: '2025-04-14',
-    durationSec: 489,
-    direction: 'inbound',
-    queue: 'General Banking',
-    caseId: 'CASE-2024-0651',
-    sentiment: 'neutral',
-    outcome: 'Transferred',
-  },
-  {
-    id: 'call-4', active: false,
-    customer: 'Sarah Johnson',
-    phone: '+49 89 1234 5678',
-    started: '2025-03-01',
-    durationSec: 228,
-    direction: 'inbound',
-    queue: 'General Banking',
-    caseId: 'CASE-2024-0445',
-    sentiment: 'positive',
-    outcome: 'Resolved',
-  },
-];
-
-// ─── Mock transcript (active call) ────────────────────────────────────────
-
-const MOCK_TRANSCRIPT = [
-  {
-    id: 't0', role: 'system',
-    text: 'Inbound call connected · Sarah Johnson · Priority Banking · 09:41',
-  },
-  {
-    id: 't1', role: 'customer', speaker: 'Sarah Johnson',
-    text: "Good morning. I'm Sarah Johnson, account number 40-2291-886. I placed a SEPA transfer on Tuesday — reference SEPA-20250529-8821 — and the funds still haven't arrived. This is a business payment and my supplier's invoice was due yesterday.",
-    time: '00:12',
-  },
-  {
-    id: 't2', role: 'agent', speaker: 'Agent',
-    text: "Good morning, Ms. Johnson. I can see your account. Let me pull up the transfer right away — SEPA-20250529-8821. One moment please.",
-    time: '00:42',
-  },
-  {
-    id: 't3', role: 'customer', speaker: 'Sarah Johnson',
-    text: "The invoice amount was €12,500. It's for invoice INV-2024-0892. My supplier is Technologix GmbH in Munich.",
-    time: '01:05',
-  },
-  {
-    id: 't4', role: 'agent', speaker: 'Agent',
-    text: "Thank you. I can see the payment is currently showing a compliance hold — our fraud screening flagged the transaction due to the amount. I'm escalating this to the payments team now and this should be cleared within the next two hours.",
-    time: '01:28',
-  },
-  {
-    id: 't5', role: 'customer', speaker: 'Sarah Johnson',
-    text: "Two hours? This is completely unacceptable. My supplier said they'll put our account on hold if they don't receive payment today.",
-    time: '01:58',
-  },
-  {
-    id: 't6', role: 'agent', speaker: 'Agent',
-    text: "I completely understand your frustration, Ms. Johnson. I'm going to mark this as urgent and personally ensure the payments escalation team prioritises it. You'll receive an SMS confirmation as soon as the hold is released. I'm also creating a case so we can track this end to end.",
-    time: '02:18',
-  },
-  {
-    id: 't7', role: 'system',
-    text: '⟳ Live transcription in progress…',
-    live: true,
-  },
-];
-
-// ─── AI Summary & suggestions ──────────────────────────────────────────────
-
-const AI_SUMMARY = {
-  headline: 'SEPA transfer blocked — urgent resolution required',
-  points: [
-    'Customer: Sarah Johnson · Acct 40-2291-886 · Priority Banking tier',
-    'Transfer SEPA-20250529-8821 for €12,500 to Technologix GmbH flagged by fraud screening',
-    'Invoice INV-2024-0892 overdue; supplier threatening to place account on hold',
-    'Agent escalated to payments team — ETA 2 hours; SMS confirmation committed',
-    'Overall sentiment: Negative → improving after escalation commitment',
-  ],
-  sentiment: 'negative',
-  intent: 'Payment dispute — SEPA transfer delay',
-  suggestedActions: [
-    { id: 'a1', label: 'Create Case', type: 'action', description: 'Open a new Priority case for this transfer dispute' },
-    { id: 'a2', label: 'Send SMS Update', type: 'action', description: 'Send SMS to customer confirming escalation and 2h ETA' },
-    { id: 'a3', label: 'Transfer to Payments', type: 'transfer', description: 'Warm transfer to the Payments Escalation team' },
-  ],
-};
-
-const OPEN_CASES = [
-  { id: 'CASE-2024-0892', title: 'SEPA Transfer Dispute — €12,500', status: 'Open',   priority: 'High' },
-  { id: 'CASE-2024-0784', title: 'Login failure after password reset',  status: 'Closed', priority: 'Low'  },
-  { id: 'CASE-2024-0651', title: 'Overdraft fee dispute — €45',         status: 'Closed', priority: 'Low'  },
-];
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -145,7 +23,12 @@ const SentimentDot = ({ sentiment }) => {
 // ─── Main widget ───────────────────────────────────────────────────────────
 
 const VoiceWidget = ({ darkMode }) => {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
+  const mock = getMockData(locale);
+  const MOCK_CALLS = mock.voice.calls;
+  const MOCK_TRANSCRIPT = mock.voice.transcript;
+  const AI_SUMMARY = mock.voice.aiSummary;
+  const OPEN_CASES = mock.voice.openCases;
   const [analyticsOpen, setAnalyticsOpen] = useState(true);
   const [selectedCallId, setSelectedCallId] = useState('call-1');
   const selectedCall = MOCK_CALLS.find(c => c.id === selectedCallId) || MOCK_CALLS[0];

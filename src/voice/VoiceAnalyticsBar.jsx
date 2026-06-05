@@ -1,7 +1,9 @@
 import React from 'react';
 import PropTypes from 'prop-types';
+import { useI18n } from '../i18n/I18nContext';
+import { getMockData } from '../mock/mockData';
 
-// ─── Inline SVG mini-charts ────────────────────────────────────────────────
+// ─── Inline SVG mini-charts ───────────────────────────────────────────────────
 
 const DonutChart = ({ segments, size = 64, thickness = 11, darkMode }) => {
   const r = (size - thickness) / 2;
@@ -109,41 +111,11 @@ const CaseBadge = ({ caseItem }) => (
   </div>
 );
 
-// ─── Mock data ─────────────────────────────────────────────────────────────
-
-const MOCK_VOICE = {
-  callOutcomes: [
-    { label: 'Resolved',    value: 14, color: '#00c389' },
-    { label: 'Transferred', value: 4,  color: '#f5a623' },
-    { label: 'Callback',    value: 3,  color: '#7c3aed' },
-    { label: 'Abandoned',   value: 2,  color: '#e0463e' },
-  ],
-  sentiment: [
-    { label: 'Positive', value: 9,  color: '#00c389' },
-    { label: 'Neutral',  value: 7,  color: '#f5a623' },
-    { label: 'Negative', value: 7,  color: '#e0463e' },
-  ],
-  callTypes: [
-    { label: 'Inbound',  value: 16, color: '#00a0d1' },
-    { label: 'Outbound', value: 4,  color: '#a78bfa' },
-    { label: 'Callback', value: 3,  color: '#f5a623' },
-  ],
-  volumeTrend: [5, 7, 4, 8, 6, 9, 6],
-  ahtTrend:    [312, 298, 340, 280, 315, 302, 288],
-  openCases: [
-    { id: 'CASE-2024-0892', status: 'Open',   topic: 'SEPA Transfer Dispute', priority: 'High',   color: '#f5a623' },
-    { id: 'CASE-2024-0784', status: 'Closed', topic: 'Login Access',           priority: 'Low',    color: '#00a0d1' },
-  ],
-  avgHandleTimeSec: 288,
-  slaMet:           87,
-  csat:             4.2,
-  totalCalls30d:    23,
-};
-
 // ─── Component ────────────────────────────────────────────────────────────
 
 const VoiceAnalyticsBar = ({ darkMode, data }) => {
-  const d = data || MOCK_VOICE;
+  const { locale } = useI18n();
+  const d = data || getMockData(locale).analytics.voice;
   const total = d.callOutcomes.reduce((s, seg) => s + seg.value, 0);
   const ahtMin = Math.floor(d.avgHandleTimeSec / 60);
   const ahtSec = d.avgHandleTimeSec % 60;

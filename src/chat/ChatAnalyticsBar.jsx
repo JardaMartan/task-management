@@ -1,5 +1,7 @@
 import React from 'react';
 import PropTypes from 'prop-types';
+import { useI18n } from '../i18n/I18nContext';
+import { getMockData } from '../mock/mockData';
 
 // ─── Inline SVG mini-charts ────────────────────────────────────────────────
 
@@ -70,50 +72,6 @@ const StackBar = ({ segments, height = 8, radius = 4 }) => {
   );
 };
 
-// ─── Mock data — Moneta Bank / Sarah Johnson ───────────────────────────────
-
-const MOCK_CHAT = {
-  customer: 'Sarah Johnson',
-  // Channel distribution — last 30 days (this customer)
-  channelMix: [
-    { label: 'Webchat',    value: 18, color: '#00a0d1' },
-    { label: 'WhatsApp',   value: 12, color: '#25D366' },
-    { label: 'SMS',        value: 7,  color: '#f5a623' },
-    { label: 'Apple Msgs', value: 5,  color: '#007AFF' },
-    { label: 'In-App',     value: 4,  color: '#a78bfa' },
-    { label: 'RCS',        value: 2,  color: '#34d399' },
-  ],
-  totalConversations: 48,
-  // Session outcome distribution
-  sessionStatus: [
-    { label: 'Active',      value: 1,  color: '#00a0d1' },
-    { label: 'Resolved',    value: 42, color: '#4ade80' },
-    { label: 'Transferred', value: 2,  color: '#f5a623' },
-    { label: 'Abandoned',   value: 3,  color: '#e8453c' },
-  ],
-  // Customer sentiment across all chat interactions
-  sentiment: [
-    { label: 'Positive', value: 19, color: '#4ade80' },
-    { label: 'Neutral',  value: 16, color: '#9ca3af' },
-    { label: 'Negative', value: 13, color: '#e8453c' },
-  ],
-  // 7-day conversation volume (Mon→Sun)
-  volumeTrend: [3, 4, 5, 3, 6, 2, 1],
-  // 7-day avg handle time per day (minutes)
-  ahtTrend: [4.8, 5.2, 3.9, 6.1, 5.5, 4.2, 3.7],
-  // Open cases linked to this customer
-  openCases: [
-    { id: 'CASE-2024-0892', status: 'In Progress', topic: 'Payment Processing', priority: 'High',   color: '#f5a623' },
-    { id: 'CASE-2024-0784', status: 'Open',        topic: 'Login Access',       priority: 'Medium', color: '#00a0d1' },
-    { id: 'CASE-2024-0651', status: 'In Progress', topic: 'Overdraft Dispute',  priority: 'High',   color: '#f5a623' },
-  ],
-  // KPIs
-  avgFirstResponseSec: 18,
-  slaMet: 91,
-  csat: 4.4,
-  conversationsThisMonth: 48,
-};
-
 // ─── Sub-components ────────────────────────────────────────────────────────
 
 const KpiTile = ({ label, value, sub, accent }) => (
@@ -160,7 +118,8 @@ const CaseBadge = ({ caseItem }) => (
  * - KPIs: First Response, SLA %, CSAT, Conversations/month
  */
 const ChatAnalyticsBar = ({ darkMode, data: dataProp }) => {
-  const d = dataProp || MOCK_CHAT;
+  const { locale } = useI18n();
+  const d = dataProp || getMockData(locale).analytics.chat;
 
   return (
     <div className={`analytics-bar analytics-bar--chat${darkMode ? ' analytics-bar--dark' : ''}`}>

@@ -4,6 +4,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { Badge, Button, Card, CardSection } from '@momentum-ui/react';
 import { useI18n } from '../i18n/I18nContext';
 import CasesAnalyticsBar from './CasesAnalyticsBar';
+import { getMockData } from '../mock/mockData';
 import {
   toggleCustomerPanelAndLoadCases,
   toggleRelatedCaseExpanded,
@@ -90,12 +91,17 @@ const MOCK_CASES_LIST = [
 // ─── Component ─────────────────────────────────────────────────────────────
 
 const CasesView = ({ darkMode, mockMode }) => {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const dispatch = useDispatch();
 
   // Local expand state used in mock mode
   const [mockExpandedIds, setMockExpandedIds] = useState({});
   const [analyticsOpen, setAnalyticsOpen] = useState(true);
+
+  // Mock data (locale-aware)
+  const mockData = getMockData(locale);
+  const MOCK_CUSTOMER = mockData.customer;
+  const MOCK_CASES_LIST = mockData.cases;
 
   // Redux state — always called (hook order must be stable)
   const caseWorkflow = useSelector((s) => s.widget.caseWorkflow);

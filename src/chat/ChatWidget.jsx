@@ -2,9 +2,10 @@ import React, { useState } from 'react';
 import PropTypes from 'prop-types';
 import ChatAnalyticsBar from './ChatAnalyticsBar';
 import { useI18n } from '../i18n/I18nContext';
+import { getMockData } from '../mock/mockData';
 import './chat.css';
 
-// ─── Channel metadata ──────────────────────────────────────────────────────
+// ─── Channel metadata (display-only, no mock data) ────────────────────────
 
 const CHANNEL_COLORS = {
   webchat:  '#00a0d1',
@@ -23,97 +24,6 @@ const CHANNEL_LABELS = {
   rcs:      'RCS',
   'in-app': 'In-App',
 };
-
-// ─── Mock data — Moneta Bank / Sarah Johnson ───────────────────────────────
-
-const MOCK_CONVERSATIONS = [
-  {
-    id: 'conv-1', channel: 'whatsapp', active: true,
-    customer: 'Sarah Johnson',
-    snippet: "SEPA transfer still hasn't processed…",
-    time: '14 min', status: 'Active',
-    caseId: 'CASE-2024-0892',
-  },
-  {
-    id: 'conv-2', channel: 'webchat', active: false,
-    customer: 'Sarah Johnson',
-    snippet: 'Login failure after password reset…',
-    time: '8d', status: 'Resolved',
-    caseId: 'CASE-2024-0784',
-  },
-  {
-    id: 'conv-3', channel: 'sms', active: false,
-    customer: 'Sarah Johnson',
-    snippet: 'Overdraft fee query — €45 charge…',
-    time: '26d', status: 'Resolved',
-    caseId: 'CASE-2024-0651',
-  },
-  {
-    id: 'conv-4', channel: 'in-app', active: false,
-    customer: 'Sarah Johnson',
-    snippet: 'Card blocked in New York, need help',
-    time: '63d', status: 'Resolved',
-    caseId: 'CASE-2024-0445',
-  },
-];
-
-const MOCK_MESSAGES = [
-  {
-    id: 'm0', role: 'system',
-    text: 'Sarah Johnson connected via WhatsApp · 14 min ago',
-  },
-  {
-    id: 'm1', role: 'customer',
-    text: "I still haven't received any update on my SEPA transfer. My reference is SEPA-20250529-8821. This is really urgent — my invoice deadline was yesterday.",
-    time: '14 min ago',
-  },
-  {
-    id: 'm2', role: 'customer',
-    text: "Invoice #INV-2024-0892 for €12,500. My supplier is now threatening to put our account on hold.",
-    time: '13 min ago',
-  },
-  {
-    id: 'm3', role: 'agent',
-    text: "Hi Sarah! I can see your account and the payment details right here. I'm looking into this immediately — please give me just a moment.",
-    time: '12 min ago',
-  },
-  {
-    id: 'm4', role: 'agent',
-    text: "I can see this is linked to CASE-2024-0892, which has already been escalated to our payments team. The SEPA transfer has been received but is currently pending a routine compliance review. I'm prioritising this right now.",
-    time: '11 min ago',
-  },
-  {
-    id: 'm5', role: 'customer',
-    text: "Compliance check? This is a regular monthly supplier payment — I've done this exact transfer for two years!",
-    time: '9 min ago',
-  },
-  {
-    id: 'm6', role: 'agent',
-    text: "Completely understood, Sarah. This is an automated check that triggers for transfers above €10,000 — it's not a reflection of your account standing. Given your history with us, I'm escalating now to our senior payments officer. You should have a resolution within 2 hours.",
-    time: '7 min ago',
-  },
-];
-
-const AI_SUGGESTIONS = [
-  {
-    label: 'Escalate & Confirm',
-    text: "I've just escalated CASE-2024-0892 to Priority 1. Our senior payments officer will contact you directly within the next 2 hours to confirm the release of SEPA-20250529-8821.",
-  },
-  {
-    label: 'Resolution Ready',
-    text: "Good news — SEPA-20250529-8821 has cleared the compliance review. Funds will be credited to your supplier within 1–2 business hours. I'll send a confirmation message once complete.",
-  },
-  {
-    label: 'Prevent Future Delay',
-    text: "I've added a note to CASE-2024-0892 confirming this is a recurring supplier payment and requesting an exemption for future transfers of this type. This should prevent any delays going forward.",
-  },
-];
-
-const OPEN_CASES = [
-  { id: 'CASE-2024-0892', topic: 'Payment Processing', status: 'In Progress', priority: 'High',   color: '#f5a623' },
-  { id: 'CASE-2024-0784', topic: 'Login Access',       status: 'Open',        priority: 'Medium', color: '#00a0d1' },
-  { id: 'CASE-2024-0651', topic: 'Overdraft Dispute',  status: 'In Progress', priority: 'High',   color: '#f5a623' },
-];
 
 // ─── Small sub-components ──────────────────────────────────────────────────
 
@@ -161,7 +71,12 @@ const ChatBubble = ({ message, darkMode }) => (
  *                  RCS, In-App chat.
  */
 const ChatWidget = ({ darkMode, mockMode }) => {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
+  const mock = getMockData(locale);
+  const MOCK_CONVERSATIONS = mock.chat.conversations;
+  const MOCK_MESSAGES = mock.chat.messages;
+  const AI_SUGGESTIONS = mock.chat.aiSuggestions;
+  const OPEN_CASES = mock.chat.openCases;
   const [analyticsOpen, setAnalyticsOpen] = useState(true);
   const [activeConvId, setActiveConvId] = useState('conv-1');
   const [inputText, setInputText] = useState('');

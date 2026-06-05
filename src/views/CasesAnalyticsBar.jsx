@@ -1,5 +1,7 @@
 import React from 'react';
 import PropTypes from 'prop-types';
+import { useI18n } from '../i18n/I18nContext';
+import { getMockData } from '../mock/mockData';
 
 // ─── Inline SVG mini-charts (no external dep) ─────────────────────────────
 
@@ -103,40 +105,6 @@ const StackBar = ({ segments, height = 8, radius = 4, darkMode }) => {
   );
 };
 
-// ─── Mock data helpers ─────────────────────────────────────────────────────
-
-const MOCK_CASES = {
-  byStatus: [
-    { label: 'Open', value: 14, color: '#f5a623' },
-    { label: 'In Progress', value: 9, color: '#00a0d1' },
-    { label: 'Resolved', value: 22, color: '#4ade80' },
-    { label: 'Closed', value: 31, color: '#9ca3af' },
-  ],
-  byPriority: [
-    { label: 'Critical', value: 3, color: '#e8453c' },
-    { label: 'High', value: 11, color: '#f5a623' },
-    { label: 'Medium', value: 18, color: '#00a0d1' },
-    { label: 'Low', value: 44, color: '#9ca3af' },
-  ],
-  byCategory: [
-    { label: 'Payment', value: 19, color: '#a78bfa' },
-    { label: 'Account', value: 14, color: '#60a5fa' },
-    { label: 'Technical', value: 12, color: '#34d399' },
-    { label: 'General', value: 31, color: '#f472b6' },
-  ],
-  // Weekly new case counts (Mon→Sun)
-  trend: [8, 11, 7, 14, 10, 6, 9],
-  // Avg resolution time per day (hours)
-  resolutionTrend: [18, 22, 15, 28, 19, 14, 21],
-  slaBreached: 4,
-  slaMet: 72,
-  avgResolutionH: 19,
-  fcr: 68, // First Contact Resolution %
-  csat: 4.2, // out of 5
-  total: 76,
-  openCount: 23,
-};
-
 // ─── KPI tile ──────────────────────────────────────────────────────────────
 
 const KpiTile = ({ label, value, sub, accent, darkMode }) => (
@@ -174,7 +142,8 @@ const Legend = ({ items }) => (
  * - SLA compliance, FCR, CSAT KPIs
  */
 const CasesAnalyticsBar = ({ darkMode, data: dataProp }) => {
-  const d = dataProp || MOCK_CASES;
+  const { locale } = useI18n();
+  const d = dataProp || getMockData(locale).analytics.cases;
 
   return (
     <div className={`analytics-bar analytics-bar--cases${darkMode ? ' analytics-bar--dark' : ''}`}>
