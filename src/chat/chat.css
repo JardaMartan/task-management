@@ -84,6 +84,10 @@
 .chat-widget__conversations {
   overflow: auto;
 }
+/* Combined selector beats .widget-panel (overflow:hidden) regardless of CSS load order */
+.chat-widget__conversations.widget-panel {
+  overflow-y: auto;
+}
 
 .chat-conv-list__header {
   font-size: 10px;

@@ -178,6 +178,10 @@
   padding: 8px;
   overflow-y: auto;
 }
+/* Combined selector beats .widget-panel (overflow:hidden) regardless of CSS load order */
+.voice__call-list.widget-panel {
+  overflow-y: auto;
+}
 .voice__call-item {
   padding: 10px 12px;
   border: 1px solid var(--md-color-gray-20, #e8ebee);
