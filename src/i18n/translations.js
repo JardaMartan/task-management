@@ -190,6 +190,18 @@ const baseDictionary = {
   analytics: {
     customerAnalytics: 'Customer Analytics',
   },
+  cases: {
+    active: 'Active',
+    noCustomer: 'No customer selected',
+    openTitle: 'Open cases',
+    openEmpty: 'No open cases.',
+    closedTitle: 'Closed cases',
+    closedEmpty: 'No closed cases.',
+  },
+  history: {
+    aiSummary: 'AI summary of recent activity',
+    empty: 'No interaction history yet.',
+  },
   voice: {
     callHistory: 'Call History',
     transcript: 'Transcript',
@@ -406,6 +418,18 @@ const deDictionary = {
   analytics: {
     customerAnalytics: 'Kundenanalyse',
   },
+  cases: {
+    active: 'Aktiv',
+    noCustomer: 'Kein Kunde ausgewählt',
+    openTitle: 'Offene Fälle',
+    openEmpty: 'Keine offenen Fälle.',
+    closedTitle: 'Geschlossene Fälle',
+    closedEmpty: 'Keine geschlossenen Fälle.',
+  },
+  history: {
+    aiSummary: 'KI-Zusammenfassung der letzten Aktivitäten',
+    empty: 'Noch keine Interaktionshistorie.',
+  },
   voice: {
     callHistory: 'Anrufverlauf',
     transcript: 'Transkript',
@@ -621,6 +645,18 @@ const csDictionary = {
   },
   analytics: {
     customerAnalytics: 'Analýza zákazníka',
+  },
+  cases: {
+    active: 'Aktivní',
+    noCustomer: 'Není vybrán žádný zákazník',
+    openTitle: 'Otevřené případy',
+    openEmpty: 'Žádné otevřené případy.',
+    closedTitle: 'Uzavřené případy',
+    closedEmpty: 'Žádné uzavřené případy.',
+  },
+  history: {
+    aiSummary: 'AI shrnutí nedávné aktivity',
+    empty: 'Zatím žádná historie interakcí.',
   },
   voice: {
     callHistory: 'Historie hovorů',
