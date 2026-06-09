@@ -5,26 +5,27 @@
 /* eslint-disable no-undef */
 (function initAgentXGlobals() {
   try {
-    // Declare a var so the bare identifier exists in the global scope.
-    if (typeof AGENTX_SERVICE === 'undefined') {
-      // Use var (not let/const) so it becomes a property of global object in non-module context.
-      // eslint-disable-next-line no-var
-      var AGENTX_SERVICE = {
+    // Check via globalThis to avoid the var-hoisting trap: a bare `var AGENTX_SERVICE`
+    // inside the IIFE would be hoisted as a local `undefined`, making `typeof` return
+    // 'undefined' even when the Desktop runtime has already defined the real global.
+    if (!globalThis.AGENTX_SERVICE) {
+      const mock = {
         name: 'MockAgentX',
         version: '0.0.0-local',
         getEnvironment: function () { return 'local'; },
         getTenantInfo: function () { return { orgId: 'demo-org', region: 'us' }; }
       };
-      // Also mirror to globalThis for defensive access patterns.
-      globalThis.AGENTX_SERVICE = AGENTX_SERVICE;
-      // Optional other desktop globals sometimes probed by SDKs.
-      if (typeof globalThis.CiscoDesktop === 'undefined') {
-        globalThis.CiscoDesktop = { getEnvironment: AGENTX_SERVICE.getEnvironment };
+      try {
+        globalThis.AGENTX_SERVICE = mock;
+      } catch (_e) {
+        // Property is non-writable (real Desktop already owns it) — that's fine.
       }
-      if (typeof globalThis.WebexDesktop === 'undefined') {
-        globalThis.WebexDesktop = { getEnvironment: AGENTX_SERVICE.getEnvironment };
+      if (!globalThis.CiscoDesktop) {
+        globalThis.CiscoDesktop = { getEnvironment: mock.getEnvironment };
       }
-      // console.info('[agentx-globals] Mock AGENTX_SERVICE defined');
+      if (!globalThis.WebexDesktop) {
+        globalThis.WebexDesktop = { getEnvironment: mock.getEnvironment };
+      }
     }
   } catch (err) {
     // Swallow errors; we only care about avoiding ReferenceError.

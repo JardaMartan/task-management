@@ -4,13 +4,13 @@
   "description": "GCP Cloud Function: Gmail inbound processing, AI enrichment, Token Broker",
   "main": "index.js",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "start": "functions-framework --target=inbound --port=8080",
-    "deploy:inbound": "gcloud functions deploy email-inbound --gen2 --runtime=nodejs20 --region=us-central1 --source=. --entry-point=inbound --trigger-topic=${PUBSUB_TOPIC}",
-    "deploy:auth": "gcloud functions deploy email-auth --gen2 --runtime=nodejs20 --region=us-central1 --source=. --entry-point=auth --trigger-http --allow-unauthenticated",
-    "deploy:watch": "gcloud functions deploy email-renew-watch --gen2 --runtime=nodejs20 --region=us-central1 --source=. --entry-point=renewWatch --trigger-http"
+    "deploy:inbound": "gcloud functions deploy email-inbound --gen2 --runtime=nodejs22 --region=us-central1 --source=. --entry-point=inbound --trigger-topic=${PUBSUB_TOPIC}",
+    "deploy:auth": "gcloud functions deploy email-auth --gen2 --runtime=nodejs22 --region=us-central1 --source=. --entry-point=auth --trigger-http --allow-unauthenticated",
+    "deploy:watch": "gcloud functions deploy email-renew-watch --gen2 --runtime=nodejs22 --region=us-central1 --source=. --entry-point=renewWatch --trigger-http"
   },
   "dependencies": {
     "@google-cloud/functions-framework": "^3.3.0",

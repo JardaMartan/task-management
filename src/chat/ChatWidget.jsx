@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import PropTypes from 'prop-types';
+import { useDispatch, useSelector } from 'react-redux';
 import ChatAnalyticsBar from './ChatAnalyticsBar';
 import { useI18n } from '../i18n/I18nContext';
 import { getMockData } from '../mock/mockData';
+import { toggleAnalyticsOpen } from '../store/slices/widgetSlice';
 import './chat.css';
 
 // ─── Channel metadata (display-only, no mock data) ────────────────────────
@@ -27,8 +29,9 @@ const CHANNEL_LABELS = {
 
 // ─── Small sub-components ──────────────────────────────────────────────────
 
-const ConvItem = ({ conv, active, darkMode, onClick }) => (
+const ConvItem = ({ conv, active, darkMode, onClick, innerRef }) => (
   <li
+    ref={innerRef}
     className={`chat-conv-item${active ? ' chat-conv-item--active' : ''}`}
     style={{ '--ch-color': CHANNEL_COLORS[conv.channel] || '#9ca3af' }}
     onClick={onClick}
@@ -70,29 +73,83 @@ const ChatBubble = ({ message, darkMode }) => (
  * Channel support: Webchat, WhatsApp, SMS, Apple Messages for Business,
  *                  RCS, In-App chat.
  */
-const ChatWidget = ({ darkMode, mockMode }) => {
+const ChatWidget = ({ darkMode, mockMode, initialTaskId, onNavigate }) => {
   const { locale, t } = useI18n();
+  const dispatch = useDispatch();
+  const analyticsOpen = useSelector((state) => state.widget.analyticsOpen);
   const mock = getMockData(locale);
   const MOCK_CONVERSATIONS = mock.chat.conversations;
-  const MOCK_MESSAGES = mock.chat.messages;
+  const MESSAGES_BY_CONV   = mock.chat.messagesByConvId || {};
   const AI_SUGGESTIONS = mock.chat.aiSuggestions;
   const OPEN_CASES = mock.chat.openCases;
-  const [analyticsOpen, setAnalyticsOpen] = useState(true);
-  const [activeConvId, setActiveConvId] = useState('conv-1');
+  const [activeFilters, setActiveFilters] = useState({ channel: null, status: null });
+  const isDemoMode = Boolean(mockMode);
+
+  const handleFilterChange = useCallback(({ type, key }) => {
+    setActiveFilters((f) => ({ ...f, [type]: key }));
+  }, []);
+
+  const handleCaseClick = useCallback((caseId) => {
+    onNavigate?.('cases', { highlightCaseId: caseId });
+  }, [onNavigate]);
+
+  // Resolve initial conversation: prefer the conv matching initialTaskId
+  const resolveConvId = (taskId) => {
+    if (taskId) {
+      const found = MOCK_CONVERSATIONS.find((c) => c.taskId === taskId);
+      if (found) return found.id;
+    }
+    return MOCK_CONVERSATIONS[0]?.id || 'conv-1';
+  };
+
+  const [activeConvId, setActiveConvId] = useState(() => resolveConvId(initialTaskId));
+
+  // Navigate to a different conv when initialTaskId prop changes
+  useEffect(() => {
+    if (!initialTaskId) return;
+    setActiveConvId(resolveConvId(initialTaskId));
+  }, [initialTaskId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const [inputText, setInputText] = useState('');
-  const [messages, setMessages] = useState(MOCK_MESSAGES);
+
+  // Per-conversation message state — messages typed in session are kept per conv
+  const [extraByConv, setExtraByConv] = useState({});
+
+  const getMessages = (convId) => [
+    ...(MESSAGES_BY_CONV[convId] || MESSAGES_BY_CONV['conv-1'] || []),
+    ...(extraByConv[convId] || []),
+  ];
 
   const activeConv = MOCK_CONVERSATIONS.find((c) => c.id === activeConvId) || MOCK_CONVERSATIONS[0];
   const channelColor = CHANNEL_COLORS[activeConv.channel] || '#9ca3af';
   const channelLabel = CHANNEL_LABELS[activeConv.channel] || activeConv.channel;
 
+  // Apply quick-filters to the conversation list
+  const filteredConversations = useMemo(() => {
+    if (!activeFilters.channel && !activeFilters.status) return MOCK_CONVERSATIONS;
+    return MOCK_CONVERSATIONS.filter((c) => {
+      if (activeFilters.channel && c.channel !== activeFilters.channel) return false;
+      if (activeFilters.status  && c.statusKey !== activeFilters.status)  return false;
+      return true;
+    });
+  }, [MOCK_CONVERSATIONS, activeFilters]);
+
+  const isFiltered = activeFilters.channel || activeFilters.status;
+  const activeFilterCount = [activeFilters.channel, activeFilters.status].filter(Boolean).length;
+
+  // Scroll active conv item into view when selection changes
+  const activeConvRef = useRef(null);
+  useEffect(() => {
+    activeConvRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [activeConvId]);
+
   const handleSend = () => {
     const text = inputText.trim();
     if (!text) return;
-    setMessages((prev) => [
+    setExtraByConv((prev) => ({
       ...prev,
-      { id: `m-${Date.now()}`, role: 'agent', text, time: 'just now' },
-    ]);
+      [activeConvId]: [...(prev[activeConvId] || []), { id: `m-${Date.now()}`, role: 'agent', text, time: 'just now' }],
+    }));
     setInputText('');
   };
 
@@ -112,16 +169,53 @@ const ChatWidget = ({ darkMode, mockMode }) => {
 
       {/* ── Analytics bar (collapsible) ── */}
       <div className={`analytics-collapse${analyticsOpen ? ' analytics-collapse--open' : ' analytics-collapse--closed'}${darkMode ? ' analytics-collapse--dark' : ''}`}>
-        <button
+        <div
           className="analytics-collapse__toggle"
-          onClick={() => setAnalyticsOpen((o) => !o)}
+          role="button"
+          tabIndex={0}
+          onClick={() => dispatch(toggleAnalyticsOpen())}
+          onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && dispatch(toggleAnalyticsOpen())}
           aria-expanded={analyticsOpen}
         >
           <span className="analytics-collapse__label">{t('analytics.customerAnalytics')}</span>
-          <span className="analytics-collapse__chevron">{analyticsOpen ? '▲' : '▼'}</span>
-        </button>
-        {analyticsOpen && <ChatAnalyticsBar darkMode={darkMode} />}
+          <span className="analytics-collapse__header-right">
+            <span className="analytics-collapse__chevron">{analyticsOpen ? '▲' : '▼'}</span>
+          </span>
+        </div>
+        {analyticsOpen && (
+          <ChatAnalyticsBar
+            darkMode={darkMode}
+            onFilterChange={handleFilterChange}
+            activeFilters={activeFilters}
+            onCaseClick={onNavigate ? handleCaseClick : undefined}
+          />
+        )}
       </div>
+
+      {/* ── Active filter indicator ── */}
+      {isFiltered && (
+        <div className="history-view__filter-bar">
+          <span className="history-view__filter-bar__label">Filtered:</span>
+          {activeFilters.channel && (
+            <button type="button" className="history-view__filter-chip"
+              onClick={() => handleFilterChange({ type: 'channel', key: null })}>
+              {activeFilters.channel} ×
+            </button>
+          )}
+          {activeFilters.status && (
+            <button type="button" className="history-view__filter-chip"
+              onClick={() => handleFilterChange({ type: 'status', key: null })}>
+              {activeFilters.status} ×
+            </button>
+          )}
+          {activeFilterCount > 1 && (
+            <button type="button" className="history-view__filter-chip history-view__filter-chip--clear"
+              onClick={() => setActiveFilters({ channel: null, status: null })}>
+              Clear all
+            </button>
+          )}
+        </div>
+      )}
 
       {/* ── Session header ── */}
       <div
@@ -150,13 +244,14 @@ const ChatWidget = ({ darkMode, mockMode }) => {
         <div className="chat-widget__conversations widget-panel">
           <div className="chat-conv-list__header">{t('chat.conversations')}</div>
           <ul className="chat-conv-list">
-            {MOCK_CONVERSATIONS.map((conv) => (
+            {filteredConversations.map((conv) => (
               <ConvItem
                 key={conv.id}
                 conv={conv}
                 active={conv.id === activeConvId}
                 darkMode={darkMode}
                 onClick={() => setActiveConvId(conv.id)}
+                innerRef={conv.id === activeConvId ? activeConvRef : null}
               />
             ))}
           </ul>
@@ -165,7 +260,7 @@ const ChatWidget = ({ darkMode, mockMode }) => {
         {/* ── Center: transcript + composer ── */}
         <div className="chat-widget__transcript widget-panel">
           <div className="chat-messages">
-            {messages.map((msg) => (
+            {getMessages(activeConvId).map((msg) => (
               <ChatBubble key={msg.id} message={msg} darkMode={darkMode} />
             ))}
             {/* Typing indicator — always show in active mock session */}
@@ -238,6 +333,7 @@ const ChatWidget = ({ darkMode, mockMode }) => {
 ChatWidget.propTypes = {
   darkMode: PropTypes.bool,
   mockMode: PropTypes.bool,
+  onNavigate: PropTypes.func,
 };
 
 ChatWidget.defaultProps = {

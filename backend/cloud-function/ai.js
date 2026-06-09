@@ -7,7 +7,7 @@
 
 const AI_PROVIDER = (process.env.AI_PROVIDER || 'gemini').toLowerCase();
 const AI_API_KEY = process.env.AI_API_KEY || '';
-const AI_MODEL = process.env.AI_MODEL || 'gemini-1.5-flash';
+const AI_MODEL = process.env.AI_MODEL || 'gemini-2.5-flash';
 
 // ─── Gemini ───────────────────────────────────────────────────────────────────
 

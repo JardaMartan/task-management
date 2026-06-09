@@ -7,6 +7,21 @@ import {
     updateCaseStatusInTicketDB,
 } from '../../api';
 
+// ─── Analytics UI prefs (localStorage-backed) ─────────────────────────────
+const readAnalyticsPrefs = () => {
+    try {
+        const open = localStorage.getItem('wx_analytics_open');
+        const days = parseInt(localStorage.getItem('wx_analytics_trend_days'), 10);
+        return {
+            analyticsOpen: open === null ? true : open === 'true',
+            analyticsTrendDays: [7, 30, 90].includes(days) ? days : 30,
+        };
+    } catch {
+        return { analyticsOpen: true, analyticsTrendDays: 30 };
+    }
+};
+const { analyticsOpen: _initOpen, analyticsTrendDays: _initDays } = readAnalyticsPrefs();
+
 const HISTORY_PAGE_SIZE = 15;
 const DEFAULT_WORKSPACE_OVERRIDE_TASK_TYPES = ['case'];
 
@@ -63,6 +78,7 @@ const widgetSlice = createSlice({
         agent: null,
         status: '',
         statusType: '',
+        darkMode: false,
         isLoading: false,
         desktopSDK: null,
         accesstoken: null,
@@ -70,13 +86,23 @@ const widgetSlice = createSlice({
         datacenter: null,
         workspaceid: null,
         isStreamingActive: false,
+        analyticsOpen: _initOpen,
+        analyticsTrendDays: _initDays,
         widgetConfig: {
             workspaceOverrideTaskTypes: DEFAULT_WORKSPACE_OVERRIDE_TASK_TYPES,
+            outdialEntryPointId: null,
         },
+        outdialPending: null,  // { destination: string } while an outdial call is active, null otherwise
         emailConfig: {
             tokenBrokerUrl: null,
             webexConnectOutboundWebhook: null,
             aiProvider: null,
+            templatesUrl: null,
+            signaturesUrl: null,
+            templates: [],
+            signatures: [],
+            defaultSignatureId: null,
+            knowledgeBase: [],
         },
         caseWorkflow: initialCaseState,
     },
@@ -88,7 +114,33 @@ const widgetSlice = createSlice({
             state.darkMode = Boolean(action.payload);
         },
         setAgent: (state, action) => {
-            state.agent = action.payload;
+            // Strip MobX observable proxies ($STORE.agent is a MobX object).
+            // JSON round-trip alone may not fully unwrap deeply-nested observables;
+            // structuredClone (available in all modern browsers) handles it properly.
+            // Falls back to JSON round-trip, then to plain property copy.
+            try {
+                if (!action.payload) { state.agent = null; return; }
+                if (typeof structuredClone !== 'undefined') {
+                    state.agent = structuredClone(action.payload);
+                } else {
+                    state.agent = JSON.parse(JSON.stringify(action.payload));
+                }
+            } catch {
+                // Last resort: manually copy only primitive/plain fields
+                try {
+                    const src = action.payload;
+                    state.agent = {
+                        agentId: src.agentId || src.agentDbId || '',
+                        agentDbId: src.agentDbId || '',
+                        agentEmailId: src.agentEmailId || '',
+                        agentName: src.agentName || src.name || '',
+                        name: src.name || src.agentName || '',
+                        agentProfileId: src.agentProfileId || '',
+                    };
+                } catch {
+                    state.agent = null;
+                }
+            }
         },
         setStatus: (state, action) => {
             state.status = action.payload.message;
@@ -102,7 +154,10 @@ const widgetSlice = createSlice({
             state.isLoading = action.payload;
         },
         setDesktopSDK: (state, action) => {
-            state.desktopSDK = action.payload;
+            // Store only a boolean flag — the Desktop SDK object contains MobX observables
+            // that Immer cannot freeze without triggering MobX error 13.
+            // Callers that need the live SDK reference must import it directly.
+            state.desktopSDK = action.payload ? true : null;
         },
         setAccessToken: (state, action) => {
             state.accesstoken = action.payload;
@@ -123,6 +178,7 @@ const widgetSlice = createSlice({
             if (!action.payload || typeof action.payload !== 'object') return;
             state.widgetConfig = {
                 workspaceOverrideTaskTypes: DEFAULT_WORKSPACE_OVERRIDE_TASK_TYPES,
+                outdialEntryPointId: state.widgetConfig.outdialEntryPointId ?? null,
                 ...action.payload,
             };
         },
@@ -131,7 +187,14 @@ const widgetSlice = createSlice({
             state.emailConfig = { ...state.emailConfig, ...action.payload };
         },
         setCaseTaskPayload: (state, action) => {
-            state.caseWorkflow.task = action.payload || null;
+            if (!action.payload) { state.caseWorkflow.task = null; return; }
+            try {
+                state.caseWorkflow.task = typeof structuredClone !== 'undefined'
+                    ? structuredClone(action.payload)
+                    : JSON.parse(JSON.stringify(action.payload));
+            } catch {
+                state.caseWorkflow.task = null;
+            }
         },
         setCaseWorkflowLoading: (state, action) => {
             state.caseWorkflow.isLoading = action.payload;
@@ -228,6 +291,25 @@ const widgetSlice = createSlice({
         stopJDSStreaming: (state) => {
             state.isStreamingActive = false;
         },
+        setOutdialPending: (state, action) => {
+            // action.payload: { destination } to mark a call in progress, null to clear
+            state.outdialPending = action.payload || null;
+        },
+        setAnalyticsOpen: (state, action) => {
+            state.analyticsOpen = Boolean(action.payload);
+            try { localStorage.setItem('wx_analytics_open', String(state.analyticsOpen)); } catch {}
+        },
+        toggleAnalyticsOpen: (state) => {
+            state.analyticsOpen = !state.analyticsOpen;
+            try { localStorage.setItem('wx_analytics_open', String(state.analyticsOpen)); } catch {}
+        },
+        setAnalyticsTrendDays: (state, action) => {
+            const days = action.payload;
+            if ([7, 30, 90].includes(days)) {
+                state.analyticsTrendDays = days;
+                try { localStorage.setItem('wx_analytics_trend_days', String(days)); } catch {}
+            }
+        },
     },
 });
 
@@ -264,6 +346,10 @@ export const {
     clearCaseWorkflow,
     clearSearch,
     stopJDSStreaming,
+    setOutdialPending,
+    setAnalyticsOpen,
+    toggleAnalyticsOpen,
+    setAnalyticsTrendDays,
 } = widgetSlice.actions;
 
 export default widgetSlice.reducer;
@@ -275,7 +361,29 @@ export const initializeDesktopSDK = () => async (dispatch, getState) => {
         try {
             const { Desktop } = await import('@wxcc-desktop/sdk');
             console.log('Checking for Desktop SDK availability...');
-            await Desktop.config.init();
+
+            // The Desktop platform initializes its sub-services (Dialer, AgentContact, …)
+            // asynchronously after the global AGENTX_SERVICE is registered.  Our widget
+            // may call Desktop.config.init() before those services are ready, causing
+            // the first attempt to throw.  Retry up to 3 times with short delays before
+            // giving up and falling back to demo mode.
+            const RETRY_DELAYS_MS = [0, 500, 1500];
+            let lastSdkError;
+            let sdkInitOk = false;
+            for (const delay of RETRY_DELAYS_MS) {
+                if (delay > 0) {
+                    await new Promise((r) => setTimeout(r, delay));
+                }
+                try {
+                    await Desktop.config.init();
+                    sdkInitOk = true;
+                    break;
+                } catch (e) {
+                    lastSdkError = e;
+                    console.log(`[SDK] init attempt failed (delay ${delay}ms): ${e.message}`);
+                }
+            }
+            if (!sdkInitOk) throw lastSdkError;
 
             console.log('Desktop SDK detected');
             dispatch(setDesktopSDK(Desktop));
@@ -316,9 +424,7 @@ export const initializeDesktopSDK = () => async (dispatch, getState) => {
 };
 
 export const hydrateWidgetContext = (props = {}) => (dispatch) => {
-    if (props.darkmode !== undefined) {
-        dispatch(setDarkMode(props.darkmode));
-    }
+    dispatch(setDarkMode(props.darkmode));
 
     if (props.accesstoken) {
         dispatch(setAccessToken(props.accesstoken));
@@ -337,18 +443,47 @@ export const hydrateWidgetContext = (props = {}) => (dispatch) => {
     }
 
     if (props.agent) {
-        dispatch(setAgent(props.agent));
-        const displayName = props.agent.agentName || props.agent.name;
+        let safeAgent = props.agent;
+        try {
+            safeAgent = typeof structuredClone !== 'undefined'
+                ? structuredClone(props.agent)
+                : JSON.parse(JSON.stringify(props.agent));
+        } catch {
+            // structuredClone/JSON failed (circular/non-serializable) — copy only scalar fields
+            try {
+                const s = props.agent;
+                safeAgent = {
+                    agentId: s.agentId || s.agentDbId || '',
+                    agentDbId: s.agentDbId || '',
+                    agentEmailId: s.agentEmailId || '',
+                    agentName: s.agentName || s.name || '',
+                    name: s.name || s.agentName || '',
+                    agentProfileId: s.agentProfileId || '',
+                };
+            } catch { /* give up */ }
+        }
+        dispatch(setAgent(safeAgent));
+        const displayName = safeAgent.agentName || safeAgent.name;
         if (displayName) {
             dispatch(setAgentName(displayName));
         }
     }
 
     if (props.config && typeof props.config === 'object') {
-        dispatch(setWidgetConfig(props.config));
+        let safeConfig = props.config;
+        try {
+            safeConfig = typeof structuredClone !== 'undefined'
+                ? structuredClone(props.config)
+                : JSON.parse(JSON.stringify(props.config));
+        } catch { /* use as-is if it fails */ }
+        dispatch(setWidgetConfig(safeConfig));
 
         // Extract email-specific config fields from the layout config object
-        const { tokenBrokerUrl, webexConnectOutboundWebhook, aiProvider, aiApiKey } = props.config;
+        const {
+            tokenBrokerUrl, webexConnectOutboundWebhook,
+            aiProvider, aiApiKey,
+            templatesUrl, signaturesUrl, templates, signatures, defaultSignatureId, knowledgeBase,
+        } = safeConfig;
         const emailCfg = {};
         if (tokenBrokerUrl) emailCfg.tokenBrokerUrl = tokenBrokerUrl;
         if (webexConnectOutboundWebhook) emailCfg.webexConnectOutboundWebhook = webexConnectOutboundWebhook;
@@ -357,6 +492,12 @@ export const hydrateWidgetContext = (props = {}) => (dispatch) => {
                 ? { ...aiProvider, apiKey: aiApiKey || aiProvider.apiKey || null }
                 : { type: aiProvider, apiKey: aiApiKey || null };
         }
+        if (templatesUrl) emailCfg.templatesUrl = templatesUrl;
+        if (signaturesUrl) emailCfg.signaturesUrl = signaturesUrl;
+        if (Array.isArray(templates) && templates.length > 0) emailCfg.templates = templates;
+        if (Array.isArray(signatures) && signatures.length > 0) emailCfg.signatures = signatures;
+        if (defaultSignatureId) emailCfg.defaultSignatureId = defaultSignatureId;
+        if (Array.isArray(knowledgeBase) && knowledgeBase.length > 0) emailCfg.knowledgeBase = knowledgeBase;
         if (Object.keys(emailCfg).length > 0) {
             dispatch(setEmailConfig(emailCfg));
         }
@@ -559,4 +700,72 @@ export const navigateBackToPreviousCase = () => async (dispatch, getState) => {
     const nextStack = caseWorkflow.caseNavigationStack.slice(0, -1);
     dispatch(setCaseNavigationStack(nextStack));
     dispatch(loadCaseTask(previousTask));
+};
+
+/**
+ * Initiate an outbound voice call via the Webex CC Desktop SDK dialer.
+ *
+ * Requires `outdialEntryPointId` to be configured in the widget layout config
+ * (passed via the `config.outdialEntryPointId` property).
+ *
+ * In demo mode (SDK not available) the call is only logged; no error is raised.
+ *
+ * @param {object} params
+ * @param {string} params.entryPointId - Webex CC entry point ID for outbound calls
+ * @param {string} params.destination  - Phone number to dial (E.164 or local format)
+ * @param {string} [params.origin]     - Caller ANI (optional; uses entry-point default if omitted)
+ */
+export const initiateOutdialCall = ({ entryPointId, destination, origin }) => async (dispatch) => {
+    if (!entryPointId) {
+        console.error('[WidgetSlice] initiateOutdialCall: outdialEntryPointId not configured');
+        dispatch(setStatus({ message: 'outdial.missingEntryPoint', type: 'error' }));
+        setTimeout(() => dispatch(clearStatus()), 4000);
+        return;
+    }
+    try {
+        dispatch(setOutdialPending({ destination }));
+        const { Desktop } = await import('@wxcc-desktop/sdk');
+        await Desktop.dialer.startOutdial({
+            data: {
+                entryPointId,
+                direction: entryPointId,
+                destination,
+                outboundType: 'OUTDIAL',
+                mediaType: 'telephony',
+                attributes: { key: 'outdial', value: 'true' },
+                ...(origin ? { origin } : {}),
+            },
+        });
+        console.log('[WidgetSlice] Outdial started for:', destination);
+        // Keep outdialPending set — the task panel will show the new interaction.
+        // The agent cancels via the cancel button which dispatches cancelOutdialCall.
+    } catch (err) {
+        console.error('[WidgetSlice] initiateOutdialCall error:', err);
+        dispatch(setOutdialPending(null));
+        dispatch(setStatus({ message: err.message || 'outdial.failed', type: 'error' }));
+        setTimeout(() => dispatch(clearStatus()), 4000);
+    }
+};
+
+/**
+ * Cancel the active outdial call.
+ * Resets the outdialPending UI state and attempts to end the call via the SDK.
+ * The actual call termination is best-effort — the agent can also end it from
+ * the Desktop task panel.
+ */
+export const cancelOutdialCall = () => async (dispatch) => {
+    dispatch(setOutdialPending(null));
+    try {
+        const { Desktop } = await import('@wxcc-desktop/sdk');
+        // cancelOutdial is the standard API for aborting a pending/ringing outdial
+        if (typeof Desktop.dialer.cancelOutdial === 'function') {
+            await Desktop.dialer.cancelOutdial();
+            console.log('[WidgetSlice] Outdial cancelled via SDK');
+        } else {
+            console.log('[WidgetSlice] SDK cancelOutdial not available — call must be ended from task panel');
+        }
+    } catch (err) {
+        // Non-fatal — the UI is already reset; agent can end from task panel
+        console.warn('[WidgetSlice] cancelOutdialCall error (non-fatal):', err.message);
+    }
 };

@@ -67,7 +67,7 @@ const computeGs1CheckDigit = (value17) => {
   return (10 - (sum % 10)) % 10;
 };
 
-const publishCloudEvent = async (eventPayload, accessToken, workspaceId, datacenter) => {
+export const publishCloudEvent = async (eventPayload, accessToken, workspaceId, datacenter) => {
   const baseUrl = getJDSBaseURL(datacenter);
   const endpoint = `${baseUrl}/publish/v1/api/event?workspaceId=${workspaceId}`;
 
@@ -303,7 +303,7 @@ export const fetchTaskManagement = async (customerId, accessToken, workspaceId, 
  * @param {string} datacenter - Datacenter identifier
  * @returns {Promise<Array>} Array of events/interactions
  */
-export const fetchJourneyEvents = async (identity, accessToken, workspaceId, datacenter, additionalFilter = null) => {
+export const fetchJourneyEvents = async (identity, accessToken, workspaceId, datacenter, additionalFilter = null, maxPages = 20) => {
   // Accept a single identity string, an array, or null/[] for type-only workspace queries.
   const identities = (Array.isArray(identity) ? identity : [identity])
     .map(i => String(i || '').trim())
@@ -326,7 +326,7 @@ export const fetchJourneyEvents = async (identity, accessToken, workspaceId, dat
     let page = 1;
     const pageSize = 100;
     let hasMore = true;
-    const pageLimit = 20; // 2000 events max
+    const pageLimit = maxPages;
 
     // Build query string: one filter param per identity (JDS ORs them).
     // URLSearchParams handles percent-encoding — do NOT pre-encode the identity value
@@ -1947,6 +1947,44 @@ export const fetchEmailThread = async (threadId, gmailToken) => {
 };
 
 /**
+ * Fetch lightweight thread metadata (headers only, no body) for display in the
+ * thread list. Uses format=metadata to minimise response size.
+ * Returns { threadId, subject, from, date, messageCount, snippet }.
+ *
+ * @param {string} threadId
+ * @param {string} gmailToken
+ * @returns {object}
+ */
+export const fetchEmailThreadMetadata = async (threadId, gmailToken) => {
+  const url = `${GMAIL_API_BASE}/threads/${encodeURIComponent(threadId)}?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date`;
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${gmailToken}` },
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Gmail threads.get (metadata) ${response.status}: ${text}`);
+  }
+
+  const data = await response.json();
+  const messages = data.messages || [];
+  const firstMsg = messages[0] || {};
+  const lastMsg = messages[messages.length - 1] || {};
+
+  const getHeader = (msg, name) =>
+    (msg.payload?.headers || []).find((h) => h.name.toLowerCase() === name.toLowerCase())?.value || '';
+
+  return {
+    threadId: data.id,
+    subject: getHeader(firstMsg, 'Subject') || '',
+    from: getHeader(firstMsg, 'From') || '',
+    date: getHeader(lastMsg, 'Date') || '',
+    messageCount: messages.length,
+    snippet: data.snippet || lastMsg.snippet || '',
+  };
+};
+
+/**
  * List Gmail threads involving a customer email address.
  * @param {string} customerEmail
  * @param {string} gmailToken
@@ -1965,6 +2003,64 @@ export const fetchCustomerEmailThreads = async (customerEmail, gmailToken) => {
   }
 
   return response.json();
+};
+
+/**
+ * Find a Gmail thread by RFC 2822 Message-ID using the rfc822msgid: search operator.
+ * This is an exact 1:1 match — the most reliable fallback when gmailThreadId is not
+ * available in CAD but the Message-Id header was forwarded through Webex Connect.
+ *
+ * @param {string} rfcMessageId - The raw Message-Id header value (with or without angle brackets)
+ * @param {string} gmailToken
+ * @returns {string|null} The Gmail threadId, or null if not found
+ */
+export const findGmailThreadByRfcMessageId = async (rfcMessageId, gmailToken) => {
+  // Strip angle brackets if present; Gmail operator requires bare ID
+  const bare = rfcMessageId.replace(/^<|>$/g, '').trim();
+  if (!bare) return null;
+
+  const query = encodeURIComponent(`rfc822msgid:${bare}`);
+  const url = `${GMAIL_API_BASE}/threads?q=${query}&maxResults=2`;
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${gmailToken}` },
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Gmail threads.list (rfc822msgid) ${response.status}: ${text}`);
+  }
+
+  const data = await response.json();
+  return data?.threads?.[0]?.id || null;
+};
+
+/**
+ * Search Gmail threads by sender and subject to identify the active thread when
+ * no gmailThreadId is available in CAD. Returns the first matching thread ID or null.
+ *
+ * @param {string} customerEmail - The sender address (task `ani`)
+ * @param {string} subject       - The email subject from mediaProperties.emailSubject
+ * @param {string} gmailToken
+ * @returns {string|null} The Gmail threadId of the best match, or null
+ */
+export const findGmailThreadBySubjectAndSender = async (customerEmail, subject, gmailToken) => {
+  // Build a precise query: exact sender + subject. Gmail strips "Re:", "Fwd:" prefixes
+  // automatically when matching, so the raw subject from CAD works without normalization.
+  const q = [`from:${customerEmail}`];
+  if (subject) q.push(`subject:"${subject.replace(/"/g, '')}"`);
+  const query = encodeURIComponent(q.join(' '));
+  const url = `${GMAIL_API_BASE}/threads?q=${query}&maxResults=5`;
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${gmailToken}` },
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Gmail threads.list (subject search) ${response.status}: ${text}`);
+  }
+
+  const data = await response.json();
+  return data?.threads?.[0]?.id || null;
 };
 
 /**
@@ -2009,6 +2105,126 @@ export const fetchEmailAttachment = async (messageId, attachmentId, gmailToken) 
 };
 
 /**
+ * Send an email reply directly via the Gmail API (messages.send).
+ * Builds a minimal multipart/alternative RFC 2822 message and base64url-encodes it.
+ * Requires a Gmail token with https://mail.google.com/ scope (minted by token broker).
+ *
+ * @param {string} gmailToken  - Valid Gmail OAuth2 access token
+ * @param {object} options
+ * @param {string}  options.toAddress  - Recipient address
+ * @param {string}  options.subject    - Reply subject (e.g. "Re: Original subject")
+ * @param {string}  options.replyHtml  - HTML body
+ * @param {string}  [options.replyText]  - Plain-text body; stripped from HTML if omitted
+ * @param {string}  [options.threadId]   - Gmail threadId to keep reply in the same thread
+ * @param {string}  [options.inReplyTo]  - Message-ID header of the original message
+ * @param {string}  [options.references] - References header chain
+ * @returns {Promise<{ id: string, threadId: string, labelIds: string[] }>}
+ */
+export const sendEmailViaGmail = async (gmailToken, { toAddress, subject, replyHtml, replyText, threadId, inReplyTo, references, attachments }) => {
+  const plainBody = (replyText || (replyHtml || '').replace(/<[^>]+>/g, '')).trim();
+
+  const commonHeaders = [
+    `To: ${toAddress}`,
+    `Subject: ${subject}`,
+    ...(inReplyTo  ? [`In-Reply-To: ${inReplyTo}`]   : []),
+    ...(references ? [`References: ${references}`]   : []),
+    'MIME-Version: 1.0',
+  ];
+
+  const hasAttachments = Array.isArray(attachments) && attachments.length > 0;
+  let mime;
+
+  if (hasAttachments) {
+    const outerBoundary = `mp_mix_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    const innerBoundary = `mp_alt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+
+    // Read each File to standard base64 for MIME embedding
+    const attachmentParts = await Promise.all(
+      attachments.map(async (file) => {
+        const buf = await file.arrayBuffer();
+        const bytes = new Uint8Array(buf);
+        let binary = '';
+        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+        const b64 = btoa(binary);
+        const safeName = file.name.replace(/"/g, '');
+        return [
+          `--${outerBoundary}`,
+          `Content-Type: ${file.type || 'application/octet-stream'}; name="${safeName}"`,
+          `Content-Disposition: attachment; filename="${safeName}"`,
+          'Content-Transfer-Encoding: base64',
+          '',
+          b64,
+        ].join('\r\n');
+      })
+    );
+
+    mime = [
+      [...commonHeaders, `Content-Type: multipart/mixed; boundary="${outerBoundary}"`].join('\r\n'),
+      '',
+      `--${outerBoundary}`,
+      `Content-Type: multipart/alternative; boundary="${innerBoundary}"`,
+      '',
+      `--${innerBoundary}`,
+      'Content-Type: text/plain; charset=utf-8',
+      '',
+      plainBody,
+      '',
+      `--${innerBoundary}`,
+      'Content-Type: text/html; charset=utf-8',
+      '',
+      replyHtml || '',
+      '',
+      `--${innerBoundary}--`,
+      '',
+      ...attachmentParts,
+      `--${outerBoundary}--`,
+    ].join('\r\n');
+  } else {
+    const boundary = `mp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    mime = [
+      [...commonHeaders, `Content-Type: multipart/alternative; boundary="${boundary}"`].join('\r\n'),
+      '',
+      `--${boundary}`,
+      'Content-Type: text/plain; charset=utf-8',
+      '',
+      plainBody,
+      '',
+      `--${boundary}`,
+      'Content-Type: text/html; charset=utf-8',
+      '',
+      replyHtml || '',
+      '',
+      `--${boundary}--`,
+    ].join('\r\n');
+  }
+
+  // base64url-encode the full RFC 2822 message (UTF-8 safe via TextEncoder)
+  const bytes = new TextEncoder().encode(mime);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  const raw = btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+  const requestBody = { raw };
+  if (threadId) requestBody.threadId = threadId;
+
+  const response = await fetch(`${GMAIL_API_BASE}/messages/send`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${gmailToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(requestBody),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Gmail messages.send ${response.status}: ${text}`);
+  }
+
+  return response.json(); // { id, threadId, labelIds }
+};
+
+/**
  * POST an outbound email payload to a Webex Connect inbound webhook.
  * @param {string} webhookUrl - Webex Connect webhook URL (from widget layout config)
  * @param {object} payload    - { replyHtml, replyText, toAddress, subject, threadId, correlationId, ... }
@@ -2031,4 +2247,48 @@ export const sendEmailViaWebexConnect = async (webhookUrl, payload) => {
     return response.json();
   }
   return { ok: true };
+};
+
+/**
+ * Poll Gmail history for changes since a known historyId.
+ * Uses the cheapest possible API call — only message additions to INBOX.
+ * Returns the new historyId and an array of added messageIds in the thread.
+ *
+ * @param {string} startHistoryId - historyId from the last full thread fetch
+ * @param {string} threadId       - Only return new messages belonging to this thread
+ * @param {string} gmailToken
+ * @returns {{ newHistoryId: string|null, addedMessageIds: string[] }}
+ */
+export const pollGmailThreadHistory = async (startHistoryId, threadId, gmailToken) => {
+  const params = new URLSearchParams({
+    startHistoryId,
+    historyTypes: 'messageAdded',
+    labelId: 'INBOX',
+  });
+  const url = `${GMAIL_API_BASE}/history?${params}`;
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${gmailToken}` },
+  });
+
+  // 404 means the historyId is too old (expired) — caller should do a full refresh
+  if (response.status === 404) {
+    return { newHistoryId: null, addedMessageIds: [], expired: true };
+  }
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Gmail history.list ${response.status}: ${text}`);
+  }
+
+  const data = await response.json();
+  const newHistoryId = data.historyId || null;
+  const addedMessageIds = [];
+  for (const record of (data.history || [])) {
+    for (const added of (record.messagesAdded || [])) {
+      if (!threadId || added.message?.threadId === threadId) {
+        addedMessageIds.push(added.message.id);
+      }
+    }
+  }
+  return { newHistoryId, addedMessageIds, expired: false };
 };

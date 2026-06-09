@@ -12,6 +12,9 @@ import {
   setDarkMode,
   toggleRelatedCaseExpanded,
   toggleCustomerPanelAndLoadCases,
+  loadJdsHistoryForEmailTask,
+  loadJdsHistoryForWorkItemTask,
+  extractEmailFromTask,
 } from './store';
 import { Badge, Button, Input, Label } from '@momentum-ui/react';
 import { useI18n } from './i18n/I18nContext';
@@ -25,31 +28,40 @@ import ChatWidget from './chat/ChatWidget';
 import VoiceWidget from './voice/VoiceWidget';
 import CasesView from './views/CasesView';
 import HistoryView from './views/HistoryView';
+import UnifiedView360 from './views/UnifiedView360';
+import TaskWidget from './task/TaskWidget';
 import './ui/widget-layout.css';
 import './views/views.css';
 
 const parseTaskInput = (task, taskType, email) => {
   if (!task) return null;
-  const mergedTopLevel = {
-    taskType: taskType || undefined,
-    email: email || undefined,
-    customerEmail: email || undefined,
-  };
 
-  if (typeof task === 'string') {
+  // Always produce a plain serializable object. The Desktop SDK passes task as a
+  // MobX observable (from $STORE.agentContact.taskSelected). Storing a MobX
+  // observable in Redux state causes immer to call Object.freeze on it, which
+  // triggers MobX error 15 ("Observable arrays cannot be frozen") on every
+  // subsequent dispatch. JSON round-trip strips all proxy wrapping.
+  const parsed = (() => {
     try {
-      return {
-        ...JSON.parse(task),
-        ...mergedTopLevel,
-      };
+      const raw = typeof task === 'string' ? JSON.parse(task) : task;
+      return JSON.parse(JSON.stringify(raw));
     } catch (error) {
-      console.warn('TaskManagement: invalid task JSON payload', error);
+      console.warn('TaskManagement: failed to serialize task payload', error);
       return null;
     }
-  }
+  })();
+
+  if (!parsed) return null;
+
+  // Extract email from all known task payload locations if not provided as explicit prop
+  const extractedEmail = extractEmailFromTask(parsed);
+  const resolvedEmail = email || extractedEmail || undefined;
+
   return {
-    ...task,
-    ...mergedTopLevel,
+    ...parsed,
+    taskType: taskType || undefined,
+    email: resolvedEmail,
+    customerEmail: resolvedEmail,
   };
 };
 
@@ -88,12 +100,14 @@ const getTaskCaseId = (task) => {
 
 const getNormalizedTaskType = (task) => {
   if (!task) return '';
-  
+
   // Only check explicit task type sources, NOT task.type (which is the event type)
   const explicitType = String(
     task.taskType ||
     task.callAssociatedData?.taskType?.value ||
     task.callAssociatedDetails?.taskType ||
+    // Work-item tasks carry taskType inside channelParams.message.workItemData
+    task.channelParams?.message?.workItemData?.taskType ||
     '',
   ).toLowerCase();
 
@@ -114,9 +128,21 @@ const TaskManagement = (props) => {
     caseWorkflow,
   } = useSelector((state) => state.widget);
 
+  // Derive a stable key from actionable task fields so taskPayload (and effects
+  // that depend on it) do not recalculate on every Desktop heartbeat update
+  // (monitoringHoldTimer / bargedInTimeStamp change every few seconds).
+  const stableTaskKey = useMemo(() => {
+    if (!props.task) return '';
+    const t = typeof props.task === 'string'
+      ? (() => { try { return JSON.parse(props.task); } catch { return {}; } })()
+      : props.task;
+    return `${t.interactionId}|${t.state}|${t.isWrapUp}|${t.isTerminated}|${t.ani}`;
+  }, [props.task]);
+
   const taskPayload = useMemo(
     () => parseTaskInput(props.task, props.taskType, props.email),
-    [props.task, props.taskType, props.email],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [stableTaskKey, props.taskType, props.email],
   );
   const [noteDraft, setNoteDraft] = useState('');
   const sdkInitStartedRef = useRef(false);
@@ -155,10 +181,41 @@ const TaskManagement = (props) => {
     dispatch(loadCaseTask(taskPayload));
   }, [dispatch, taskPayload]);
 
+  // When an email task arrives (native email channel OR work-item with taskType=email),
+  // fetch the customer's full event history from JDS so the History panel is populated.
+  const isEmailTaskForJds =
+    taskPayload?.mediaType === 'email' ||
+    getNormalizedTaskType(taskPayload) === 'email';
+
+  // Extract only the stable identity fields so the effect does not re-fire on
+  // every heartbeat update (monitoringHoldTimer, bargedInTimeStamp, etc. change
+  // every few seconds even when the actual task/customer doesn't change).
+  const emailForJds = useMemo(
+    () => isEmailTaskForJds ? extractEmailFromTask(taskPayload) : null,
+    // Depend on the fields that actually identify the task, not the whole object
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [taskPayload?.interactionId, taskPayload?.ani, taskPayload?.mediaType],
+  );
+
   useEffect(() => {
-    if (props.darkmode !== undefined) {
-      dispatch(setDarkMode(props.darkmode));
+    if (emailForJds && taskPayload) {
+      dispatch(loadJdsHistoryForEmailTask(taskPayload));
     }
+  }, [dispatch, emailForJds]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // WorkItem tasks: use both phone (ANI) and email from CAD to fetch JDS history
+  // and subscribe to SSE for real-time events.
+  const isWorkItemForJds = taskPayload?.mediaType === 'workItem';
+  useEffect(() => {
+    if (isWorkItemForJds && taskPayload) {
+      dispatch(loadJdsHistoryForWorkItemTask(taskPayload));
+    }
+  // Stable identity deps only — interactionId changes when a new workItem arrives
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dispatch, taskPayload?.interactionId, isWorkItemForJds]);
+
+  useEffect(() => {
+    dispatch(setDarkMode(props.darkmode));
   }, [dispatch, props.darkmode]);
 
   useEffect(() => {
@@ -192,9 +249,43 @@ const TaskManagement = (props) => {
   };
 
   const isCaseTask = getNormalizedTaskType(taskPayload) === 'case';
-  const isEmailTask =
-    taskPayload?.mediaType === 'email' ||
-    getNormalizedTaskType(taskPayload) === 'email';
+  const isEmailTask = isEmailTaskForJds; // mediaType=email OR taskType=email (incl. work-items)
+  const isWorkItemTask = taskPayload?.mediaType === 'workItem';
+
+  // Build enriched callAssociatedDetails so EmailWidget always has the customer email,
+  // regardless of which payload field the Desktop used to deliver it.
+  const buildEmailCallDetails = (payload) => {
+    if (!payload) return null;
+    const raw = payload.callAssociatedDetails || payload.callAssociatedData || {};
+
+    // Helper: unwrap CAD value objects { value: "..." } or plain strings
+    const cadVal = (field) => {
+      const v = raw[field];
+      if (!v) return null;
+      return typeof v === 'object' && 'value' in v ? v.value : String(v);
+    };
+
+    const isWorkItem = payload.mediaType === 'workItem';
+    // For workItem tasks ANI is a phone number — use explicit CAD 'email' field.
+    // For native email tasks, ANI IS the sender address.
+    const fromAddress = isWorkItem
+      ? (cadVal('email') || raw.fromAddress || payload.email || null)
+      : (cadVal('fromAddress') || payload.customerEmail || payload.email || payload.ani || payload.displayAni || null);
+
+    // Gmail identifiers: populated once Webex Connect flow maps them as CAD vars.
+    const gmailThreadId = cadVal('gmailThreadId') || null;
+    const gmailMessageId = cadVal('gmailMessageId') || null;
+    // RFC 2822 Message-ID from the original email headers — enables rfc822msgid: search.
+    const rfcMessageId = cadVal('rfcMessageId') || null;
+
+    // Email subject: prefer CAD, fall back to mediaProperties.
+    const subject =
+      cadVal('subject') ||
+      payload.mediaProperties?.emailSubject ||
+      null;
+
+    return { ...raw, customerEmail: fromAddress, fromAddress, gmailThreadId, gmailMessageId, rfcMessageId, subject };
+  };
 
   // Explicit view routing (set via web component `view` attribute in desktop layout JSON).
   // Lets the same standalone bundle act as multiple visually-distinct widgets.
@@ -248,13 +339,24 @@ const TaskManagement = (props) => {
       </div>
     );
   }
+  if (explicitView === '360' || explicitView === '360-mock') {
+    return (
+      <div className={`tm-view-mount${darkMode ? ' md--dark' : ''}`}>
+        <UnifiedView360
+          darkMode={darkMode}
+          mockMode={explicitView === '360-mock' || !taskPayload}
+          task={taskPayload}
+        />
+      </div>
+    );
+  }
   if (explicitView === 'email') {
     return (
       <div className={`tm-view-mount${darkMode ? ' md--dark' : ''}`}>
         {taskPayload ? (
           <EmailWidget
             interactionId={taskPayload.taskId || taskPayload.id || taskPayload.interactionId || ''}
-            callAssociatedDetails={taskPayload.callAssociatedDetails || taskPayload.callAssociatedData || taskPayload}
+            callAssociatedDetails={buildEmailCallDetails(taskPayload)}
             darkMode={darkMode}
           />
         ) : (
@@ -267,6 +369,20 @@ const TaskManagement = (props) => {
     return (
       <div className={`tm-view-mount${darkMode ? ' md--dark' : ''}`}>
         <EmailWidget interactionId="mock-001" darkMode={darkMode} mockMode />
+      </div>
+    );
+  }
+  if (explicitView === 'task') {
+    return (
+      <div className={`tm-view-mount${darkMode ? ' md--dark' : ''}`}>
+        <TaskWidget task={taskPayload} darkMode={darkMode} />
+      </div>
+    );
+  }
+  if (explicitView === 'task-mock') {
+    return (
+      <div className={`tm-view-mount${darkMode ? ' md--dark' : ''}`}>
+        <TaskWidget darkMode={darkMode} mockMode />
       </div>
     );
   }
@@ -302,14 +418,18 @@ const TaskManagement = (props) => {
         <MomentumCard dark={darkMode}>{t('case.noTask')}</MomentumCard>
       ) : null}
 
-      {taskPayload && !isCaseTask && !isEmailTask ? (
+      {taskPayload && isWorkItemTask ? (
+        <TaskWidget task={taskPayload} darkMode={darkMode} />
+      ) : null}
+
+      {taskPayload && !isCaseTask && !isEmailTask && !isWorkItemTask ? (
         <MomentumCard dark={darkMode}>{t('case.unsupportedTaskType', { taskType: taskPayload.taskType || '-' })}</MomentumCard>
       ) : null}
 
       {taskPayload && isEmailTask ? (
         <EmailWidget
           interactionId={taskPayload.taskId || taskPayload.id || taskPayload.interactionId || ''}
-          callAssociatedDetails={taskPayload.callAssociatedDetails || taskPayload.callAssociatedData || taskPayload}
+          callAssociatedDetails={buildEmailCallDetails(taskPayload)}
           darkMode={darkMode}
         />
       ) : null}

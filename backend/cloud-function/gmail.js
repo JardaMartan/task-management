@@ -100,6 +100,30 @@ const watchGmailInbox = async (emailAddress) => {
 const getHeader = (headers, name) =>
   (headers || []).find((h) => h.name.toLowerCase() === name.toLowerCase())?.value || '';
 
+/**
+ * Decode RFC 2047 MIME encoded-words (=?charset?B/Q?text?=) in email headers.
+ * Gmail API with format=full returns raw MIME headers which may contain these.
+ */
+const decodeMimeHeader = (str) => {
+  if (!str || !str.includes('=?')) return str;
+  return str.replace(/=\?([^?]+)\?([BQbq])\?([^?]*)\?=/g, (match, charset, encoding, text) => {
+    try {
+      const enc = charset.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const bufEncoding = (enc === 'iso88591' || enc === 'latin1') ? 'latin1' : 'utf8';
+      if (encoding.toUpperCase() === 'B') {
+        return Buffer.from(text, 'base64').toString(bufEncoding);
+      }
+      // Q encoding: _ → space, =XX → byte
+      const raw = text.replace(/_/g, ' ').replace(/=([0-9A-Fa-f]{2})/g, (_, h) =>
+        String.fromCharCode(parseInt(h, 16))
+      );
+      return Buffer.from(raw, 'binary').toString(bufEncoding);
+    } catch {
+      return match;
+    }
+  });
+};
+
 const decodeBase64Url = (data) => {
   if (!data) return '';
   return Buffer.from(data.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
@@ -134,13 +158,19 @@ const parseGmailApiMessage = (msg) => {
   const headers = msg.payload?.headers || [];
   const body = extractBodyParts(msg.payload);
 
+  // RFC 2822 Message-ID — globally unique per message. Strip angle brackets for
+  // use with Gmail's rfc822msgid: search operator (e.g. rfc822msgid:XXXX@domain).
+  const rawMessageIdHeader = getHeader(headers, 'Message-ID') || getHeader(headers, 'Message-Id');
+  const rfcMessageId = rawMessageIdHeader.replace(/^<|>$/g, '').trim() || null;
+
   return {
     messageId: msg.id,
     threadId: msg.threadId,
-    from: getHeader(headers, 'From'),
-    to: getHeader(headers, 'To'),
-    cc: getHeader(headers, 'Cc'),
-    subject: getHeader(headers, 'Subject'),
+    rfcMessageId,
+    from: decodeMimeHeader(getHeader(headers, 'From')),
+    to: decodeMimeHeader(getHeader(headers, 'To')),
+    cc: decodeMimeHeader(getHeader(headers, 'Cc')),
+    subject: decodeMimeHeader(getHeader(headers, 'Subject')),
     date: getHeader(headers, 'Date'),
     snippet: msg.snippet || '',
     bodyHtml: body.html,

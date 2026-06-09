@@ -252,6 +252,27 @@
     }
   }
 
+  // ─── WorkItem layout patches (col3 collapse only, no panel repositioning) ───
+
+  var _workItemLayoutActive  = false;
+
+  function applyWorkItemLayout() {
+    if (_workItemLayoutActive) return;
+    console.log('[panel-layout] applyWorkItemLayout triggered');
+    var rv = findRouterView();
+    if (!rv) { console.warn('[panel-layout] workItem layout: router-view not found'); return; }
+    // Reuse the same CSS injection as email — hide engage panel, stretch to full width
+    _doApplyEngageHide(rv);
+    _workItemLayoutActive = true;
+  }
+
+  function clearWorkItemLayout() {
+    if (!_workItemLayoutActive) return;
+    _workItemLayoutActive = false;
+    clearEmailGridLayout();
+    console.log('[panel-layout] workItem layout cleared');
+  }
+
   // ─── Email layout patches ─────────────────────────────────────────────────
 
   var EMAIL_COMPOSER_STYLE_ID = 'panel-layout-email-composer-hide';
@@ -448,79 +469,45 @@
   // Expose for manual console use
   window.__plDiag = _diagDumpGrid;
 
-  function _doApplyEmailGrid(rv, wrapperEl, dynWidgetEl) {
+  var ENGAGE_HIDE_STYLE_ID = 'panel-layout-engage-hide';
+  var _engageHideStyleRoot  = null;
+
+  function _doApplyEngageHide(rv) {
     // Run diagnostic first so the log shows the grid state before we touch anything
     _diagDumpGrid();
 
-    // wrapperGC = DIV#common-control (grid-area: common-control, col3/row3)
-    var wrapperGC = findGridChild(wrapperEl, rv) || wrapperEl;
+    var sr = rv.shadowRoot || rv;
 
-    // panels-scroll-container is display:contents so its children ARE the grid items.
-    // #panel-two is the actual grid child for the main content — not uuip-dynamic-widget.
-    var psc = (rv.shadowRoot || rv).querySelector('.panels-scroll-container');
-    var panelTwo = psc ? psc.querySelector('#panel-two') : null;
-    if (!panelTwo) {
-      console.warn('[panel-layout] #panel-two not found — falling back to dynWidgetEl');
-      panelTwo = dynWidgetEl;
-    }
+    // Remove any stale injection
+    var existing = sr.getElementById(ENGAGE_HIDE_STYLE_ID);
+    if (existing) existing.remove();
 
-    function label(el) {
-      return el.tagName + (el.id ? '#'+el.id : '') +
-             (el.className ? '.'+String(el.className).trim().split(/\s+/)[0] : '');
-    }
-    console.log('[panel-layout] email grid | wrapperGC:', label(wrapperGC),
-                '| panelTwo:', label(panelTwo));
+    // Inject CSS into the shadow root so we play nicely with named grid areas:
+    //   1. Hide #panel-one (engage/compose panel, col3 named area)
+    //   2. Stretch #common-control (call-control bar) to span col3+col4
+    //   3. Stretch #panel-two   (customer360 etc.)  to span col3+col4
+    // Using implicit named-area line names (common-control-start, panel-two-end)
+    // means we don't hardcode numeric column indices — robust across layout changes.
+    var style = document.createElement('style');
+    style.id = ENGAGE_HIDE_STYLE_ID;
+    style.textContent = [
+      '#panel-one {',
+      '  display: none !important;',
+      '}',
+      '#common-control {',
+      '  grid-column: common-control-start / -1 !important;',
+      '}',
+      '#panel-two {',
+      '  grid-column: common-control-start / -1 !important;',
+      '  grid-row:    common-control-end   / panel-two-end !important;',
+      '  margin-left: 16px !important;',
+      '  padding-left: 0 !important;',
+      '}'
+    ].join('\n');
+    sr.appendChild(style);
+    _engageHideStyleRoot = sr;
 
-    // ── Read current computed grid rows to restore precisely ──
-    var cs = window.getComputedStyle(rv);
-    var origRows = cs.gridTemplateRows;
-
-    var rowParts = origRows.split(/\s+/);
-    var newRows = rowParts.slice();
-    if (newRows.length >= 4) {
-      newRows[2] = 'auto';  // row3: shrink to interaction wrapper content
-      newRows[3] = '1fr';   // row4: fill remaining height
-    }
-    var emailRows = newRows.join(' ');
-    console.log('[panel-layout] email grid | origRows:', origRows, '| emailRows:', emailRows);
-
-    _emailGridState = {
-      wrapperGC:     wrapperGC,
-      panelTwo:      panelTwo,
-      wrapperCol:    wrapperGC.style.gridColumn,
-      wrapperRow:    wrapperGC.style.gridRow,
-      wrapperAlign:  wrapperGC.style.alignSelf,
-      wrapperH:      wrapperGC.style.height,
-      panelTwoCol:   panelTwo.style.gridColumn,
-      panelTwoRow:   panelTwo.style.gridRow,
-      panelTwoAlign: panelTwo.style.alignSelf,
-      panelTwoH:     panelTwo.style.height,
-      panelTwoML:    panelTwo.style.marginLeft,
-      rvRowsOrig:    rv.style.gridTemplateRows
-    };
-
-    // Place wrapperGC (#common-control): col4/row3, auto height
-    wrapperGC.style.setProperty('grid-column', '4',     'important');
-    wrapperGC.style.setProperty('grid-row',    '3',     'important');
-    wrapperGC.style.setProperty('align-self',  'start', 'important');
-    wrapperGC.style.setProperty('height',      'auto',  'important');
-
-    // Place panelTwo (#panel-two): col4/row4, fills remaining height
-    // margin-left matches the visual left indent of #common-control's internal padding
-    panelTwo.style.setProperty('grid-column',  '4',       'important');
-    panelTwo.style.setProperty('grid-row',     '4',       'important');
-    panelTwo.style.setProperty('align-self',   'stretch', 'important');
-    panelTwo.style.setProperty('height',       '100%',    'important');
-    panelTwo.style.setProperty('margin-left',  '16px',    'important');
-
-    // Collapse col3 (hides #panel-one automatically), update rows
-    _observerPaused = true;
-    rv.style.setProperty('grid-template-columns', EMAIL_COLUMNS, 'important');
-    rv.style.setProperty('grid-template-rows',    emailRows,     'important');
-
-    emailLayoutActive = true;
-    console.log('[panel-layout] email CSS-grid layout applied ✅');
-    // Post-apply diagnostic to verify what actually changed
+    console.log('[panel-layout] engage panel hidden \u2705 (CSS injected into shadow root)');
     setTimeout(function () {
       console.log('[panel-layout][diag] POST-APPLY STATE:');
       _diagDumpGrid();
@@ -530,18 +517,16 @@
   function applyEmailGridLayout() {
     var retries = 0;
     function attempt() {
-      var rv        = findRouterView();
-      var wrapperEl = findWrapper();
-      var dynWidget = findDeep(document.body, 'uuip-dynamic-widget');
-      console.log('[panel-layout] email grid attempt', retries,
-                  '| rv:', !!rv, '| wrapper:', !!wrapperEl, '| dynWidget:', !!dynWidget);
-      if (rv && wrapperEl && dynWidget) {
-        _doApplyEmailGrid(rv, wrapperEl, dynWidget);
+      var rv = findRouterView();
+      console.log('[panel-layout] engage-hide attempt', retries, '| rv:', !!rv);
+      if (rv) {
+        _doApplyEngageHide(rv);
+        emailLayoutActive = true;
         return;
       }
       retries++;
       if (retries >= 15) {
-        console.warn('[panel-layout] email grid layout: elements not found after', retries, 'retries | rv:', !!rv, '| wrapper:', !!wrapperEl, '| dynWidget:', !!dynWidget);
+        console.warn('[panel-layout] engage-hide: router-view not found after', retries, 'retries');
         return;
       }
       setTimeout(attempt, 400);
@@ -550,38 +535,15 @@
   }
 
   function clearEmailGridLayout() {
-    if (!_emailGridState) return;
-    var s = _emailGridState;
-
-    if (s.roWrapper)  { s.roWrapper.disconnect(); }
-    if (s.roTaskList) { s.roTaskList.disconnect(); }
-
-    function restoreProp(el, prop, val) {
-      val ? el.style.setProperty(prop, val) : el.style.removeProperty(prop);
-    }
-    restoreProp(s.wrapperGC,  'grid-column', s.wrapperCol);
-    restoreProp(s.wrapperGC,  'grid-row',    s.wrapperRow);
-    restoreProp(s.wrapperGC,  'align-self',  s.wrapperAlign);
-    restoreProp(s.wrapperGC,  'height',      s.wrapperH);
-    if (s.panelTwo) {
-      restoreProp(s.panelTwo, 'grid-column', s.panelTwoCol);
-      restoreProp(s.panelTwo, 'grid-row',    s.panelTwoRow);
-      restoreProp(s.panelTwo, 'align-self',  s.panelTwoAlign);
-      restoreProp(s.panelTwo, 'height',      s.panelTwoH);
-      restoreProp(s.panelTwo, 'margin-left', s.panelTwoML);
-    }
-
-    var rv = findRouterView();
-    if (rv) {
-      restoreProp(rv, 'grid-template-rows', s.rvRowsOrig);
+    // Remove the injected shadow-root stylesheet — all overrides revert automatically
+    if (_engageHideStyleRoot) {
+      var s = _engageHideStyleRoot.getElementById(ENGAGE_HIDE_STYLE_ID);
+      if (s) s.remove();
+      _engageHideStyleRoot = null;
     }
     _emailGridState = null;
-
-    // Restore grid columns and re-enable the style observer
-    if (rv) rv.style.setProperty('grid-template-columns', COLUMNS, 'important');
     _observerPaused = false;
-
-    console.log('[panel-layout] email CSS-grid layout cleared');
+    console.log('[panel-layout] engage panel restored (shadow-root style removed)');
   }
 
   function applyEmailLayout() {
@@ -608,6 +570,7 @@
       _lastMediaType = null;
       applyTaskIndicator('');
       clearEmailLayout();
+      clearWorkItemLayout();
       return;
     }
 
@@ -631,9 +594,14 @@
 
     applyTaskIndicator(mediaType);
     if (mediaType === 'email') {
+      clearWorkItemLayout();
       applyEmailLayout();
+    } else if (mediaType === 'workitem') {
+      clearEmailLayout();
+      applyWorkItemLayout();
     } else {
       clearEmailLayout();
+      clearWorkItemLayout();
     }
   }
 

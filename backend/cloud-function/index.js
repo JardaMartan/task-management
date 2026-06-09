@@ -3,7 +3,7 @@
 const functions = require('@google-cloud/functions-framework');
 const { fetchInboundEmail, watchGmailInbox } = require('./gmail');
 const { enrichEmailWithAi } = require('./ai');
-const { mintGmailToken, verifyWebexIdentity } = require('./token-broker');
+const { mintGmailToken, mintGeminiToken, verifyWebexIdentity } = require('./token-broker');
 
 // ─── Health ───────────────────────────────────────────────────────────────────
 
@@ -117,10 +117,26 @@ functions.http('auth', async (req, res) => {
       return res.status(401).json({ error: 'Invalid Webex token' });
     }
 
-    // Mint a Gmail service-account token scoped for the support inbox
-    const { gmailToken, expiresAt } = await mintGmailToken(identity);
+    // Mint Gmail token (DWD, support inbox) and Gemini token (service account)
+    // in parallel — both come from the same service account key.
+    const [gmailResult, geminiResult] = await Promise.all([
+      mintGmailToken(),
+      mintGeminiToken().catch((err) => {
+        // Gemini token is optional — Gmail can still work without it
+        console.warn('[auth] Gemini token mint failed (AI features will be unavailable):', err.message);
+        return null;
+      }),
+    ]);
 
-    return res.status(200).json({ gmailToken, expiresAt });
+    const responsePayload = {
+      gmailToken: gmailResult.gmailToken,
+      expiresAt: gmailResult.expiresAt,
+    };
+    if (geminiResult?.geminiToken) {
+      responsePayload.geminiToken = geminiResult.geminiToken;
+    }
+
+    return res.status(200).json(responsePayload);
   } catch (err) {
     console.error('[auth] Token broker error:', err);
     return res.status(500).json({ error: 'Token exchange failed' });
@@ -159,9 +175,11 @@ function buildWebexConnectPayload(msg, aiEnrichment) {
   );
 
   return {
-    // Core identifiers
-    messageId: msg.messageId,
-    threadId: msg.threadId,
+    // Core identifiers — all three are usable by the widget to locate the email in Gmail.
+    // gmailMessageId and gmailThreadId are direct; rfcMessageId enables rfc822msgid: search.
+    gmailMessageId: msg.messageId,
+    gmailThreadId: msg.threadId,
+    rfcMessageId: msg.rfcMessageId || '',
     // Addressing
     fromAddress: msg.from,
     toAddress: msg.to,

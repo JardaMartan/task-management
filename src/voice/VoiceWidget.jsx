@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import PropTypes from 'prop-types';
+import { useDispatch, useSelector } from 'react-redux';
 import VoiceAnalyticsBar from './VoiceAnalyticsBar';
 import { useI18n } from '../i18n/I18nContext';
 import { getMockData } from '../mock/mockData';
+import { toggleAnalyticsOpen } from '../store/slices/widgetSlice';
 import './voice.css';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -22,32 +24,127 @@ const SentimentDot = ({ sentiment }) => {
 
 // ─── Main widget ───────────────────────────────────────────────────────────
 
-const VoiceWidget = ({ darkMode }) => {
+const VoiceWidget = ({ darkMode, mockMode, initialTaskId, onNavigate }) => {
   const { locale, t } = useI18n();
+  const dispatch = useDispatch();
+  const analyticsOpen = useSelector((state) => state.widget.analyticsOpen);
   const mock = getMockData(locale);
   const MOCK_CALLS = mock.voice.calls;
   const MOCK_TRANSCRIPT = mock.voice.transcript;
   const AI_SUMMARY = mock.voice.aiSummary;
   const OPEN_CASES = mock.voice.openCases;
-  const [analyticsOpen, setAnalyticsOpen] = useState(true);
-  const [selectedCallId, setSelectedCallId] = useState('call-1');
+  const [activeFilters, setActiveFilters] = useState({ outcome: null, direction: null, sentiment: null });
+  const isDemoMode = Boolean(mockMode);
+
+  const handleFilterChange = useCallback(({ type, key }) => {
+    setActiveFilters((f) => ({ ...f, [type]: key }));
+  }, []);
+
+  const handleCaseClick = useCallback((caseId) => {
+    onNavigate?.('cases', { highlightCaseId: caseId });
+  }, [onNavigate]);
+
+  // Resolve initial call: prefer the call matching initialTaskId, else first call
+  const resolveCallId = (taskId) => {
+    if (taskId) {
+      const found = MOCK_CALLS.find((c) => c.taskId === taskId);
+      if (found) return found.id;
+    }
+    return MOCK_CALLS[0]?.id || 'call-1';
+  };
+
+  const [selectedCallId, setSelectedCallId] = useState(() => resolveCallId(initialTaskId));
+
+  // Navigate to a different call when initialTaskId prop changes (cross-tab navigate)
+  useEffect(() => {
+    if (!initialTaskId) return;
+    const id = resolveCallId(initialTaskId);
+    setSelectedCallId(id);
+  }, [initialTaskId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Apply quick-filters to the call list
+  const filteredCalls = useMemo(() => {
+    if (!activeFilters.outcome && !activeFilters.direction && !activeFilters.sentiment) return MOCK_CALLS;
+    return MOCK_CALLS.filter((c) => {
+      if (activeFilters.outcome   && c.outcomeKey !== activeFilters.outcome)   return false;
+      if (activeFilters.direction && c.direction  !== activeFilters.direction) return false;
+      if (activeFilters.sentiment && c.sentiment  !== activeFilters.sentiment) return false;
+      return true;
+    });
+  }, [MOCK_CALLS, activeFilters]);
+
+  const isFiltered = activeFilters.outcome || activeFilters.direction || activeFilters.sentiment;
+  const activeFilterCount = [activeFilters.outcome, activeFilters.direction, activeFilters.sentiment].filter(Boolean).length;
+
   const selectedCall = MOCK_CALLS.find(c => c.id === selectedCallId) || MOCK_CALLS[0];
+
+  // Scroll the active call item into view whenever selection changes
+  const activeCallRef = useRef(null);
+  useEffect(() => {
+    activeCallRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [selectedCallId]);
+
+  // Use transcript keyed to the selected call if available, else fall back to default
+  const callTranscript = selectedCall.transcript || MOCK_TRANSCRIPT;
 
   return (
     <div className={`voice widget-shell${darkMode ? ' md--dark' : ''}`}>
 
       {/* ── Collapsible analytics bar ─────────────────── */}
       <div className={`analytics-collapse${analyticsOpen ? ' analytics-collapse--open' : ' analytics-collapse--closed'}${darkMode ? ' analytics-collapse--dark' : ''}`}>
-        <button
+        <div
           className="analytics-collapse__toggle"
-          onClick={() => setAnalyticsOpen(o => !o)}
+          role="button"
+          tabIndex={0}
+          onClick={() => dispatch(toggleAnalyticsOpen())}
+          onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && dispatch(toggleAnalyticsOpen())}
           aria-expanded={analyticsOpen}
         >
           <span className="analytics-collapse__label">{t('analytics.customerAnalytics')}</span>
-          <span className="analytics-collapse__chevron">{analyticsOpen ? '▲' : '▼'}</span>
-        </button>
-        {analyticsOpen && <VoiceAnalyticsBar darkMode={darkMode} />}
+          <span className="analytics-collapse__header-right">
+            <span className="analytics-collapse__chevron">{analyticsOpen ? '▲' : '▼'}</span>
+          </span>
+        </div>
+        {analyticsOpen && (
+          <VoiceAnalyticsBar
+            darkMode={darkMode}
+            onFilterChange={handleFilterChange}
+            activeFilters={activeFilters}
+            onCaseClick={onNavigate ? handleCaseClick : undefined}
+          />
+        )}
       </div>
+
+      {/* ── Active filter indicator ── */}
+      {isFiltered && (
+        <div className="history-view__filter-bar">
+          <span className="history-view__filter-bar__label">Filtered:</span>
+          {activeFilters.outcome && (
+            <button type="button" className="history-view__filter-chip"
+              onClick={() => handleFilterChange({ type: 'outcome', key: null })}>
+              {activeFilters.outcome} ×
+            </button>
+          )}
+          {activeFilters.direction && (
+            <button type="button" className="history-view__filter-chip"
+              onClick={() => handleFilterChange({ type: 'direction', key: null })}>
+              {activeFilters.direction} ×
+            </button>
+          )}
+          {activeFilters.sentiment && (
+            <button type="button" className="history-view__filter-chip"
+              onClick={() => handleFilterChange({ type: 'sentiment', key: null })}>
+              {activeFilters.sentiment} ×
+            </button>
+          )}
+          {activeFilterCount > 1 && (
+            <button type="button" className="history-view__filter-chip history-view__filter-chip--clear"
+              onClick={() => setActiveFilters({ outcome: null, direction: null, sentiment: null })}>
+              Clear all
+            </button>
+          )}
+        </div>
+      )}
 
       {/* ── Active call header ────────────────────────── */}
       <div className="voice__call-header">
@@ -87,9 +184,10 @@ const VoiceWidget = ({ darkMode }) => {
         {/* ── Left: call history list ─────────────────── */}
         <div className="voice__call-list widget-panel">
           <div className="widget-panel__header">{t('voice.callHistory')}</div>
-          {MOCK_CALLS.map(call => (
+          {filteredCalls.map(call => (
             <div
               key={call.id}
+              ref={call.id === selectedCallId ? activeCallRef : null}
               className={`voice__call-item${call.id === selectedCallId ? ' voice__call-item--active' : ''}`}
               onClick={() => setSelectedCallId(call.id)}
             >
@@ -117,7 +215,7 @@ const VoiceWidget = ({ darkMode }) => {
             {selectedCall.active && <span className="voice__live-badge voice__live-badge--sm">● {t('voice.live')}</span>}
           </div>
           <div className="voice__transcript-scroll">
-            {MOCK_TRANSCRIPT.map(entry => {
+            {callTranscript.map(entry => {
               if (entry.role === 'system') {
                 return (
                   <div key={entry.id} className={`voice__transcript-system${entry.live ? ' voice__transcript-system--live' : ''}`}>
@@ -199,6 +297,9 @@ const VoiceWidget = ({ darkMode }) => {
 
 VoiceWidget.propTypes = {
   darkMode: PropTypes.bool,
+  mockMode: PropTypes.bool,
+  initialTaskId: PropTypes.string,
+  onNavigate: PropTypes.func,
 };
 
 export default VoiceWidget;

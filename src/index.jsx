@@ -102,7 +102,6 @@ class TaskManagementElement extends HTMLElement {
     this._task = null;
     this._selectedtaskid = null;
     this._cad = null;
-    this._details = null;
     this._wrap = null;
     this._avatar = null;
     this._name = null;
@@ -136,6 +135,11 @@ class TaskManagementElement extends HTMLElement {
   }
 
   static get observedAttributes() {
+    // NOTE: 'config' is intentionally NOT observed here. The Desktop framework
+    // calls setAttribute('config', obj) which converts the object to the string
+    // "[object Object]" — useless for JSON parsing. Config must be passed via
+    // the `properties` section of the Desktop layout JSON (element.config = {...})
+    // so the property setter receives the real object.
     return ['darkmode', 'accesstoken', 'orgid', 'datacenter', 'locale', 'tasktype', 'email', 'view'];
   }
 
@@ -251,7 +255,20 @@ class TaskManagementElement extends HTMLElement {
 
   set task(value) {
     if (this._task === value) return;
+    // Heartbeat guard: Desktop updates monitoringHoldTimer/bargedInTimeStamp every
+    // few seconds on an unchanged task. Only re-render when actionable fields change
+    // (new interaction, state transition, wrap-up, termination).
+    const getTaskKey = (v) => {
+      if (!v) return '';
+      const t = typeof v === 'string'
+        ? (() => { try { return JSON.parse(v); } catch { return {}; } })()
+        : v;
+      return `${t.interactionId}|${t.state}|${t.isWrapUp}|${t.isTerminated}|${t.ani}`;
+    };
+    const prevKey = getTaskKey(this._task);
+    const nextKey = getTaskKey(value);
     this._task = value;
+    if (prevKey !== '' && prevKey === nextKey) return; // pure heartbeat — skip re-render
     try {
       const parsed = typeof value === 'string' ? JSON.parse(value) : value;
       console.log('TaskManagement: task prop updated:', JSON.stringify(parsed, null, 2));
@@ -285,14 +302,13 @@ class TaskManagementElement extends HTMLElement {
     return this._cad;
   }
 
+  // Alias: Desktop layout may pass either 'cad' or 'details' — both map to the same backing field.
   set details(value) {
-    if (this._details === value) return;
-    this._details = value;
-    this.updateComponent();
+    this.cad = value;
   }
 
   get details() {
-    return this._details;
+    return this._cad;
   }
 
   set wrap(value) {
@@ -408,6 +424,13 @@ class TaskManagementElement extends HTMLElement {
       console.log('TaskManagement: Attribute datacenter changed:', newValue);
       this._datacenter = newValue;
       setJDSDataCenter(newValue);
+    } else if (name === 'config') {
+      // Desktop sets config as an HTML attribute (string) when placed in layout `attributes` section
+      let parsed = null;
+      if (newValue && typeof newValue === 'string') {
+        try { parsed = JSON.parse(newValue); } catch { /* ignore */ }
+      }
+      this._config = (parsed && typeof parsed === 'object') ? parsed : null;
     } else {
       this.widgetAttributes[name] = newValue;
     }
@@ -443,7 +466,6 @@ class TaskManagementElement extends HTMLElement {
       task: this._task,
       selectedtaskid: this._selectedtaskid,
       cad: this._cad,
-      details: this._details,
       wrap: this._wrap,
       avatar: this._avatar,
       name: this._name,
@@ -494,6 +516,14 @@ class TaskManagementElement extends HTMLElement {
       this._email = this.getAttribute('email') || this._email;
       this._view = this.getAttribute('view') || this._view;
 
+      // Config: Desktop may pass as attribute (JSON string) or property (object)
+      if (!this._config) {
+        const configAttr = this.getAttribute('config');
+        if (configAttr) {
+          try { this._config = JSON.parse(configAttr); } catch { /* ignore */ }
+        }
+      }
+
       // Detect locale: explicit attribute > browser preference > default
       const localeAttr = this.getAttribute('locale');
       this._locale = localeAttr || detectBrowserLocale();
@@ -540,7 +570,6 @@ class TaskManagementElement extends HTMLElement {
         task: this._task,
         selectedtaskid: this._selectedtaskid,
         cad: this._cad,
-        details: this._details,
         wrap: this._wrap,
         avatar: this._avatar,
         name: this._name,
