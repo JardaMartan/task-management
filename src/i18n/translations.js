@@ -88,6 +88,9 @@ const baseDictionary = {
       demo: 'Desktop SDK unavailable, using demo mode',
       initFail: 'Desktop SDK initialization failed',
     },
+    sync: {
+      unauthorized: 'Connection refused: your organization is not authorized to use this service.',
+    },
     case: {
       loaded: 'Case loaded successfully',
       partial: 'Case loaded with partial data',
@@ -580,6 +583,9 @@ const deDictionary = {
       demo: 'Desktop SDK nicht verfügbar, Demo-Modus aktiv',
       initFail: 'Desktop SDK-Initialisierung fehlgeschlagen',
     },
+    sync: {
+      unauthorized: 'Verbindung abgelehnt: Ihre Organisation ist nicht berechtigt, diesen Dienst zu nutzen.',
+    },
     case: {
       loaded: 'Fall erfolgreich geladen',
       partial: 'Fall mit unvollständigen Daten geladen',
@@ -1070,6 +1076,9 @@ const csDictionary = {
       init: { success: 'Desktop SDK inicializováno' },
       demo: 'Desktop SDK není k dispozici, používám demo režim',
       initFail: 'Inicializace Desktop SDK selhala',
+    },
+    sync: {
+      unauthorized: 'Připojení odmítnuto: vaše organizace nemá oprávnění používat tuto službu.',
     },
     case: {
       loaded: 'Případ úspěšně načten',

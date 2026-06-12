@@ -91,6 +91,10 @@ const widgetSlice = createSlice({
         widgetConfig: {
             workspaceOverrideTaskTypes: DEFAULT_WORKSPACE_OVERRIDE_TASK_TYPES,
             outdialEntryPointId: null,
+            // Optional: override the URL used by syncSlice to open the CRM Tab Manager window.
+            // If not set, the URL is derived automatically from the relay wsUrl.
+            // Example: 'https://relay.example.com/crm-tab-manager/'
+            crmTabManagerUrl: null,
         },
         outdialPending: null,  // { destination: string } while an outdial call is active, null otherwise
         emailConfig: {
@@ -179,6 +183,7 @@ const widgetSlice = createSlice({
             state.widgetConfig = {
                 workspaceOverrideTaskTypes: DEFAULT_WORKSPACE_OVERRIDE_TASK_TYPES,
                 outdialEntryPointId: state.widgetConfig.outdialEntryPointId ?? null,
+                crmTabManagerUrl: state.widgetConfig.crmTabManagerUrl ?? null,
                 ...action.payload,
             };
         },

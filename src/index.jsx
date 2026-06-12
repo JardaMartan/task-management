@@ -500,6 +500,24 @@ class TaskManagementElement extends HTMLElement {
   connectedCallback() {
     console.log('TaskManagement: Connected to DOM');
 
+    // ── Pre-upgrade property promotion ──────────────────────────────────────
+    // The Desktop framework may set JS properties (e.g. `autoanswer`) on the
+    // element *before* customElements.define() is called.  In that case the
+    // value lands as an own-instance data property that silently shadows the
+    // prototype setter — the setter never fires and Redux is never updated.
+    // Deleting the own property and re-assigning it forces the prototype
+    // setter to run so all dispatch logic executes normally.
+    const _preUpgradeProps = ['config', 'task', 'selectedtaskid',
+      'cad', 'agent', 'darkmode', 'workspaceid', 'orgid', 'datacenter'];
+    for (const _prop of _preUpgradeProps) {
+      if (Object.prototype.hasOwnProperty.call(this, _prop)) {
+        const _val = this[_prop];
+        delete this[_prop];
+        this[_prop] = _val;
+      }
+    }
+    // ────────────────────────────────────────────────────────────────────────
+
     // Reset widget state on every connection (tab switch)
     store.dispatch(clearSearch());
     store.dispatch(stopJDSStreaming());

@@ -1,0 +1,16 @@
+# .gcloudignore — replaces .gitignore for `gcloud builds submit`
+# (if this file exists, .gitignore is NOT used automatically)
+.gcloudignore
+tmp/
+node_modules/
+build/
+coverage/
+*.log
+*.env
+.DS_Store
+
+# Skip the large React bundle files; keep the small headless/header widget scripts.
+# dist/panel-layout-headless.js and dist/crm-sync-header.js are needed by the
+# relay-server Dockerfile (COPY dist/ dist/ → served at /dist/).
+dist/task-management.js
+dist/task-management-standalone.js

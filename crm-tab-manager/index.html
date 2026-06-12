@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en" id="app-html">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CRM Tab Manager — WebexCC Sync</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+
+    <header class="app-header">
+      <div class="header-left">
+        <h1 data-i18n="title">CRM Tab Manager</h1>
+        <span class="subtitle" data-i18n="subtitle">WebexCC Sync Bridge</span>
+      </div>
+      <span id="ws-status" class="badge badge--disconnected" data-i18n="disconnected">Disconnected</span>
+    </header>
+
+    <section class="config-panel">
+      <h2 class="config-toggle" id="config-toggle">
+        <span data-i18n="config">Configuration</span> <span class="chevron" id="config-chevron">&#9658;</span>
+      </h2>
+      <div class="config-body collapsed" id="config-body">
+        <div class="field">
+          <label for="ws-url-input" data-i18n="wsUrlLabel">Relay WebSocket URL</label>
+          <input type="text" id="ws-url-input" placeholder="ws://localhost:3001" />
+        </div>
+        <div class="field">
+          <label for="crm-url-input" data-i18n="crmUrlLabel">CRM URL Template</label>
+          <input type="text" id="crm-url-input" placeholder="https://crm.example.com/customers/{ani}" />
+          <small id="crm-url-hint" data-i18n="crmUrlHint">Placeholders: <code>{ani}</code> &middot; <code>{interactionId}</code> &middot; <code>{customerId}</code></small>
+        </div>
+        <div class="field field--inline">
+          <input type="checkbox" id="auto-close-checkbox" />
+          <label for="auto-close-checkbox" data-i18n="autoClose">Automatically close CRM tab when agent completes wrapup</label>
+        </div>
+        <button id="save-btn" class="btn btn--primary" data-i18n="saveBtn">Save &amp; Reconnect</button>
+      </div>
+    </section>
+
+    <div id="popup-warning-slot"></div>
+
+    <section class="interactions-panel">
+      <h2 data-i18n="interactionsTitle">Active Interactions</h2>
+      <div id="interactions-list">
+        <p class="empty-state">No active interactions</p>
+      </div>
+    </section>
+
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>

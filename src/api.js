@@ -1283,7 +1283,15 @@ export const subscribeToCustomerEvents = (identity, accessToken, workspaceId, da
 
   console.log('subscribeToCustomerEvents: Connecting to', endpoint, 'for identity:', identity);
 
+  // Exponential-backoff reconnect: 2s → 4s → 8s → … capped at 60s
+  const SSE_RETRY_BASE_MS = 2000;
+  const SSE_RETRY_MAX_MS = 60000;
+  let sseRetryDelay = SSE_RETRY_BASE_MS;
+
   const startStream = async () => {
+    // Abort guard — stop reconnecting once the caller has unsubscribed
+    if (!streamAbortController || signal.aborted) return;
+
     try {
       const response = await fetch(endpoint, {
         method: 'POST',
@@ -1303,6 +1311,9 @@ export const subscribeToCustomerEvents = (identity, accessToken, workspaceId, da
       if (!response.body) {
         throw new Error('SSE Stream response has no body');
       }
+
+      // Successful connection — reset backoff counter
+      sseRetryDelay = SSE_RETRY_BASE_MS;
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -1347,12 +1358,17 @@ export const subscribeToCustomerEvents = (identity, accessToken, workspaceId, da
     } catch (error) {
       if (error.name === 'AbortError') {
         console.log('SSE Stream aborted manually');
-      } else {
-        console.error('SSE Stream error:', error);
-        if (onError) onError(error);
-
-        // Optional: Implement retry logic here if needed
+        return; // Do not reconnect after an explicit unsubscribe
       }
+      console.error('SSE Stream error:', error);
+      if (onError) onError(error);
+    }
+
+    // Reconnect with exponential backoff unless the stream was intentionally aborted
+    if (streamAbortController && !signal.aborted) {
+      console.log(`SSE Stream reconnecting in ${sseRetryDelay}ms…`);
+      setTimeout(startStream, sseRetryDelay);
+      sseRetryDelay = Math.min(sseRetryDelay * 2, SSE_RETRY_MAX_MS);
     }
   };
 
@@ -1416,8 +1432,8 @@ export const getTaskSummary = async (orgId, taskId, datacenter, accessToken) => 
   }
 };
 
-const TICKET_DB_BASE_URL = 'https://698ffd3edcc9a4df204bb010.mockapi.io/helpdesk';
-const CUSTOMER_DB_BASE_URL = 'https://69086a112d902d0651b03106.mockapi.io/Customerdata';
+const TICKET_DB_BASE_URL = 'https://6a257cdd5447714a6f837a74.mockapi.io/helpdesk';
+const CUSTOMER_DB_BASE_URL = 'https://6a257cdd5447714a6f837a74.mockapi.io/customerdata';
 
 const getCadValue = (task, key) => {
   if (!task || !key) return null;

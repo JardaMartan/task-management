@@ -560,13 +560,11 @@
     clearEmailGridLayout();
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-
   var _lastMediaType = null;
 
   function handleTaskUpdate(rawTask) {
     if (!rawTask) {
-      if (_lastMediaType === null) return;  // already cleared
+      if (_lastMediaType === null) return;
       _lastMediaType = null;
       applyTaskIndicator('');
       clearEmailLayout();
@@ -583,7 +581,7 @@
     }
 
     var mediaType = detectMediaType(parsed);
-    if (mediaType === _lastMediaType) return;  // nothing changed
+    if (mediaType === _lastMediaType) return;
     _lastMediaType = mediaType;
 
     if (!mediaType) {
@@ -605,7 +603,460 @@
     }
   }
 
-  // ─── Custom element registration ─────────────────────────────────────────
+  // ─── Auto-answer ─────────────────────────────────────────────────────────
+  //
+  // Accepts incoming digital interactions automatically.
+  // Controlled by the `autoanswer` property on the custom element:
+  //   "all"                  → accept every non-telephony channel
+  //   "email,chat,workitem"  → comma-separated list of mediaType values
+  //   ""  / not set          → disabled (default)
+  //
+  // Telephony is intentionally never auto-answered here: voice calls require
+  // WebRTC session setup that the Desktop handles separately, and auto-accepting
+  // them via SDK can race with media negotiation.
+
+  var _autoAnswerChannels = [];  // empty = disabled
+  var _autoAnswerInFlight = {};  // interactionId → true, guards against double-accept
+
+  function _parseAutoAnswerProp(value) {
+    if (!value || typeof value !== 'string') return [];
+    var trimmed = value.trim().toLowerCase();
+    if (!trimmed) return [];
+    if (trimmed === 'all') return ['email', 'chat', 'workitem', 'social'];
+    return trimmed.split(/[\s,;]+/).filter(Boolean);
+  }
+
+  function _initAutoAnswer() {
+    if (!_autoAnswerChannels.length) return;
+
+    // panel-layout-headless.js is a plain (non-module) script — it cannot use bare
+    // npm imports. Third-party widgets that work (e.g. queue-header-widget) bundle
+    // @wxcc-desktop/sdk and construct Desktop({SERVICE: AGENTX_SERVICE}).
+    // window.agentx is a different, limited object that does NOT have agentContact.
+    // We must read AGENTX_SERVICE.aqm.contact directly.
+    var svc;
+    try { svc = (typeof AGENTX_SERVICE !== 'undefined') ? AGENTX_SERVICE : null; } catch (e) { svc = null; }
+    svc = svc || window.AGENTX_SERVICE || null;
+
+    var aqmContact = svc && svc.aqm && svc.aqm.contact;
+
+    console.log('[panel-layout] auto-answer: _initAutoAnswer() | channels:', _autoAnswerChannels,
+      '| AGENTX_SERVICE:', typeof svc,
+      '| isInited:', !!(svc && svc.isInited),
+      '| aqm.contact:', !!aqmContact,
+      '| eAgentOfferContact:', !!(aqmContact && aqmContact.eAgentOfferContact));
+
+    if (!svc || !svc.isInited || !aqmContact) {
+      console.warn('[panel-layout] auto-answer: AGENTX_SERVICE not ready, will retry in 2s');
+      setTimeout(_initAutoAnswer, 2000);
+      return;
+    }
+
+    if (!aqmContact.eAgentOfferContact || typeof aqmContact.eAgentOfferContact.listen !== 'function') {
+      console.warn('[panel-layout] auto-answer: eAgentOfferContact.listen not found, will retry in 2s');
+      setTimeout(_initAutoAnswer, 2000);
+      return;
+    }
+
+    aqmContact.eAgentOfferContact.listen(function (msg) {
+      try {
+        var interaction = (msg && msg.data && msg.data.interaction) ? msg.data.interaction : null;
+        if (!interaction) {
+          console.warn('[panel-layout] auto-answer: eAgentOfferContact with no interaction data', msg);
+          return;
+        }
+
+        var mediaType     = String(interaction.mediaType || interaction.channelType || '').toLowerCase();
+        var interactionId = interaction.interactionId || interaction.id || null;
+
+        console.log('[panel-layout] auto-answer: eAgentOfferContact | mediaType:', mediaType, '| interactionId:', interactionId);
+
+        if (!interactionId) {
+          console.warn('[panel-layout] auto-answer: no interactionId in offer', msg);
+          return;
+        }
+
+        // Never auto-answer telephony regardless of config
+        if (mediaType === 'telephony' || mediaType === 'voice') {
+          console.log('[panel-layout] auto-answer: skipping telephony offer', interactionId);
+          return;
+        }
+
+        if (!_autoAnswerChannels.includes(mediaType)) {
+          console.log('[panel-layout] auto-answer: channel not in list (' + mediaType + '), skipping');
+          return;
+        }
+
+        if (_autoAnswerInFlight[interactionId]) {
+          console.log('[panel-layout] auto-answer: already accepting', interactionId);
+          return;
+        }
+
+        _autoAnswerInFlight[interactionId] = true;
+        console.log('[panel-layout] auto-answer: accepting', mediaType, interactionId);
+
+        var acceptFn = aqmContact.acceptV2 || aqmContact.accept;
+        if (typeof acceptFn !== 'function') {
+          console.error('[panel-layout] auto-answer: neither acceptV2 nor accept found on aqm.contact');
+          delete _autoAnswerInFlight[interactionId];
+          return;
+        }
+
+        Promise.resolve(acceptFn.call(aqmContact, { interactionId: interactionId }))
+          .then(function () {
+            console.log('[panel-layout] auto-answer: ✅ accepted', interactionId);
+          })
+          .catch(function (err) {
+            console.error('[panel-layout] auto-answer: accept failed for', interactionId, err);
+          })
+          .finally(function () {
+            delete _autoAnswerInFlight[interactionId];
+          });
+      } catch (e) {
+        console.error('[panel-layout] auto-answer: unexpected error in offer handler', e);
+      }
+    });
+
+    // Clear in-flight guard if the offer RONA's (times out before accept)
+    if (aqmContact.eAgentOfferContactRona && typeof aqmContact.eAgentOfferContactRona.listen === 'function') {
+      aqmContact.eAgentOfferContactRona.listen(function (msg) {
+        try {
+          var interaction = (msg && msg.data && msg.data.interaction) ? msg.data.interaction : null;
+          var id = interaction && (interaction.interactionId || interaction.id);
+          if (id) {
+            delete _autoAnswerInFlight[id];
+            console.log('[panel-layout] auto-answer: RONA for', id, '— cleared in-flight guard');
+          }
+        } catch (e) { /* ignore */ }
+      });
+    }
+
+    console.log('[panel-layout] auto-answer: ✅ listeners registered | channels:', _autoAnswerChannels);
+  }
+
+  // ─── CRM sync: interaction selection ─────────────────────────────────────
+  //
+  // When the CRM Tab Manager selects a customer tab, the sync relay sends a
+  // CRM_TAB_SELECTED message to the webexcc widget, which re-broadcasts it on
+  // BroadcastChannel('crm-sync') as SELECT_INTERACTION.  The headless widget
+  // picks it up here and tries to focus the corresponding interaction in the
+  // Desktop task list.
+
+  /**
+   * Recursively search inside root for any element whose attribute set
+   * contains the given interactionId string (exact or substring match).
+   * Descends into shadow roots.
+   */
+  function findInteractionItem(root, interactionId) {
+    function search(r) {
+      var els = r.querySelectorAll('*');
+      for (var i = 0; i < els.length; i++) {
+        var el = els[i];
+        var attrs = el.attributes;
+        for (var j = 0; j < attrs.length; j++) {
+          if (attrs[j].value && attrs[j].value.indexOf(interactionId) !== -1) {
+            return el;
+          }
+        }
+        if (el.shadowRoot) {
+          var found = search(el.shadowRoot);
+          if (found) return found;
+        }
+      }
+      return null;
+    }
+    return search(root);
+  }
+
+  // Find the Vue 3 app instance by recursively searching the DOM including
+  // shadow roots. Desktop mounts its Vue app inside a web component's shadow
+  // root, so a shallow scan of document.body.children is not enough.
+  function _findVueApp() {
+    var _visited = [];
+    function search(node, depth) {
+      if (!node || depth > 12) return null;
+      if (_visited.indexOf(node) >= 0) return null;
+      _visited.push(node);
+      try {
+        if (node.__vue_app__) return node.__vue_app__;
+        var children = node.children ? Array.prototype.slice.call(node.children) : [];
+        for (var i = 0; i < children.length; i++) {
+          var el = children[i];
+          if (el.__vue_app__) return el.__vue_app__;
+          // Descend into shadow root first (Desktop app is typically mounted there)
+          if (el.shadowRoot) {
+            var shadowKids = Array.prototype.slice.call(el.shadowRoot.children || []);
+            for (var k = 0; k < shadowKids.length; k++) {
+              if (shadowKids[k].__vue_app__) return shadowKids[k].__vue_app__;
+            }
+            var r = search(el.shadowRoot, depth + 1);
+            if (r) return r;
+          }
+          var r2 = search(el, depth + 1);
+          if (r2) return r2;
+        }
+      } catch (e) {}
+      return null;
+    }
+    return search(document.documentElement, 0);
+  }
+
+  // Run once on load: log what navigation hooks are available so we know which
+  // tier will fire when selectInteractionInDesktop is called.
+  (function _diagOnLoad() {
+    try {
+      var vueApp = _findVueApp();
+      var gp = vueApp ? (vueApp.config && vueApp.config.globalProperties) || {} : null;
+      console.log('[panel-layout] diag | Vue app:', !!vueApp,
+        '| $router:', !!(gp && gp.$router),
+        '| $store:', !!(gp && gp.$store),
+        '| window.page:', typeof window.page,
+        '| page.js ctx:', typeof window.__page);
+      if (gp && gp.$store) {
+        var actions = Object.keys(gp.$store._actions || {});
+        var relevant = actions.filter(function(k) {
+          return /select|task|interact|routing|nav/i.test(k);
+        });
+        console.log('[panel-layout] diag | Vuex relevant actions:', relevant.length ? relevant : '(none)');
+      }
+    } catch (e) {
+      console.warn('[panel-layout] diag error:', e.message);
+    }
+  })();
+
+  function selectInteractionInDesktop(interactionId) {
+    if (!interactionId) return;
+    var targetPath = '/task/' + interactionId;
+    console.log('[panel-layout] selectInteractionInDesktop:', interactionId);
+
+    // ── Tier 1: AGENTX_SERVICE direct methods (confirmed absent; kept for future) ──
+    var svc = null;
+    try { svc = (typeof AGENTX_SERVICE !== 'undefined') ? AGENTX_SERVICE : null; } catch (e) {}
+    svc = svc || window.AGENTX_SERVICE || null;
+    if (svc) {
+      var contact = svc.aqm && svc.aqm.contact;
+      if (contact) {
+        var selMethods = ['selectTask', 'setActiveTask', 'focusTask', 'setSelectedTask'];
+        for (var mi = 0; mi < selMethods.length; mi++) {
+          if (typeof contact[selMethods[mi]] === 'function') {
+            try {
+              contact[selMethods[mi]]({ interactionId: interactionId });
+              console.log('[panel-layout] selected via aqm.contact.' + selMethods[mi]);
+              return;
+            } catch (e) {}
+          }
+        }
+      }
+      if (svc.actions && typeof svc.actions.selectInteraction === 'function') {
+        try {
+          svc.actions.selectInteraction(interactionId);
+          console.log('[panel-layout] selected via AGENTX_SERVICE.actions.selectInteraction');
+          return;
+        } catch (e) {}
+      }
+    }
+
+    // ── Tier 2: Vue Router push ──
+    // Desktop is a Vue 3 SPA. router.push() triggers the full navigation pipeline
+    // (route guards → component update → store hooks) unlike bare pushState which
+    // only signals page.js and updates the URL/task-list highlight.
+    var vueApp = _findVueApp();
+    if (vueApp) {
+      var gp = (vueApp.config && vueApp.config.globalProperties) || {};
+      console.log('[panel-layout] Vue app found; globalProperties keys:', Object.keys(gp).join(', '));
+
+      var router = gp.$router || null;
+      if (router && typeof router.push === 'function') {
+        try {
+          var nav = router.push(targetPath);
+          console.log('[panel-layout] Vue Router push → ', targetPath);
+          if (nav && typeof nav.catch === 'function') {
+            nav.catch(function (err) {
+              // NavigationDuplicated is benign — already on the route
+              if (err && err.name !== 'NavigationDuplicated') {
+                console.warn('[panel-layout] Vue Router push error:', err.message);
+              }
+            });
+          }
+          return;
+        } catch (e) {
+          console.warn('[panel-layout] Vue Router push threw:', e.message);
+        }
+      } else {
+        console.log('[panel-layout] $router not on globalProperties');
+      }
+
+      // ── Tier 3: Vuex / Pinia store dispatch ──
+      var store = gp.$store || null;
+      if (store && typeof store.dispatch === 'function') {
+        console.log('[panel-layout] Vuex store found; trying dispatch candidates');
+        var candidates = [
+          ['agentContact/selectInteraction', { interactionId: interactionId }],
+          ['agentContact/setSelectedTask',   { interactionId: interactionId }],
+          ['routing/navigate',               targetPath],
+          ['interaction/setActive',          interactionId],
+          ['task/select',                    interactionId],
+        ];
+        for (var ci = 0; ci < candidates.length; ci++) {
+          try {
+            store.dispatch(candidates[ci][0], candidates[ci][1]);
+            console.log('[panel-layout] Vuex dispatch succeeded:', candidates[ci][0]);
+            return;
+          } catch (e) { /* try next */ }
+        }
+        console.log('[panel-layout] all Vuex dispatch candidates failed');
+      }
+    } else {
+      console.log('[panel-layout] Vue app not found on DOM');
+    }
+
+    // ── Tier 4: page.js direct call (window.page) ──
+    if (typeof window.page === 'function') {
+      try {
+        window.page(targetPath);
+        console.log('[panel-layout] page.js direct call → ', targetPath);
+        return;
+      } catch (e) {
+        console.warn('[panel-layout] window.page() threw:', e.message);
+      }
+    } else {
+      console.log('[panel-layout] window.page not available (type:', typeof window.page, ')');
+    }
+
+    // ── Early exit: already on the target URL ──
+    // If the URL already matches, the Desktop is already showing this task.
+    // Re-firing anything here only creates races, so stop.
+    if (window.location.pathname === targetPath) {
+      console.log('[panel-layout] already on', targetPath, '— no switch needed');
+      return;
+    }
+
+    // ── Primary (and only reliable) mechanism: a REAL click on the task-list item ──
+    //
+    // ROOT CAUSE of the prior echo loop: synthetic CustomEvents update the
+    // interaction *panels* but NOT the Desktop's internal selected-task store,
+    // and history.pushState updates ONLY the URL. Either path leaves the Desktop
+    // in a split-brain state (URL ≠ internal selection); the Desktop then
+    // re-emits `selectedtaskid` to reconcile, which bounces back through the
+    // relay → Tab Manager → proxy focus → CRM_TAB_SELECTED → here again, forever.
+    //
+    // A genuine element.click() on the real task-list item is the ONLY action
+    // that commits the internal store (it runs the Desktop's own click handler,
+    // which fires taskitem-click → task-selected → ax-selected-interaction-changed
+    // AND updates MobX). After it commits, the resulting selectedtaskid equals
+    // our target and is suppressed by the sync echo-guard, so the loop ends.
+    //
+    // Scope the search to DIV.agentx-task-area (the left task panel). The JDS
+    // journey timeline (ax-activity-list-item entries that also embed the id)
+    // lives under uuip-dynamic-widget in panel-two, OUTSIDE the task area, so
+    // scoping here avoids clicking the wrong element and reverting the task.
+    function _findTaskAreaItem() {
+      var taskArea = findDeep(document.body, '.agentx-task-area');
+      if (!taskArea) {
+        // Fall back to the list wrapper if the task-area class isn't found
+        taskArea = findDeep(document.body, 'agentx-wc-task-list-panel-wrapper');
+      }
+      if (!taskArea) {
+        console.warn('[panel-layout] agentx-task-area not found');
+        return null;
+      }
+      return findInteractionItem(taskArea.shadowRoot || taskArea, interactionId);
+    }
+
+    function _realClick(item) {
+      console.log('[panel-layout] real click on', item.tagName,
+        (item.className || '').toString().trim().slice(0, 50));
+      item.click();
+      item.dispatchEvent(new MouseEvent('click', {
+        bubbles: true, cancelable: true, composed: true,
+      }));
+    }
+
+    var item = _findTaskAreaItem();
+    if (item) {
+      _realClick(item);
+      return;
+    }
+
+    // The task list can be mid-transition (collapsed/re-rendering) when the
+    // message arrives — retry shortly before giving up.
+    console.warn('[panel-layout] task item not found — retrying in 250ms for', interactionId);
+    setTimeout(function () {
+      if (window.location.pathname === targetPath) return; // already switched
+      var retryItem = _findTaskAreaItem();
+      if (retryItem) {
+        _realClick(retryItem);
+        return;
+      }
+      // Diagnostic: enumerate what IS in the task area so we can see the structure.
+      var ta = findDeep(document.body, '.agentx-task-area');
+      var scope = ta ? (ta.shadowRoot || ta) : null;
+      var items = scope ? scope.querySelectorAll('md-list-item, [role="listitem"], .md-list-item') : [];
+      console.error('[panel-layout] task item STILL not found for', interactionId,
+        '| task-area present:', !!ta, '| candidate list items:', items.length);
+      for (var i = 0; i < items.length; i++) {
+        var it = items[i];
+        console.log('[panel-layout][diag] item', i, it.tagName,
+          (it.className || '').toString().trim().slice(0, 40),
+          '| id-attrs:', Array.prototype.map.call(it.attributes, function (a) { return a.name + '=' + a.value; }).join(',').slice(0, 120));
+      }
+      console.warn('[panel-layout] NOT firing synthetic events / pushState — they cause split-brain. Switch skipped.');
+    }, 250);
+  }
+
+  // Listen for SELECT_INTERACTION broadcasts from the sync slice.
+  // Debounce: if multiple messages arrive within 400ms, only the LAST one wins.
+  // Lock: after a switch fires, ignore any reverse-switch for 3s (prevents the
+  // echo where the newly-deselected task's proxy fires TAB_FOCUSED, which Tab
+  // Manager forwards back as CRM_TAB_SELECTED for the old task).
+  (function () {
+    try {
+      var _pendingTimer = null;
+      var _lastSwitchedTo = null;
+      var _prevTask = null;        // the task we just left on the last switch
+      var _lastSwitchedAt = 0;
+      var REVERSE_ECHO_MS = 1000; // guard only against the specific reverse-echo
+      var DEBOUNCE_MS     = 200;  // wait for burst to settle before acting
+
+      var ch = new BroadcastChannel('crm-sync');
+      ch.onmessage = function (event) {
+        if (!event.data || event.data.type !== 'SELECT_INTERACTION') return;
+        var iid = event.data.interactionId;
+        if (!iid) return;
+
+        // Guard only against the specific reverse-echo: the proxy for the task we
+        // just LEFT may fire TAB_FOCUSED → CRM_TAB_SELECTED back for that exact id.
+        // The Tab Manager's expectFocusEcho already handles this, but we keep a
+        // narrow 1s safety net here for that ONE task only.
+        // Any switch to a DIFFERENT task is always a genuine user action — never block it.
+        if (_prevTask && iid === _prevTask) {
+          var age = Date.now() - _lastSwitchedAt;
+          if (age < REVERSE_ECHO_MS) {
+            console.log('[panel-layout] SELECT_INTERACTION suppressed (reverse-echo guard, age=' + age + 'ms):', iid);
+            return;
+          }
+        }
+
+        // Debounce: if another message for a different task arrives very quickly,
+        // cancel the pending switch and schedule for the latest message instead.
+        if (_pendingTimer !== null) {
+          clearTimeout(_pendingTimer);
+          _pendingTimer = null;
+        }
+
+        _pendingTimer = setTimeout(function () {
+          _pendingTimer = null;
+          _prevTask = _lastSwitchedTo;  // save the task we are about to leave
+          _lastSwitchedTo = iid;
+          _lastSwitchedAt = Date.now();
+          selectInteractionInDesktop(iid);
+        }, DEBOUNCE_MS);
+      };
+      console.log('[panel-layout] CRM sync BroadcastChannel listener ready');
+    } catch (e) {
+      console.warn('[panel-layout] BroadcastChannel not available:', e.message);
+    }
+  })();
 
   if (!customElements.get('panel-layout-headless')) {
     customElements.define('panel-layout-headless', class extends HTMLElement {
@@ -619,6 +1070,7 @@
         this._orgid       = null;
         this._datacenter  = null;
         this._signalColor = null;
+        this._autoanswer  = null;
       }
 
       attributeChangedCallback(name, oldVal, newVal) {
@@ -662,7 +1114,21 @@
         console.log('[panel-layout] datacenter set:', value);
       }
       get datacenter() { return this._datacenter; }
+
+      set autoanswer(value) {
+        this._autoanswer = value;
+        var prev = _autoAnswerChannels.slice();
+        _autoAnswerChannels = _parseAutoAnswerProp(value);
+        console.log('[panel-layout] autoanswer set:', value, '→ channels:', _autoAnswerChannels);
+        // Start listening only on first non-empty assignment
+        if (_autoAnswerChannels.length && !prev.length) {
+          _initAutoAnswer();
+        }
+      }
+      get autoanswer() { return this._autoanswer; }
     });
   }
+
+
 })();
 

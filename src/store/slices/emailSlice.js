@@ -559,7 +559,9 @@ export const initEmailTask =
       if (!getState().email.customerProfile) {
         searchCustomerByIdentity(customerEmail, accesstoken, workspaceid, datacenter)
           .then((persons) => {
-            if (persons.length > 0) dispatch(setCustomerProfile(persons[0]));
+            // Staleness guard: discard if task switched while lookup was in-flight.
+            if (persons.length > 0 && getState().email.activeInteractionId === interactionId)
+              dispatch(setCustomerProfile(persons[0]));
           })
           .catch((err) => console.warn('[EmailSlice] initEmailTask: JDS person lookup failed', err));
       }
@@ -567,7 +569,7 @@ export const initEmailTask =
       // via JDS person API); fall back to the fromAddress for pure email tasks.
       const storedIdentities = getState().email.customerIdentities;
       const identities = storedIdentities.length > 0 ? storedIdentities : customerEmail;
-      dispatch(fetchCustomerJdsHistory(identities, accesstoken, workspaceid, datacenter));
+      dispatch(fetchCustomerJdsHistory(identities, accesstoken, workspaceid, datacenter, undefined, interactionId));
     }
 
     // SSE: subscribe using the best primary identity (email preferred over phone).
@@ -780,7 +782,7 @@ export const fetchCustomerThreads = (customerEmail) => async (dispatch) => {
 const jdsInFlight = new Set();
 
 export const fetchCustomerJdsHistory =
-  (identity, accessToken, workspaceId, datacenter, maxPages = 5) => async (dispatch) => {
+  (identity, accessToken, workspaceId, datacenter, maxPages = 5, expectedInteractionId = null) => async (dispatch, getState) => {
     // Normalise to array so the rest of the function is uniform.
     const identities = (Array.isArray(identity) ? identity : [identity]).filter(Boolean);
     if (!identities.length) return;
@@ -792,6 +794,12 @@ export const fetchCustomerJdsHistory =
       // JDS optimization: cap at maxPages (default 5 = 500 events) — more than enough
       // for the history timeline. Full 20-page fetch (2000 events) is wasteful.
       const events = await fetchJourneyEvents(identities, accessToken, workspaceId, datacenter, null, maxPages);
+      // Staleness guard: discard results if the agent switched to a different task
+      // while this fetch was in-flight.
+      if (expectedInteractionId && getState().email.activeInteractionId !== expectedInteractionId) {
+        console.log('[EmailSlice] fetchCustomerJdsHistory: stale result for', expectedInteractionId, '— discarding');
+        return;
+      }
       dispatch(setCustomerHistory(events || []));
       // After history loads, scan it for a cached ai-summary event and apply it to
       // aiEnrichment so the AiPanel shows the summary without a separate JDS query
@@ -894,9 +902,10 @@ export const loadJdsHistoryForWorkItemTask = (task) => async (dispatch, getState
     return typeof v === 'object' && 'value' in v ? v.value : String(v);
   };
 
-  // Collect all available identity values — phone (ANI) and email from CAD.
-  const phone = task.ani || task.displayAni || cadVal('ani') || null;
-  const email = cadVal('email') || task.email || task.customerEmail || null;
+  // For workItem tasks task.ani is an internal UUID, not a real phone number.
+  // Only use the explicit 'phone' and 'email' CAD desktop variables.
+  const phone = cadVal('phone') || null;
+  const email = cadVal('email') || null;
 
   if (!phone && !email) {
     console.log('[EmailSlice] loadJdsHistoryForWorkItemTask: no identities found in task');
@@ -916,6 +925,18 @@ export const loadJdsHistoryForWorkItemTask = (task) => async (dispatch, getState
     return;
   }
 
+  // ── Clear stale customer data when switching to a new interaction ──────────
+  // initEmailTask does the same clearing, but only runs when the Email tab is
+  // active. For workItem tasks on other tabs (History/Task) we must clear here
+  // to prevent the previous customer's profile persisting on the contact card.
+  if (emailState.activeInteractionId && emailState.activeInteractionId !== task.interactionId) {
+    dispatch(setCustomerProfile(null));
+    dispatch(setCustomerHistory([]));
+    dispatch(setCustomerIdentities([]));
+    dispatch(setCustomerEmail(null));
+    dispatch(setAiEnrichment(null));
+  }
+
   // Register the interaction ID before any async work so that initEmailTask
   // (triggered by the Email tab) sees the correct prevId and doesn't clear history.
   dispatch(setActiveInteractionId(task.interactionId));
@@ -931,6 +952,11 @@ export const loadJdsHistoryForWorkItemTask = (task) => async (dispatch, getState
   try {
     const primaryLookup = phone || email;
     const persons = await searchCustomerByIdentity(primaryLookup, accesstoken, workspaceid, datacenter);
+    // Staleness guard: discard if task switched while lookup was in-flight.
+    if (getState().email.activeInteractionId !== task.interactionId) {
+      console.log('[EmailSlice] loadJdsHistoryForWorkItemTask: stale identity result for', task.interactionId, '— discarding');
+      return;
+    }
     if (persons.length > 0) {
       const person = persons[0];
       console.log('[EmailSlice] loadJdsHistoryForWorkItemTask: JDS person found', person);
@@ -943,7 +969,21 @@ export const loadJdsHistoryForWorkItemTask = (task) => async (dispatch, getState
     }
   } catch (err) {
     console.warn('[EmailSlice] loadJdsHistoryForWorkItemTask: JDS identity lookup failed', err);
-    // Non-fatal — fall back to phone+email from CAD
+    // Non-fatal — fall back to phone+email from CAD.
+    // Still guard against a task switch during the failed lookup.
+    if (getState().email.activeInteractionId !== task.interactionId) {
+      console.log('[EmailSlice] loadJdsHistoryForWorkItemTask: stale after failed identity lookup for', task.interactionId, '— discarding');
+      return;
+    }
+  }
+
+  // If JDS returned no person record, still populate the CustomerContactCard from
+  // the CAD data that is available so the bar is not blank when a workItem arrives.
+  if (!getState().email.customerProfile && (phone || email)) {
+    dispatch(setCustomerProfile({
+      email: email || null,
+      phone: phone || null,
+    }));
   }
 
   console.log('[EmailSlice] loadJdsHistoryForWorkItemTask: resolved identities', allIdentities);
@@ -953,7 +993,7 @@ export const loadJdsHistoryForWorkItemTask = (task) => async (dispatch, getState
 
   // JDS history query with all identities — fetchJourneyEvents ORs multiple identity
   // filter params, so events from all channels are merged in one response.
-  await dispatch(fetchCustomerJdsHistory(allIdentities, accesstoken, workspaceid, datacenter));
+  await dispatch(fetchCustomerJdsHistory(allIdentities, accesstoken, workspaceid, datacenter, undefined, task.interactionId));
 
   // Start SSE for live event streaming. Prefer email identity (more stable across
   // channels) and fall back to phone.

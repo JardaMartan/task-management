@@ -1,0 +1,49 @@
+# Cloud Build pipeline: builds the relay-server image from the repo root
+# (so crm-tab-manager/ can be copied into the image) and deploys to Cloud Run.
+#
+# Usage:
+#   gcloud builds submit \
+#     --config=cloudbuild.yaml \
+#     --substitutions="_SERVICE=webex-crm-relay,_REGION=us-central1,_ALLOWED_ORGS=your-org-id"
+#
+# Or trigger automatically via a Cloud Build GitHub trigger with the same substitutions.
+
+substitutions:
+  _SERVICE: webex-crm-relay
+  _REGION: us-central1
+  # Comma-separated Webex org IDs that are allowed to connect.
+  # Leave empty to allow all (local / dev mode).
+  _ALLOWED_ORGS: ''
+
+steps:
+  # ── Build image (repo root is the Docker build context) ───────────────────
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - build
+      - -f
+      - relay-server/Dockerfile
+      - -t
+      - gcr.io/$PROJECT_ID/${_SERVICE}
+      - .
+
+  # ── Push image to Container Registry ─────────────────────────────────────
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - push
+      - gcr.io/$PROJECT_ID/${_SERVICE}
+
+  # ── Deploy to Cloud Run ───────────────────────────────────────────────────
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE}
+      - --image=gcr.io/$PROJECT_ID/${_SERVICE}
+      - --region=${_REGION}
+      - --allow-unauthenticated
+      - --timeout=3600
+      - --set-env-vars=ALLOWED_ORG_IDS=${_ALLOWED_ORGS}
+
+images:
+  - gcr.io/$PROJECT_ID/${_SERVICE}

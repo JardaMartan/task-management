@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CRM</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #12141a; }
+
+    #crm-frame {
+      width: 100%;
+      height: 100%;
+      border: none;
+      display: block;
+    }
+
+    /* Shown only when iframe is blocked by X-Frame-Options / CSP */
+    #fallback {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: #12141a;
+      color: #d8ddf0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      text-align: center;
+      padding: 32px;
+    }
+    #fallback h2 { font-size: 16px; font-weight: 600; }
+    #fallback p  { font-size: 13px; color: #7880a0; max-width: 440px; }
+    #fallback a  {
+      display: inline-block;
+      margin-top: 8px;
+      padding: 8px 20px;
+      background: #4a8fe8;
+      color: #fff;
+      border-radius: 6px;
+      text-decoration: none;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <iframe id="crm-frame" allowfullscreen></iframe>
+
+  <div id="fallback">
+    <h2>Cannot embed this page</h2>
+    <p>
+      The CRM blocks embedding via <code>X-Frame-Options</code> or
+      <code>Content-Security-Policy</code>. Open it directly instead.
+    </p>
+    <a id="fallback-link" href="#" target="_blank" rel="noopener">Open CRM in new tab</a>
+  </div>
+
+  <script>
+    (function () {
+      // Read interactionId and target URL from query params
+      var params  = new URLSearchParams(location.search);
+      var iid     = params.get('interactionId') || '';
+      var crmUrl  = params.get('url') || '';
+      var tabTitle = params.get('title') || '';
+
+      document.title = tabTitle || (iid ? ('CRM \u2014 ' + iid.slice(0, 8)) : 'CRM');
+
+      var frame    = document.getElementById('crm-frame');
+      var fallback = document.getElementById('fallback');
+      var fbLink   = document.getElementById('fallback-link');
+
+      if (crmUrl) {
+        fbLink.href = crmUrl;
+        frame.src   = crmUrl;
+
+        // Detect iframe load failure (X-Frame-Options / CSP blocks trigger an error
+        // or load a blank page — we use a timeout heuristic for the blank-page case).
+        frame.addEventListener('error', showFallback);
+        // Secondary heuristic: if the frame src doesn't change within 5 s and
+        // contentDocument is inaccessible (cross-origin block), show fallback.
+        // Most X-Frame-Options blocks cause 'error' immediately; CSP 'frame-ancestors'
+        // causes the browser to show a built-in error page inside the frame which we
+        // cannot detect — the open-in-new-tab fallback is the best UX in that case.
+      } else {
+        showFallback();
+      }
+
+      function showFallback() {
+        frame.style.display = 'none';
+        fallback.style.display = 'flex';
+      }
+
+      // ── BroadcastChannel: notify Tab Manager when this tab is focused ─────
+      var channel;
+      try {
+        channel = new BroadcastChannel('crm-tab-focus');
+      } catch (e) {
+        // BroadcastChannel not available (should not happen in modern browsers)
+        channel = null;
+      }
+
+      // Coalesce duplicate focus signals (visibilitychange + window focus fire
+      // for the same user action) into a single TAB_FOCUSED message.
+      var _notifyTimer = null;
+      function notifyFocused() {
+        if (!iid || !channel) return;
+        if (_notifyTimer) return; // already queued for this focus event
+        _notifyTimer = setTimeout(function () {
+          _notifyTimer = null;
+          channel.postMessage({ type: 'TAB_FOCUSED', interactionId: iid });
+        }, 50);
+      }
+
+      // visibilitychange fires when the user switches to this tab
+      document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'visible') {
+          notifyFocused();
+        }
+      });
+
+      // focus fires when the browser window containing this tab regains focus
+      window.addEventListener('focus', notifyFocused);
+
+      // Fire immediately if already visible (e.g. tab was opened and is in front)
+      if (document.visibilityState === 'visible') {
+        // Small delay so Tab Manager is ready to receive
+        setTimeout(notifyFocused, 300);
+      }
+    })();
+  </script>
+</body>
+</html>
