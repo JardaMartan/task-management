@@ -17,9 +17,15 @@
  *     "properties": {
  *       "task":        "$STORE.agentContact.taskSelected",
  *       "wsurl":       "wss://<relay-host>",
- *       "accesstoken": "$STORE.auth.accessToken"
+ *       "accesstoken": "$STORE.auth.accessToken",
+ *       "workspaceid": "<JDS workspace id>",
+ *       "datacenter":  "$STORE.app.datacenter"
  *     }
  *   }
+ *
+ * `workspaceid` + `datacenter` (with `accesstoken`) are optional but enable JDS
+ * customer-email resolution so voice and email interactions for the same person
+ * share a single CRM tab.
  *
  * This file is intentionally a plain IIFE (no bundler) so it can be served
  * as a static asset from the relay server and loaded via <script> tag.
@@ -36,6 +42,9 @@
   var _titleQueue         = [];   // messages buffered before WS is open
   var _accessToken        = '';    // configured via the `accesstoken` property
   var _autoOpenManager    = false; // configured via the `autoopen` property
+  var _jdsWorkspaceId     = '';    // configured via the `workspaceid` property; enables customer email resolution
+  var _jdsDataCenter      = '';    // configured via the `datacenter` property (e.g. 'prodeu1')
+  var _emailCache         = {};    // identity → resolved canonical email ('' if none / lookup failed)
 
   // Per-tab session id — isolates this agent's relay traffic from other agents
   // sharing the same relay. The relay forwards messages only between a webexcc
@@ -348,6 +357,43 @@
     if (w) { clearTimeout(w.timer); delete _wrapupWatchers[interactionId]; }
   }
 
+  /* ── Customer identity resolution ───────────────────────────────────────── */
+
+  function _isEmail(v) {
+    return typeof v === 'string' && /\S+@\S+\.\S+/.test(v);
+  }
+
+  // Resolve a customer's canonical email from a phone/email identity via the JDS
+  // person-alias lookup, so voice and email interactions for the same person
+  // share a single CRM tab. Calls cb(email|null). Results are cached per identity.
+  // Falls back to cb(null) when the identity is already an email or when JDS
+  // config (workspace id / datacenter / access token) is unavailable.
+  function _resolveCustomerEmail(identity, cb) {
+    if (!identity) { cb(null); return; }
+    if (_isEmail(identity)) { cb(identity); return; }
+    if (Object.prototype.hasOwnProperty.call(_emailCache, identity)) {
+      cb(_emailCache[identity] || null); return;
+    }
+    if (!_accessToken || !_jdsWorkspaceId || !_jdsDataCenter) { cb(null); return; }
+    var url = 'https://api-jds.wxdap-' + _jdsDataCenter +
+              '.webex.com/admin/v1/api/person/workspace-id/' + _jdsWorkspaceId +
+              '/aliases/' + encodeURIComponent(identity);
+    fetch(url, { headers: { Authorization: 'Bearer ' + _accessToken } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) {
+        var person = j && j.data && j.data[0];
+        var email = person && Array.isArray(person.email) ? person.email[0] : null;
+        _emailCache[identity] = email || '';
+        if (email) console.log('[crm-sync-header] resolved customer email', email, 'for', identity);
+        cb(email || null);
+      })
+      .catch(function (e) {
+        console.warn('[crm-sync-header] customer email lookup failed:', e && e.message);
+        _emailCache[identity] = '';
+        cb(null);
+      });
+  }
+
   /* ── Task sync handler ───────────────────────────────────────────────────── */
 
   function handleTaskSync(rawTask) {
@@ -379,8 +425,12 @@
     var title      = _extractTitle(parsed);
     var _rawAni    = parsed.ani || parsed.phoneNumber || null;
     var _mediaType = (parsed.mediaType || parsed.channelType || '').toLowerCase();
+    var _isOutbound = (parsed.contactDirection || '').toUpperCase() === 'OUTBOUND' ||
+                      (parsed.outboundType || '').toUpperCase() === 'OUTDIAL';
 
     // For workItem, prefer CAD email/phone over the internal UUID in ani.
+    // For OUTBOUND telephony, `ani` is the agent's outbound caller ID, so the
+    // customer number is the dialled destination (dnis / dn) instead.
     var _ani = (_mediaType === 'workitem')
       ? ((parsed.callAssociatedData && parsed.callAssociatedData.email &&
           parsed.callAssociatedData.email.value) ||
@@ -389,7 +439,13 @@
           parsed.callAssociatedData.phone.value) ||
          (parsed.callAssociatedDetails && parsed.callAssociatedDetails.phone) ||
          _rawAni)
-      : _rawAni;
+      : (_isOutbound
+          ? (parsed.dnis ||
+             (parsed.callAssociatedDetails && parsed.callAssociatedDetails.dn) ||
+             (parsed.callAssociatedData && parsed.callAssociatedData.dn &&
+              parsed.callAssociatedData.dn.value) ||
+             _rawAni)
+          : _rawAni);
 
     var _displayUrl = (
       (parsed.callAssociatedData && parsed.callAssociatedData.displayUrl &&
@@ -430,19 +486,29 @@
       delete _activeInteractions[parsed.interactionId];
       _sendInteractionEnded(parsed.interactionId, 'task-prop');
     } else {
-      // Track or update the interaction.
+      // Track the interaction synchronously so a rapid follow-up task prop hits
+      // the dedup short-circuit above instead of triggering a second lookup/send.
       _activeInteractions[parsed.interactionId] = {
         ani: _ani, customerId: parsed.customerId || null,
         displayUrl: _displayUrl, title: title || null, state: _state,
       };
-      _relaySend({
-        type: _msgType,
-        interactionId: parsed.interactionId,
-        ani: _ani,
-        customerId: parsed.customerId || null,
-        displayUrl: _displayUrl,
-        title: title || null,
-        state: _state,
+      // Resolve a unified customer email (preferred over phone) so voice and
+      // email interactions for the same person share a single CRM tab. The
+      // ARRIVED/WRAPUP message is sent only once resolution completes, to avoid
+      // the Tab Manager opening a second tab keyed on the raw phone number.
+      _resolveCustomerEmail(_ani, function (resolvedEmail) {
+        var _customerId = resolvedEmail || parsed.customerId || null;
+        var _entry = _activeInteractions[parsed.interactionId];
+        if (_entry) _entry.customerId = _customerId;
+        _relaySend({
+          type: _msgType,
+          interactionId: parsed.interactionId,
+          ani: _ani,
+          customerId: _customerId,
+          displayUrl: _displayUrl,
+          title: title || null,
+          state: _state,
+        });
       });
     }
 
@@ -583,7 +649,8 @@
       get autoopen() { return _autoOpenManager; }
 
       set orgid(value) { this._orgid = value; }
-      set datacenter(value) { this._datacenter = value; }
+      set datacenter(value) { this._datacenter = value; _jdsDataCenter = value || ''; }
+      set workspaceid(value) { this._workspaceid = value; _jdsWorkspaceId = value || ''; }
     });
   }
 

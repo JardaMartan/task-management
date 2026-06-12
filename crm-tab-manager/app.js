@@ -187,14 +187,56 @@ saveBtn.addEventListener('click', () => {
   reconnect();
 });
 
-/* ── Tab registry ────────────────────────────────────────────────────────── */
-// Map<interactionId, { windowRef, ani, customerId }>
-// windowRef is the return value of window.open() — used to close the tab and
-// to detect if the user manually closed it (windowRef.closed === true).
+/* ── Tab registry (keyed by customer, not interaction) ───────────────────── */
+// One CRM tab ("customer card") is shared by every interaction that resolves to
+// the same customer. The registry is therefore keyed by a stable customer key,
+// and each entry tracks the set of interaction IDs currently referencing it.
+// The tab is only closed once the LAST referencing interaction is gone.
+//
+// Map<customerKey, { windowRef, crmUrl, tabName, interactionIds: Set<string> }>
 const registry = new Map();
 
 // Base URL for the proxy page — same origin as this Tab Manager page.
 const PROXY_BASE = location.origin + '/crm-tab-manager/crm-proxy.html';
+
+function isEmailIdentity(value) {
+  return typeof value === 'string' && /\S+@\S+\.\S+/.test(value);
+}
+
+// Resolve a stable per-customer key. Two interactions that produce the same key
+// share a single CRM tab. Priority:
+//   1. customerId   — a unified CRM identity (best; unifies across media types)
+//   2. email in ani — preferred over phone per product requirement
+//   3. ani (phone)
+//   4. displayUrl   — last resort so identical CRM pages still dedupe
+// Falls back to the interaction ID so a tab can always be tracked.
+function customerKeyFor(data, interactionId) {
+  if (data) {
+    if (data.customerId) {
+      // A customerId that is itself an email must unify with email-channel keys
+      // (where the email arrives in `ani`), so the same person shares one tab.
+      if (isEmailIdentity(data.customerId)) return 'email:' + data.customerId.toLowerCase();
+      return 'cid:' + String(data.customerId).toLowerCase();
+    }
+    if (isEmailIdentity(data.ani))  return 'email:' + data.ani.toLowerCase();
+    if (data.ani)                   return 'ani:'   + String(data.ani).toLowerCase();
+    if (data.displayUrl)            return 'url:'   + data.displayUrl;
+  }
+  return 'iid:' + interactionId;
+}
+
+// window.open names must be simple tokens — sanitize the customer key.
+function tabNameFor(customerKey) {
+  return 'crm_' + String(customerKey).replace(/[^a-zA-Z0-9]/g, '_');
+}
+
+// Find the registry entry that currently references a given interaction.
+function findRegistryEntryByInteraction(interactionId) {
+  for (const [key, entry] of registry.entries()) {
+    if (entry.interactionIds.has(interactionId)) return { key, entry };
+  }
+  return null;
+}
 
 function buildCrmUrl(ani, interactionId, customerId) {
   if (!config.crmUrlTemplate) return null;
@@ -219,47 +261,60 @@ function openOrFocusCrmTab(interactionId, ani, customerId, displayUrl, title) {
     return;
   }
 
-  const proxyUrl  = buildProxyUrl(interactionId, crmUrl, title);
-  // Use a stable per-interaction target name. Because this call originates from
-  // the Tab Manager window's own JS context, the browser opens the URL as a new
-  // tab IN THIS SAME WINDOW (not in the Desktop window). If the tab is already
-  // open with this name, the browser switches to it instead of opening a new one.
-  const tabName = 'crm_' + interactionId;
+  const customerKey = customerKeyFor({ ani, customerId, displayUrl }, interactionId);
 
-  const entry = registry.get(interactionId);
-  if (entry && entry.windowRef && !entry.windowRef.closed) {
-    // Tab still open — switch to it.
+  // If a tab for this customer is already open, reuse it (the same "customer
+  // card" must never be displayed twice). Register this interaction against it.
+  const existing = registry.get(customerKey);
+  if (existing && existing.windowRef && !existing.windowRef.closed) {
+    existing.interactionIds.add(interactionId);
     suppressTabFocusEcho();
-    entry.windowRef.focus();
+    existing.windowRef.focus();
+    console.log('[tab-manager] Reusing CRM tab for customer', customerKey, '— interactions:', [...existing.interactionIds]);
     return;
   }
 
-  console.log('[tab-manager] Opening CRM tab for', interactionId, '→', proxyUrl);
-  // No features string → browser opens as a tab in the same window as the
-  // Tab Manager. If the agent has dragged the Tab Manager tab into its own
-  // browser window, CRM pages will appear as tabs inside that window.
+  // Stable per-customer tab name so the browser reuses the same tab if it is
+  // re-opened. Because this call originates from the Tab Manager window's own JS
+  // context, the browser opens the URL as a tab IN THIS SAME WINDOW.
+  const tabName  = tabNameFor(customerKey);
+  const proxyUrl = buildProxyUrl(interactionId, crmUrl, title);
+
+  console.log('[tab-manager] Opening CRM tab for customer', customerKey, '→', proxyUrl);
   const windowRef = window.open(proxyUrl, tabName);
   if (!windowRef) {
     console.warn('[tab-manager] window.open blocked for', proxyUrl);
     showPopupBlockedWarning(false);
     return;
   }
-  registry.set(interactionId, { windowRef, ani, customerId });
+
+  const ids = (existing && existing.interactionIds) || new Set();
+  ids.add(interactionId);
+  registry.set(customerKey, { windowRef, crmUrl, tabName, interactionIds: ids });
 }
 
 function closeCrmTab(interactionId) {
-  const entry = registry.get(interactionId);
-  if (entry && entry.windowRef && !entry.windowRef.closed) {
-    entry.windowRef.close();
+  const found = findRegistryEntryByInteraction(interactionId);
+  if (!found) return;
+  const { key, entry } = found;
+
+  // Drop this interaction's reference. Only close the actual tab once no other
+  // active interaction for the same customer still needs it.
+  entry.interactionIds.delete(interactionId);
+  if (entry.interactionIds.size === 0) {
+    if (entry.windowRef && !entry.windowRef.closed) entry.windowRef.close();
+    registry.delete(key);
+    console.log('[tab-manager] Closed CRM tab for customer', key, '— last interaction ended');
+  } else {
+    console.log('[tab-manager] Keeping CRM tab open for customer', key, '— still', entry.interactionIds.size, 'active interaction(s)');
   }
-  registry.delete(interactionId);
 }
 
 function focusCrmTab(interactionId) {
-  const entry = registry.get(interactionId);
-  if (entry && entry.windowRef && !entry.windowRef.closed) {
+  const found = findRegistryEntryByInteraction(interactionId);
+  if (found && found.entry.windowRef && !found.entry.windowRef.closed) {
     suppressTabFocusEcho();
-    entry.windowRef.focus();
+    found.entry.windowRef.focus();
   }
 }
 
