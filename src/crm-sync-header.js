@@ -45,6 +45,7 @@
   var _jdsWorkspaceId     = '';    // configured via the `workspaceid` property; enables customer email resolution
   var _jdsDataCenter      = '';    // configured via the `datacenter` property (e.g. 'prodeu1')
   var _emailCache         = {};    // identity → resolved canonical email ('' if none / lookup failed)
+  var _nameCache          = {};    // identity → resolved display name ('' if none)
 
   // Per-tab session id — isolates this agent's relay traffic from other agents
   // sharing the same relay. The relay forwards messages only between a webexcc
@@ -369,12 +370,12 @@
   // Falls back to cb(null) when the identity is already an email or when JDS
   // config (workspace id / datacenter / access token) is unavailable.
   function _resolveCustomerEmail(identity, cb) {
-    if (!identity) { cb(null); return; }
-    if (_isEmail(identity)) { cb(identity); return; }
+    if (!identity) { cb(null, null); return; }
+    if (_isEmail(identity)) { cb(identity, null); return; }
     if (Object.prototype.hasOwnProperty.call(_emailCache, identity)) {
-      cb(_emailCache[identity] || null); return;
+      cb(_emailCache[identity] || null, _nameCache[identity] || null); return;
     }
-    if (!_accessToken || !_jdsWorkspaceId || !_jdsDataCenter) { cb(null); return; }
+    if (!_accessToken || !_jdsWorkspaceId || !_jdsDataCenter) { cb(null, null); return; }
     var url = 'https://api-jds.wxdap-' + _jdsDataCenter +
               '.webex.com/admin/v1/api/person/workspace-id/' + _jdsWorkspaceId +
               '/aliases/' + encodeURIComponent(identity);
@@ -383,14 +384,20 @@
       .then(function (j) {
         var person = j && j.data && j.data[0];
         var email = person && Array.isArray(person.email) ? person.email[0] : null;
+        var displayName = person
+          ? (person.name || (((person.firstName || '') + (person.lastName ? ' ' + person.lastName : '')).trim()) || null)
+          : null;
         _emailCache[identity] = email || '';
+        _nameCache[identity] = displayName || '';
         if (email) console.log('[crm-sync-header] resolved customer email', email, 'for', identity);
-        cb(email || null);
+        if (displayName) console.log('[crm-sync-header] resolved customer name', displayName, 'for', identity);
+        cb(email || null, displayName || null);
       })
       .catch(function (e) {
         console.warn('[crm-sync-header] customer email lookup failed:', e && e.message);
         _emailCache[identity] = '';
-        cb(null);
+        _nameCache[identity] = '';
+        cb(null, null);
       });
   }
 
@@ -496,19 +503,28 @@
       // email interactions for the same person share a single CRM tab. The
       // ARRIVED/WRAPUP message is sent only once resolution completes, to avoid
       // the Tab Manager opening a second tab keyed on the raw phone number.
-      _resolveCustomerEmail(_ani, function (resolvedEmail) {
+      _resolveCustomerEmail(_ani, function (resolvedEmail, resolvedName) {
         var _customerId = resolvedEmail || parsed.customerId || null;
+        var _resolvedTitle = title || resolvedName || null;
         var _entry = _activeInteractions[parsed.interactionId];
-        if (_entry) _entry.customerId = _customerId;
+        if (_entry) {
+          _entry.customerId = _customerId;
+          if (!_entry.title && _resolvedTitle) _entry.title = _resolvedTitle;
+        }
         _relaySend({
           type: _msgType,
           interactionId: parsed.interactionId,
           ani: _ani,
           customerId: _customerId,
           displayUrl: _displayUrl,
-          title: title || null,
+          title: _resolvedTitle,
           state: _state,
         });
+        // If we derived the title from JDS (no CAD title), also send TASK_TITLE
+        // so existing tab-manager entries get the name even if ARRIVED was already received.
+        if (!title && _resolvedTitle) {
+          _relaySend({ type: 'TASK_TITLE', interactionId: parsed.interactionId, title: _resolvedTitle });
+        }
       });
     }
 

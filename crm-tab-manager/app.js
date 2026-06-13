@@ -240,9 +240,12 @@ function findRegistryEntryByInteraction(interactionId) {
 
 function buildCrmUrl(ani, interactionId, customerId) {
   if (!config.crmUrlTemplate) return null;
+  // Prefer the resolved customer identity (email from JDS) over the raw ANI
+  // (phone number).  For email tasks ani == customerId so this is a no-op;
+  // for voice tasks with JDS resolution customerId is the email address.
   const effectiveCustomerId = customerId || ani || '';
   return config.crmUrlTemplate
-    .replace('{ani}', encodeURIComponent(ani || ''))
+    .replace('{ani}', encodeURIComponent(effectiveCustomerId))
     .replace('{interactionId}', encodeURIComponent(interactionId || ''))
     .replace('{customerId}', encodeURIComponent(effectiveCustomerId));
 }
