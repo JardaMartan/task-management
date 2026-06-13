@@ -14,6 +14,9 @@ import {
   toggleCustomerPanelAndLoadCases,
   loadJdsHistoryForEmailTask,
   loadJdsHistoryForWorkItemTask,
+  loadJdsHistoryForVoiceTask,
+  markOutdialDelivered,
+  setOutdialPending,
   extractEmailFromTask,
 } from './store';
 import { Badge, Button, Input, Label } from '@momentum-ui/react';
@@ -213,6 +216,35 @@ const TaskManagement = (props) => {
   // Stable identity deps only — interactionId changes when a new workItem arrives
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dispatch, taskPayload?.interactionId, isWorkItemForJds]);
+
+  // Telephony (voice) tasks: fetch JDS customer history using the ANI/DNIS phone
+  // identities and subscribe to SSE so the History and other tabs are populated.
+  const isVoiceTaskForJds = taskPayload?.mediaType === 'telephony';
+  useEffect(() => {
+    if (isVoiceTaskForJds && taskPayload) {
+      dispatch(loadJdsHistoryForVoiceTask(taskPayload));
+      // A new telephony task means the outbound call was delivered to the desktop —
+      // remove the cancel button from the calling pill.
+      dispatch(markOutdialDelivered());
+    }
+  // Stable identity deps only
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dispatch, taskPayload?.interactionId, isVoiceTaskForJds]);
+
+  // Clear the calling pill when the telephony task ends. Watches isTerminated and
+  // the task itself becoming null (Desktop removes the task from the widget after
+  // wrap-up or when agent switches to another task).
+  const outdialPending = useSelector((s) => s.widget?.outdialPending);
+  useEffect(() => {
+    if (!outdialPending) return;
+    const terminated = taskPayload?.isTerminated === true || taskPayload?.state === 'closed';
+    const gone = !taskPayload;
+    if (terminated || gone) {
+      dispatch(setOutdialPending(null));
+    }
+  // Re-run whenever termination state or task presence changes
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dispatch, taskPayload?.isTerminated, taskPayload?.state, taskPayload?.interactionId]);
 
   useEffect(() => {
     dispatch(setDarkMode(props.darkmode));

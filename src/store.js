@@ -15,7 +15,7 @@ import widgetReducer, {
   setAccessToken, setOrgId, setDatacenter, setWorkspaceId, setStreamingActive,
   setWidgetConfig, setEmailConfig, setDarkMode,
   toggleRelatedCaseExpanded,
-  clearSearch, stopJDSStreaming, setOutdialPending,
+  clearSearch, stopJDSStreaming, setOutdialPending, markOutdialDelivered,
   // Thunks
   initializeDesktopSDK, hydrateWidgetContext, loadCaseTask, loadMoreCaseHistory,
   saveCaseNotes, saveCaseStatus, toggleCustomerPanelAndLoadCases,
@@ -28,7 +28,7 @@ import emailReducer, {
   setGmailToken, setActiveEmail, setThread, setCustomerThreads, setCustomerHistory,
   appendCustomerHistoryEvent, setCustomerIdentities,
   setAiEnrichment, setAiReplyDraft, setTemplates, setPendingCorrelationId,
-  fetchCustomerJdsHistory, loadJdsHistoryForEmailTask, loadJdsHistoryForWorkItemTask, refreshAiEnrichment, generateAiReply, improveAiDraft,
+  fetchCustomerJdsHistory, loadJdsHistoryForEmailTask, loadJdsHistoryForWorkItemTask, loadJdsHistoryForVoiceTask, refreshAiEnrichment, generateAiReply, improveAiDraft,
   sendEmailReply, handleSseEvent, submitWrapUp,
   // Helpers
   parseGmailMessage, decodeBase64Url, extractEmailFromTask,
@@ -49,7 +49,7 @@ export {
   setAccessToken, setOrgId, setDatacenter, setWorkspaceId, setStreamingActive,
   setWidgetConfig, setEmailConfig, setDarkMode,
   toggleRelatedCaseExpanded,
-  clearSearch, stopJDSStreaming, setOutdialPending,
+  clearSearch, stopJDSStreaming, setOutdialPending, markOutdialDelivered,
   // Widget thunks
   initializeDesktopSDK, hydrateWidgetContext, loadCaseTask, loadMoreCaseHistory,
   saveCaseNotes, saveCaseStatus, toggleCustomerPanelAndLoadCases,
@@ -59,7 +59,7 @@ export {
   setGmailToken, setActiveEmail, setThread, setCustomerThreads, setCustomerHistory,
   appendCustomerHistoryEvent, setCustomerIdentities,
   setAiEnrichment, setAiReplyDraft, setTemplates, setPendingCorrelationId,
-  fetchCustomerJdsHistory, loadJdsHistoryForEmailTask, loadJdsHistoryForWorkItemTask, refreshAiEnrichment, generateAiReply, improveAiDraft,
+  fetchCustomerJdsHistory, loadJdsHistoryForEmailTask, loadJdsHistoryForWorkItemTask, loadJdsHistoryForVoiceTask, refreshAiEnrichment, generateAiReply, improveAiDraft,
   sendEmailReply, handleSseEvent, submitWrapUp,
   // Email helpers
   parseGmailMessage, decodeBase64Url, extractEmailFromTask,

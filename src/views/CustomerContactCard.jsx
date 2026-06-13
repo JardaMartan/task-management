@@ -32,6 +32,7 @@ const CustomerContactCard = ({ onNavigate, darkMode, mockProfile }) => {
   const customerProfile     = mockProfile || reduxProfile;
   const outdialEntryPointId = useSelector((s) => s.widget?.widgetConfig?.outdialEntryPointId);
   const outdialPending      = useSelector((s) => s.widget?.outdialPending);
+  const outdialDelivered    = Boolean(outdialPending?.delivered);
 
   if (!customerProfile) return null;
 
@@ -102,22 +103,26 @@ const CustomerContactCard = ({ onNavigate, darkMode, mockProfile }) => {
             const anyCallActive    = Boolean(outdialPending);
 
             if (isThisCallActive) {
-              // Replace the dial button with a "Calling…" status pill + cancel button
+              // Replace the dial button with a "Calling…" status pill.
+              // Cancel button is only shown while the call is still being set up
+              // (not yet delivered to the desktop as an active task).
               return (
                 <span key={`phone-${num}`} className="customer-contact-card__calling-pill">
                   <span className="customer-contact-card__calling-dot" aria-hidden="true" />
                   <span className="customer-contact-card__calling-label">
                     {t('customer.action.calling') || 'Calling'} {num}
                   </span>
-                  <button
-                    type="button"
-                    className="customer-contact-card__cancel-call-btn"
-                    onClick={handleCancelCall}
-                    title={t('customer.action.cancelCall') || 'Cancel call'}
-                    aria-label={t('customer.action.cancelCall') || 'Cancel call'}
-                  >
-                    <Icon name="cancel_16" />
-                  </button>
+                  {!outdialDelivered && (
+                    <button
+                      type="button"
+                      className="customer-contact-card__cancel-call-btn"
+                      onClick={handleCancelCall}
+                      title={t('customer.action.cancelCall') || 'Cancel call'}
+                      aria-label={t('customer.action.cancelCall') || 'Cancel call'}
+                    >
+                      <Icon name="cancel_16" />
+                    </button>
+                  )}
                 </span>
               );
             }

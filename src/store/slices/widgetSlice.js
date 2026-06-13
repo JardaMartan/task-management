@@ -300,6 +300,13 @@ const widgetSlice = createSlice({
             // action.payload: { destination } to mark a call in progress, null to clear
             state.outdialPending = action.payload || null;
         },
+        markOutdialDelivered: (state) => {
+            // Called when the outbound call task arrives at the desktop — removes the
+            // cancel option from the UI but keeps the calling pill visible.
+            if (state.outdialPending) {
+                state.outdialPending = { ...state.outdialPending, delivered: true };
+            }
+        },
         setAnalyticsOpen: (state, action) => {
             state.analyticsOpen = Boolean(action.payload);
             try { localStorage.setItem('wx_analytics_open', String(state.analyticsOpen)); } catch {}
@@ -352,6 +359,7 @@ export const {
     clearSearch,
     stopJDSStreaming,
     setOutdialPending,
+    markOutdialDelivered,
     setAnalyticsOpen,
     toggleAnalyticsOpen,
     setAnalyticsTrendDays,
