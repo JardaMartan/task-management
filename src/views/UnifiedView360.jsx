@@ -18,6 +18,7 @@
  */
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { useSelector } from 'react-redux';
 import { Icon } from '@momentum-ui/react';
 import { useI18n } from '../i18n/I18nContext';
 import { getMockData } from '../mock/mockData';
@@ -59,7 +60,19 @@ const UnifiedView360 = ({ darkMode, mockMode, task }) => {
   // Auto-navigate to the correct tab when a task arrives.
   const isEmailTask = task?.mediaType === 'email' || task?.mediaChannel === 'email';
   const isWorkItemTask = task?.mediaType === 'workItem';
-  const initialTab = isEmailTask ? 'email' : isWorkItemTask ? 'task' : 'history';
+  const isVoiceTask = task?.mediaType === 'telephony';
+  const initialTab = isEmailTask ? 'email' : isWorkItemTask ? 'task' : isVoiceTask ? 'voice' : 'history';
+
+  // Customer email resolved from JDS (used when agent opens Email tab during a voice call).
+  // loadJdsHistoryForVoiceTask sets state.email.customerEmail from the JDS person record.
+  const voiceCustomerEmail = useSelector((s) => {
+    if (!isVoiceTask) return null;
+    if (s.email?.customerEmail) return s.email.customerEmail;
+    const emails = s.email?.customerProfile?.email;
+    if (Array.isArray(emails)) return emails.find((e) => String(e).includes('@')) || null;
+    if (typeof emails === 'string' && emails.includes('@')) return emails;
+    return null;
+  });
   const [activeTab, setActiveTab] = useState(initialTab);
   const [navParams, setNavParams] = useState({});
   const [demoMode, setDemoMode] = useState(Boolean(mockMode));
@@ -84,7 +97,9 @@ const UnifiedView360 = ({ darkMode, mockMode, task }) => {
       ? 'email'
       : task?.mediaType === 'workItem'
         ? 'task'
-        : null;
+        : task?.mediaType === 'telephony'
+          ? 'voice'
+          : null;
     if (!targetTab) return;
     autoSwitchedForRef.current = id;
     // Reset nav history — new task context
@@ -236,15 +251,27 @@ const UnifiedView360 = ({ darkMode, mockMode, task }) => {
                 composeMode={Boolean(navParams.composeMode)}
                 composeTo={navParams.composeTo || ''}
               />
-            : <EmailWidget
-                key={navParams.composeMode ? `email-compose-${navParams.composeTo}` : (task?.interactionId || 'email-live')}
-                interactionId={task?.interactionId || task?.taskId || ''}
-                callAssociatedDetails={buildEmailCallDetails(task)}
-                darkMode={darkMode}
-                onNavigate={navigate}
-                composeMode={Boolean(navParams.composeMode)}
-                composeTo={navParams.composeTo || ''}
-              />
+            : isVoiceTask && voiceCustomerEmail
+              // Voice call: open the customer's email history using the JDS-resolved email.
+              // No gmailThreadId — EmailWidget will load all threads for that address.
+              ? <EmailWidget
+                  key={`email-voice-${task?.interactionId || 'voice'}-${voiceCustomerEmail}`}
+                  interactionId={task?.interactionId || ''}
+                  callAssociatedDetails={{ fromAddress: voiceCustomerEmail, customerEmail: voiceCustomerEmail }}
+                  darkMode={darkMode}
+                  onNavigate={navigate}
+                  composeMode={Boolean(navParams.composeMode)}
+                  composeTo={navParams.composeTo || voiceCustomerEmail}
+                />
+              : <EmailWidget
+                  key={navParams.composeMode ? `email-compose-${navParams.composeTo}` : (task?.interactionId || 'email-live')}
+                  interactionId={task?.interactionId || task?.taskId || ''}
+                  callAssociatedDetails={buildEmailCallDetails(task)}
+                  darkMode={darkMode}
+                  onNavigate={navigate}
+                  composeMode={Boolean(navParams.composeMode)}
+                  composeTo={navParams.composeTo || ''}
+                />
         )}
         {activeTab === 'chat' && (
           <ChatWidget

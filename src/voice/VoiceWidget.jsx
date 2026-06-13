@@ -146,38 +146,6 @@ const VoiceWidget = ({ darkMode, mockMode, initialTaskId, onNavigate }) => {
         </div>
       )}
 
-      {/* ── Active call header ────────────────────────── */}
-      <div className="voice__call-header">
-        <div className="voice__call-header-left">
-          <span className="voice__call-status-dot" />
-          <div>
-            <div className="voice__call-customer">{selectedCall.customer}</div>
-            <div className="voice__call-phone">{selectedCall.phone}</div>
-          </div>
-        </div>
-        <div className="voice__call-header-center">
-          <span className={`voice__direction-badge voice__direction-badge--${selectedCall.direction}`}>
-            {selectedCall.direction === 'inbound' ? t('voice.directionInbound') : t('voice.directionOutbound')}
-          </span>
-          <span className="voice__queue-label">{selectedCall.queue}</span>
-        </div>
-        <div className="voice__call-header-right">
-          {selectedCall.active ? (
-            <>
-              <span className="voice__timer">{fmtDuration(selectedCall.durationSec)}</span>
-              <span className="voice__case-tag">{selectedCall.caseId}</span>
-            </>
-          ) : (
-            <>
-              <span className="voice__duration-past">{fmtDuration(selectedCall.durationSec)}</span>
-              <span className={`voice__outcome voice__outcome--${selectedCall.outcome?.toLowerCase()}`}>
-                {selectedCall.outcome}
-              </span>
-            </>
-          )}
-        </div>
-      </div>
-
       {/* ── 3-column body ─────────────────────────────── */}
       <div className="voice__body widget-body">
 

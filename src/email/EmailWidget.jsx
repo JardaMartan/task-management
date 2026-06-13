@@ -35,6 +35,7 @@ const EmailWidget = ({ interactionId, callAssociatedDetails, darkMode, mockMode,
   const { isFetchingEmail, isFetchingToken, error, activeEmail } = useSelector(
     (state) => state.email
   );
+  const customerThreads = useSelector((state) => state.email.customerThreads);
   // Watch for tokenBrokerUrl becoming available — it may arrive after the task
   // if the Desktop framework sets `config` (properties) after `task` (properties).
   const tokenBrokerUrl = useSelector((state) => state.widget?.emailConfig?.tokenBrokerUrl);
@@ -160,6 +161,31 @@ const EmailWidget = ({ interactionId, callAssociatedDetails, darkMode, mockMode,
   }
 
   if (!activeEmail) {
+    // If threads are already loaded (e.g. voice-context email browsing), show the
+    // thread list so the agent can select one — rather than a "no task" placeholder.
+    if (customerThreads && customerThreads.length > 0) {
+      return (
+        <div className={`email-widget widget-shell${darkMode ? ' md--dark' : ''}`}>
+          {analyticsHeader}
+          {filterChips}
+          <div className="email-widget__body email-widget__body--3col widget-body">
+            <aside className="email-widget__col email-widget__col--threads widget-panel" aria-label="Thread list">
+              <ThreadPanel darkMode={darkMode} isDemoMode={isDemoMode} locale={locale} activeFilters={activeFilters} />
+            </aside>
+            <main className="email-widget__col email-widget__col--center widget-panel">
+              <div className="email-widget__state-center">
+                <span className="md-h4" style={{ color: 'var(--md-color-gray-60)' }}>
+                  {t('email.selectThread') || 'Select a thread to view'}
+                </span>
+              </div>
+            </main>
+            <aside className="email-widget__col email-widget__col--rail" aria-label="AI assist">
+              <AiPanel darkMode={darkMode} />
+            </aside>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className={`email-widget widget-shell${darkMode ? ' md--dark' : ''}`}>
         {analyticsHeader}
