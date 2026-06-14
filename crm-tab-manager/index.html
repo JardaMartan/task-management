@@ -7,14 +7,15 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <div class="app">
+  <!-- ── Firefox / non-embedded mode ─────────────────────────────────────── -->
+  <div class="app" id="app-normal">
 
     <header class="app-header">
       <div class="header-left">
         <h1 data-i18n="title">CRM Tab Manager</h1>
         <span class="subtitle" data-i18n="subtitle">WebexCC Sync Bridge</span>
       </div>
-      <span id="ws-status" class="badge badge--disconnected" data-i18n="disconnected">Disconnected</span>
+      <span id="ws-status-normal" class="badge badge--disconnected" data-i18n="disconnected">Disconnected</span>
     </header>
 
     <section class="config-panel">
@@ -35,6 +36,13 @@
           <input type="checkbox" id="auto-close-checkbox" />
           <label for="auto-close-checkbox" data-i18n="autoClose">Automatically close CRM tab when agent completes wrapup</label>
         </div>
+        <div class="field" id="placement-field">
+          <label for="placement-select" data-i18n="placementLabel">Embedded tab placement (Chrome)</label>
+          <select id="placement-select">
+            <option value="top" data-i18n="placementTop">Top</option>
+            <option value="side" data-i18n="placementSide">Side (left)</option>
+          </select>
+        </div>
         <button id="save-btn" class="btn btn--primary" data-i18n="saveBtn">Save &amp; Reconnect</button>
       </div>
     </section>
@@ -49,6 +57,82 @@
     </section>
 
   </div>
+
+  <!-- ── Embedded mode (Chrome) ────────────────────────────────────────────
+       Full-screen layout: pinned tabbar at top, content fills rest.
+       Hidden until JS detects non-Firefox and adds .mode-embedded to body. -->
+  <div class="emb" id="app-embedded">
+
+    <div class="emb-tabbar" id="emb-tabbar">
+      <!-- CRM tabs injected here by JS -->
+      <div class="emb-tabs" id="emb-tabs"></div>
+      <!-- Settings tab pinned to far right -->
+      <button class="emb-settings-btn" id="emb-settings-btn" title="Settings">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+             xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06
+                   a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09
+                   A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83
+                   l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09
+                   A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83
+                   l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09
+                   a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83
+                   l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09
+                   a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+        <span id="ws-status" class="badge badge--disconnected" data-i18n="disconnected">●</span>
+      </button>
+    </div>
+
+    <div class="emb-content" id="emb-content">
+
+      <!-- CRM iframes (one per customer, injected by JS) -->
+      <div class="emb-frames" id="crm-frames">
+        <p class="crm-empty" id="crm-empty" data-i18n="emptyState">No active interactions</p>
+      </div>
+
+      <!-- Settings panel — shown when settings tab is active -->
+      <div class="emb-settings" id="emb-settings">
+        <div class="emb-settings-inner">
+          <div class="emb-settings-header">
+            <h2 data-i18n="config">Configuration</h2>
+            <span id="ws-status-emb" class="badge badge--disconnected" data-i18n="disconnected">Disconnected</span>
+          </div>
+          <div id="popup-warning-slot-emb"></div>
+          <div class="field">
+            <label for="ws-url-input-emb" data-i18n="wsUrlLabel">Relay WebSocket URL</label>
+            <input type="text" id="ws-url-input-emb" placeholder="ws://localhost:3001" />
+          </div>
+          <div class="field">
+            <label for="crm-url-input-emb" data-i18n="crmUrlLabel">CRM URL Template</label>
+            <input type="text" id="crm-url-input-emb" placeholder="https://crm.example.com/customers/{ani}" />
+            <small id="crm-url-hint-emb" data-i18n="crmUrlHint">Placeholders: <code>{ani}</code> &middot; <code>{interactionId}</code> &middot; <code>{customerId}</code></small>
+          </div>
+          <div class="field field--inline">
+            <input type="checkbox" id="auto-close-checkbox-emb" />
+            <label for="auto-close-checkbox-emb" data-i18n="autoClose">Automatically close CRM tab when agent completes wrapup</label>
+          </div>
+          <div class="field">
+            <label for="placement-select-emb" data-i18n="placementLabel">Embedded tab placement (Chrome)</label>
+            <select id="placement-select-emb">
+              <option value="top" data-i18n="placementTop">Top</option>
+              <option value="side" data-i18n="placementSide">Side (left)</option>
+            </select>
+          </div>
+          <button id="save-btn-emb" class="btn btn--primary" data-i18n="saveBtn">Save &amp; Reconnect</button>
+          <hr class="emb-settings-divider" />
+          <h3 data-i18n="interactionsTitle">Active Interactions</h3>
+          <div id="interactions-list-emb">
+            <p class="empty-state">No active interactions</p>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
   <script src="app.js"></script>
 </body>
 </html>

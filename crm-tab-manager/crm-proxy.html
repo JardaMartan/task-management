@@ -63,6 +63,12 @@
       var iid     = params.get('interactionId') || '';
       var crmUrl  = params.get('url') || '';
       var tabTitle = params.get('title') || '';
+      // Embedded mode: this proxy runs as an in-window iframe of the Tab Manager
+      // (Chrome path). Nested-iframe visibility is inherited from the top-level
+      // window, so EVERY embedded proxy would fire visibilitychange together when
+      // the Tab Manager window regains focus. Switching is driven directly by the
+      // Tab Manager's in-window tab strip instead, so we suppress TAB_FOCUSED here.
+      var embedded = params.get('embedded') === '1';
 
       document.title = tabTitle || (iid ? ('CRM \u2014 ' + iid.slice(0, 8)) : 'CRM');
 
@@ -100,32 +106,37 @@
         channel = null;
       }
 
-      // Coalesce duplicate focus signals (visibilitychange + window focus fire
-      // for the same user action) into a single TAB_FOCUSED message.
+      // Report TAB_FOCUSED ONLY on a genuine tab switch — i.e. a visibility
+      // transition from hidden → visible. This is the single unambiguous signal
+      // that the user (or a programmatic focus) brought THIS tab to the front.
+      //
+      // We deliberately do NOT listen for the window `focus` event: it fires
+      // whenever the browser window regains OS focus (e.g. the agent alt-tabs
+      // back, or the Tab Manager's windowRef.focus() shifts OS focus) WITHOUT
+      // the visible tab actually changing. Those spurious signals reported a
+      // stale interaction id and re-drove the Desktop⇄CRM selection loop.
+      //
+      // We also do NOT fire an initial "already visible" probe: a freshly opened
+      // tab is focused by the Tab Manager itself, so no echo is needed.
       var _notifyTimer = null;
       function notifyFocused() {
         if (!iid || !channel) return;
-        if (_notifyTimer) return; // already queued for this focus event
+        if (_notifyTimer) return; // coalesce bursts into one message
         _notifyTimer = setTimeout(function () {
           _notifyTimer = null;
           channel.postMessage({ type: 'TAB_FOCUSED', interactionId: iid });
         }, 50);
       }
 
-      // visibilitychange fires when the user switches to this tab
-      document.addEventListener('visibilitychange', function () {
-        if (document.visibilityState === 'visible') {
-          notifyFocused();
-        }
-      });
-
-      // focus fires when the browser window containing this tab regains focus
-      window.addEventListener('focus', notifyFocused);
-
-      // Fire immediately if already visible (e.g. tab was opened and is in front)
-      if (document.visibilityState === 'visible') {
-        // Small delay so Tab Manager is ready to receive
-        setTimeout(notifyFocused, 300);
+      // visibilitychange → visible fires only on an actual transition to the
+      // foreground, which is exactly the genuine tab-switch signal we want.
+      // Skipped entirely in embedded mode (see note above).
+      if (!embedded) {
+        document.addEventListener('visibilitychange', function () {
+          if (document.visibilityState === 'visible') {
+            notifyFocused();
+          }
+        });
       }
     })();
   </script>

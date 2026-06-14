@@ -44,6 +44,7 @@
   var _autoOpenManager    = false; // configured via the `autoopen` property
   var _jdsWorkspaceId     = '';    // configured via the `workspaceid` property; enables customer email resolution
   var _jdsDataCenter      = '';    // configured via the `datacenter` property (e.g. 'prodeu1')
+  var _darkMode           = null;  // configured via the `darkmode` property; null = unknown (not yet set)
   var _emailCache         = {};    // identity → resolved canonical email ('' if none / lookup failed)
   var _nameCache          = {};    // identity → resolved display name ('' if none)
 
@@ -194,19 +195,34 @@
         var msg = JSON.parse(evt.data);
 
         if (msg && msg.type === 'CRM_TAB_SELECTED' && msg.interactionId) {
-          // Forward to panel-layout-headless.js via BroadcastChannel so it can
-          // click the correct task in the Desktop task list.
-          try {
-            var bc = new BroadcastChannel('crm-sync');
-            bc.postMessage({ type: 'SELECT_INTERACTION', interactionId: msg.interactionId });
-            bc.close();
-          } catch (e) { /* BroadcastChannel unavailable */ }
+          // The agent focused a CRM tab → ask panel-layout-headless to click the
+          // matching task in the Desktop list. If the Desktop is ALREADY on this
+          // task, do nothing (avoids a redundant click).
+          //
+          // We deliberately do NOT mutate _lastSelectedInteractionId here. When
+          // the click lands, handleTaskSync() observes the new Desktop selection
+          // and emits INTERACTION_SELECTED — which keeps the Tab Manager's own
+          // authoritative _desktopSelectedId in sync. The loop is broken on the
+          // Tab Manager side by per-id focus-echo suppression, not here.
+          if (msg.interactionId !== _lastSelectedInteractionId) {
+            try {
+              var bc = new BroadcastChannel('crm-sync');
+              bc.postMessage({ type: 'SELECT_INTERACTION', interactionId: msg.interactionId });
+              bc.close();
+            } catch (e) { /* BroadcastChannel unavailable */ }
+          } else {
+            console.log('[crm-sync-header] CRM_TAB_SELECTED already-selected — no click needed', msg.interactionId);
+          }
         }
 
         if (msg && msg.type === 'CRM_CLIENT_CONNECTED') {
           // Tab Manager just (re)connected — re-send all active interactions so it
           // can rebuild its state without a full page reload.
           console.log('[crm-sync-header] CRM client connected — flushing', Object.keys(_activeInteractions).length, 'active interactions');
+          // Also flush the current theme so the Tab Manager adopts the right mode.
+          if (_darkMode !== null) {
+            _relaySend({ type: 'THEME_CHANGED', darkMode: _darkMode });
+          }
           Object.keys(_activeInteractions).forEach(function (interactionId) {
             var data = _activeInteractions[interactionId];
             if (data.state === 'ended') return;
@@ -663,6 +679,14 @@
         if (_autoOpenManager && _relayReady) _openCrmTabManager();
       }
       get autoopen() { return _autoOpenManager; }
+
+      set darkmode(value) {
+        var isDark = (value === true || value === 'true' || value === '1');
+        if (_darkMode === isDark) return; // no change
+        _darkMode = isDark;
+        _relaySend({ type: 'THEME_CHANGED', darkMode: _darkMode });
+      }
+      get darkmode() { return _darkMode; }
 
       set orgid(value) { this._orgid = value; }
       set datacenter(value) { this._datacenter = value; _jdsDataCenter = value || ''; }

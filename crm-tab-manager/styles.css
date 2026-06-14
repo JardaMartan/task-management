@@ -1,4 +1,9 @@
-:root {
+/* ── Theme tokens ────────────────────────────────────────────────────────── */
+/* Dark theme is the default (applied immediately by JS before first paint).   */
+/* Light theme is activated by adding .theme-light to <html>.                  */
+
+:root,
+html.theme-dark {
   --bg:         #12141a;
   --surface:    #1c1f2b;
   --surface-2:  #252a3a;
@@ -9,6 +14,21 @@
   --green:      #3ddc84;
   --yellow:     #f6c90e;
   --red:        #e05c5c;
+  --radius:     6px;
+  --font:       -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+html.theme-light {
+  --bg:         #f4f5f8;
+  --surface:    #ffffff;
+  --surface-2:  #eceef4;
+  --border:     #d0d4e0;
+  --text:       #1a1d2a;
+  --text-muted: #6b7080;
+  --accent:     #1a6fd4;
+  --green:      #1e8a50;
+  --yellow:     #a07800;
+  --red:        #c0392b;
   --radius:     6px;
   --font:       -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
@@ -78,6 +98,13 @@ body {
 .badge--active       { background: var(--green);  color: #000; }
 .badge--wrapup       { background: var(--yellow); color: #000; }
 .badge--ended        { background: var(--border); color: var(--text-muted); }
+
+/* Light-mode badges: softer backgrounds with dark text for legibility */
+html.theme-light .badge--connected    { background: #c8f0d8; color: #1a5c36; }
+html.theme-light .badge--disconnected { background: #fad4d4; color: #8b1a1a; }
+html.theme-light .badge--active       { background: #c8f0d8; color: #1a5c36; }
+html.theme-light .badge--wrapup       { background: #fef3c7; color: #78500a; }
+html.theme-light .badge--ended        { background: #e2e4ea; color: #4a4f60; }
 
 /* ── Config panel ────────────────────────────────────────────────────────── */
 
@@ -296,3 +323,203 @@ body {
   gap: 6px;
   flex-shrink: 0;
 }
+
+/* ── Embedded CRM view (Chrome) ──────────────────────────────────────────── */
+/* .emb is hidden until JS adds .mode-embedded to <body>                      */
+
+.emb { display: none; }
+
+body.mode-embedded #app-normal { display: none; }
+
+body.mode-embedded .emb {
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+}
+
+/* ── Tabbar ──────────────────────────────────────────────────────────────── */
+
+.emb-tabbar {
+  display: flex;
+  align-items: stretch;
+  height: 36px;
+  min-height: 36px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.emb-tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  overflow-x: auto;
+  flex: 1 1 auto;
+  min-width: 0;
+  scrollbar-width: none;
+}
+.emb-tabs::-webkit-scrollbar { display: none; }
+
+.emb-tab {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 12px;
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-family: var(--font);
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  height: 100%;
+  transition: background 0.1s, color 0.1s;
+  position: relative;
+}
+.emb-tab:hover { background: var(--surface-2); color: var(--text); }
+.emb-tab.active {
+  background: var(--bg);
+  color: var(--text);
+  border-bottom: none;
+}
+.emb-tab.active::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 2px;
+  background: var(--accent);
+}
+
+.emb-tab-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 160px;
+}
+
+.emb-tab-close {
+  color: var(--text-muted);
+  font-size: 15px;
+  line-height: 1;
+  padding: 1px 2px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.emb-tab-close:hover { color: var(--red); background: rgba(224,92,92,0.12); }
+
+/* Settings button pinned to the right edge of the tabbar */
+.emb-settings-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--border);
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  height: 100%;
+  font-family: var(--font);
+  font-size: 12px;
+  transition: background 0.1s, color 0.1s;
+  margin-left: auto;
+}
+.emb-settings-btn:hover { background: var(--surface-2); color: var(--text); }
+.emb-settings-btn.active {
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.emb-settings-btn .badge {
+  font-size: 10px;
+  padding: 1px 6px;
+}
+
+/* ── Content area ────────────────────────────────────────────────────────── */
+
+.emb-content {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* CRM iframe container */
+.emb-frames {
+  position: absolute;
+  inset: 0;
+  background: var(--bg);
+}
+.crm-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.emb-frames.has-frames .crm-empty { display: none; }
+
+.crm-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: none;
+}
+.crm-frame.active { display: block; }
+
+/* Settings panel */
+.emb-settings {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  display: none;
+  background: var(--bg);
+}
+.emb-settings.active { display: block; }
+
+.emb-settings-inner {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 24px 20px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.emb-settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.emb-settings-header h2 {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.emb-settings-divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 4px 0;
+}
+
+.emb-settings-inner h3 {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+

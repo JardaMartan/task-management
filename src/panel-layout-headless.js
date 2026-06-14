@@ -734,6 +734,312 @@
     console.log('[panel-layout] auto-answer: ✅ listeners registered | channels:', _autoAnswerChannels);
   }
 
+  // ─── Offer info panel ─────────────────────────────────────────────────────
+  //
+  // When an incoming task is offered to the agent (eAgentOfferContact / AgentOffered state),
+  // display a floating overlay panel showing configurable CAD variable values.
+  // Configuration priority:
+  //   1. `offerVariables` property on the custom element (JSON array or comma-separated names)
+  //   2. FC-DESKTOP-VIEW CAD variable pop-over config (platform-level fallback)
+  //   3. Neither present → panel is silently skipped
+
+  var _offerVariables               = null;  // [{name, label}] or null (auto-detect)
+  var _offerPanelMap                = {};    // { [interactionId]: HTMLElement }
+  var _offerPanelListenersRegistered = false;
+  var _offerPanelKeyframesInjected  = false;
+
+  /**
+   * Parse the `offerVariables` property value.
+   * Accepts comma-separated variable names: 'agentInfo,CustomerName,Topic'
+   * Returns [{name, label}] or null.
+   */
+  function _parseOfferVariablesProp(value) {
+    if (!value || typeof value !== 'string') return null;
+    var names = value.trim().split(/[\s,;]+/).filter(Boolean);
+    if (!names.length) return null;
+    return names.map(function (n) { return { name: n, label: n }; });
+  }
+
+  /**
+   * Unwrap a CAD field from telephony ({value: "..."}) or digital (plain string) shape.
+   */
+  function _cadValue(field) {
+    if (field === null || field === undefined) return '';
+    if (typeof field === 'object' && 'value' in field) return String(field.value);
+    return String(field);
+  }
+
+  /**
+   * Parse FC-DESKTOP-VIEW CAD variable into an offer variable list.
+   * Returns [{name, label}] or null.
+   */
+  function _getOfferVarsFromFcDesktopView(cad) {
+    if (!cad) return null;
+    var raw = cad['FC-DESKTOP-VIEW'];
+    if (!raw) return null;
+    var jsonStr = _cadValue(raw);
+    if (!jsonStr) return null;
+    try {
+      var config = JSON.parse(jsonStr);
+      var popOver = config && Array.isArray(config['pop-over']) ? config['pop-over'] : null;
+      if (!popOver || !popOver.length) return null;
+      return popOver
+        .slice()
+        .sort(function (a, b) { return (+(a.variableSeq || 0)) - (+(b.variableSeq || 0)); })
+        .map(function (v) { return { name: String(v.name || ''), label: String(v.name || '') }; })
+        .filter(function (v) { return v.name; });
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /** Escape HTML to prevent XSS when inserting CAD values into innerHTML. */
+  function _escHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  /** Inject slide-in keyframe animation into document.head (once per page). */
+  function _ensureOfferPanelKeyframes() {
+    if (_offerPanelKeyframesInjected) return;
+    _offerPanelKeyframesInjected = true;
+    var style = document.createElement('style');
+    style.id = 'offer-panel-keyframes';
+    style.textContent = [
+      '@keyframes offerPanelSlideIn {',
+      '  from { opacity: 0; transform: translateX(30px); }',
+      '  to   { opacity: 1; transform: translateX(0); }',
+      '}'
+    ].join('\n');
+    document.head.appendChild(style);
+  }
+
+  /**
+   * Show the offer info panel for the given interaction.
+   * Silent no-op if no variables are configured or all configured variables are empty.
+   */
+  function showOfferPanel(interactionId, interaction) {
+    if (!interactionId) return;
+    var cad = (interaction && interaction.callAssociatedData) || {};
+
+    var vars = _offerVariables || _getOfferVarsFromFcDesktopView(cad);
+    if (!vars || !vars.length) {
+      console.log('[panel-layout] offer-panel: no variables configured — skipping for', interactionId);
+      return;
+    }
+    if (_offerPanelMap[interactionId]) return; // already shown
+
+    _ensureOfferPanelKeyframes();
+
+    var isDark     = _darkMode;
+    var panelCount = Object.keys(_offerPanelMap).length;
+
+    // Use Momentum CSS variables (--mds-color-theme-*) which are scoped by the
+    // md-theme--dark / md-theme--light class applied to the panel element itself.
+    // Fallback values match Momentum's light/dark palettes for environments where
+    // the variables may not cascade (e.g. isolated shadow DOM contexts).
+    var cssVars = [
+      '--offer-bg:var(--mds-color-theme-background-primary-normal,' + (isDark ? '#1b1b1b' : '#ffffff') + ')',
+      '--offer-bg2:var(--mds-color-theme-background-secondary-normal,' + (isDark ? '#2a2a2a' : '#f7f7f7') + ')',
+      '--offer-text:var(--mds-color-theme-text-primary-normal,' + (isDark ? '#f0f0f0' : '#121212') + ')',
+      '--offer-text2:var(--mds-color-theme-text-secondary-normal,' + (isDark ? '#9e9e9e' : '#6e7780') + ')',
+      '--offer-accent:var(--mds-color-theme-background-accent-normal,' + (isDark ? '#64aaff' : '#0070d2') + ')',
+      '--offer-divider:var(--mds-color-theme-control-inactive-normal,' + (isDark ? '#3a3a3a' : '#e8e8e8') + ')',
+      '--offer-shadow:' + (isDark ? '0 4px 24px rgba(0,0,0,0.55)' : '0 4px 24px rgba(0,0,0,0.14)')
+    ].join(';');
+
+    // Caller identity for header
+    var callerName = _cadValue(cad.CustomerName) || _cadValue(cad.ani) || _cadValue(cad.CallerId) || interactionId.slice(0, 8);
+    var mediaType  = String((interaction && (interaction.mediaType || interaction.channelType)) || '').toLowerCase() || 'task';
+    var mediaLabel = mediaType.charAt(0).toUpperCase() + mediaType.slice(1);
+
+    // Build variable rows — no truncation, content drives height
+    var rowsHtml = '';
+    var rowCount  = 0;
+    for (var i = 0; i < vars.length; i++) {
+      var v        = vars[i];
+      var rawField = cad[v.name];
+      if (rawField === undefined || rawField === null) continue;
+      var val = _cadValue(rawField).trim();
+      if (!val) continue;
+      var isLast = (i === vars.length - 1);
+      rowsHtml += [
+        '<div style="padding:12px 16px;' + (!isLast ? 'border-bottom:1px solid var(--offer-divider);' : '') + '">',
+        '  <div style="font-size:11px;font-weight:600;color:var(--offer-text2);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">' + _escHtml(v.label) + '</div>',
+        '  <div style="font-size:14px;line-height:1.5;color:var(--offer-text);background:var(--offer-bg2);border-radius:6px;padding:8px 12px;white-space:pre-wrap;word-break:break-word;">' + _escHtml(val) + '</div>',
+        '</div>'
+      ].join('');
+      rowCount++;
+    }
+
+    if (!rowCount) {
+      console.log('[panel-layout] offer-panel: all configured variables are empty — skipping for', interactionId);
+      return;
+    }
+
+    var panel = document.createElement('div');
+    panel.id = 'offer-panel-' + interactionId;
+    // Apply Momentum theme class so --mds-color-theme-* variables resolve correctly
+    panel.className = isDark ? 'md-theme--dark' : 'md-theme--light';
+    panel.setAttribute('data-offer-panel', '1');
+    panel.style.cssText = [
+      cssVars,
+      'position:fixed',
+      'top:' + (12 + panelCount * 16) + 'px',
+      'right:12px',
+      'width:min(480px,calc(100vw - 80px))',
+      'max-height:min(90vh,600px)',
+      'display:flex',
+      'flex-direction:column',
+      'background:var(--offer-bg)',
+      'border-radius:8px',
+      'border-left:4px solid var(--offer-accent)',
+      'box-shadow:var(--offer-shadow)',
+      'z-index:99999',
+      'overflow:hidden',
+      'font-family:inherit',
+      'animation:offerPanelSlideIn 0.22s ease-out'
+    ].join(';');
+
+    panel.innerHTML = [
+      // ── Header ──────────────────────────────────────────────────────────
+      '<div style="flex-shrink:0;background:var(--offer-bg2);padding:10px 16px;',
+      'display:flex;align-items:flex-start;justify-content:space-between;gap:10px;',
+      'border-bottom:1px solid var(--offer-divider);">',
+      '  <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;min-width:0;">',
+      '    <span style="flex-shrink:0;background:var(--offer-accent);color:#fff;font-size:10px;font-weight:700;',
+      '      padding:2px 8px;border-radius:4px;text-transform:uppercase;letter-spacing:0.05em;">',
+      _escHtml(mediaLabel),
+      '    </span>',
+      '    <span style="font-size:14px;font-weight:600;color:var(--offer-text);word-break:break-word;">',
+      _escHtml(callerName),
+      '    </span>',
+      '  </div>',
+      '  <button id="offer-panel-close-' + interactionId + '" aria-label="Close"',
+      '    style="flex-shrink:0;background:none;border:none;cursor:pointer;',
+      '    padding:0 4px;font-size:18px;line-height:1;color:var(--offer-text2);',
+      '    margin-top:1px;" title="Close">&#x2715;</button>',
+      '</div>',
+      // ── Body (scrollable) ────────────────────────────────────────────────
+      '<div style="overflow-y:auto;flex:1 1 auto;">',
+      rowsHtml,
+      '</div>'
+    ].join('');
+
+    document.body.appendChild(panel);
+    _offerPanelMap[interactionId] = panel;
+
+    var closeBtn = document.getElementById('offer-panel-close-' + interactionId);
+    if (closeBtn) {
+      closeBtn.addEventListener('click', function () { hideOfferPanel(interactionId); });
+    }
+
+    console.log('[panel-layout] offer-panel: \u2705 shown for', interactionId, '| vars:', vars.map(function (v) { return v.name; }).join(','));
+  }
+
+  /** Remove the offer info panel for the given interaction. */
+  function hideOfferPanel(interactionId) {
+    if (!interactionId) return;
+    var panel = _offerPanelMap[interactionId];
+    if (panel && panel.parentNode) panel.parentNode.removeChild(panel);
+    delete _offerPanelMap[interactionId];
+    // Clean up keyframe style when no panels remain
+    if (!Object.keys(_offerPanelMap).length) {
+      var kf = document.getElementById('offer-panel-keyframes');
+      if (kf && kf.parentNode) kf.parentNode.removeChild(kf);
+      _offerPanelKeyframesInjected = false;
+    }
+    console.log('[panel-layout] offer-panel: hidden for', interactionId);
+  }
+
+  /**
+   * Register SDK listeners for the offer panel lifecycle.
+   * Mirrors the _initAutoAnswer() retry pattern.
+   * Called unconditionally at startup — showOfferPanel() is a no-op when nothing is configured.
+   */
+  function _initOfferPanel() {
+    if (_offerPanelListenersRegistered) return;
+
+    var svc;
+    try { svc = (typeof AGENTX_SERVICE !== 'undefined') ? AGENTX_SERVICE : null; } catch (e) { svc = null; }
+    svc = svc || window.AGENTX_SERVICE || null;
+    var aqmContact = svc && svc.aqm && svc.aqm.contact;
+
+    if (!svc || !svc.isInited || !aqmContact) {
+      setTimeout(_initOfferPanel, 2000);
+      return;
+    }
+
+    if (!aqmContact.eAgentOfferContact || typeof aqmContact.eAgentOfferContact.listen !== 'function') {
+      setTimeout(_initOfferPanel, 2000);
+      return;
+    }
+
+    // Show panel on offer
+    aqmContact.eAgentOfferContact.listen(function (msg) {
+      try {
+        var interaction = msg && msg.data && msg.data.interaction;
+        if (!interaction) return;
+        var id = interaction.interactionId || interaction.id;
+        if (id) showOfferPanel(id, interaction);
+      } catch (e) {
+        console.error('[panel-layout] offer-panel: error in eAgentOfferContact handler', e);
+      }
+    });
+
+    // Hide on RONA (agent did not answer in time)
+    if (aqmContact.eAgentOfferContactRona && typeof aqmContact.eAgentOfferContactRona.listen === 'function') {
+      aqmContact.eAgentOfferContactRona.listen(function (msg) {
+        try {
+          var interaction = msg && msg.data && msg.data.interaction;
+          var id = interaction && (interaction.interactionId || interaction.id);
+          if (id) hideOfferPanel(id);
+        } catch (e) {}
+      });
+    }
+
+    // Hide on declined / assign failed (USER_DECLINED)
+    if (aqmContact.eAgentContactAssignFailed && typeof aqmContact.eAgentContactAssignFailed.listen === 'function') {
+      aqmContact.eAgentContactAssignFailed.listen(function (msg) {
+        try {
+          var id = (msg && msg.data && msg.data.interactionId)
+            || (msg && msg.data && msg.data.interaction && (msg.data.interaction.interactionId || msg.data.interaction.id));
+          if (id) hideOfferPanel(id);
+        } catch (e) {}
+      });
+    }
+
+    // Hide on accepted (eAgentContactAssigned)
+    if (aqmContact.eAgentContactAssigned && typeof aqmContact.eAgentContactAssigned.listen === 'function') {
+      aqmContact.eAgentContactAssigned.listen(function (msg) {
+        try {
+          var id = (msg && msg.data && msg.data.interactionId)
+            || (msg && msg.data && msg.data.interaction && (msg.data.interaction.interactionId || msg.data.interaction.id));
+          if (id) hideOfferPanel(id);
+        } catch (e) {}
+      });
+    }
+
+    // Safety fallback: hide on ended
+    if (aqmContact.eAgentContactEnded && typeof aqmContact.eAgentContactEnded.listen === 'function') {
+      aqmContact.eAgentContactEnded.listen(function (msg) {
+        try {
+          var id = msg && msg.data && msg.data.interactionId;
+          if (id) hideOfferPanel(id);
+        } catch (e) {}
+      });
+    }
+
+    _offerPanelListenersRegistered = true;
+    console.log('[panel-layout] offer-panel: \u2705 listeners registered');
+  }
+
+  _initOfferPanel();
+
   // ─── CRM sync: interaction selection ─────────────────────────────────────
   //
   // When the CRM Tab Manager selects a customer tab, the sync relay sends a
@@ -924,10 +1230,12 @@
     }
 
     // ── Early exit: already on the target URL ──
-    // If the URL already matches, the Desktop is already showing this task.
-    // Re-firing anything here only creates races, so stop.
+    // The Desktop is already showing this task; a real click would only create
+    // races. CRM-tab synchronisation is driven independently by crm-sync-header
+    // (Desktop selection change → INTERACTION_SELECTED → Tab Manager), so there
+    // is nothing to do here.
     if (window.location.pathname === targetPath) {
-      console.log('[panel-layout] already on', targetPath, '— no switch needed');
+      console.log('[panel-layout] already on', targetPath, '— no click needed');
       return;
     }
 
@@ -1004,19 +1312,22 @@
     }, 250);
   }
 
-  // Listen for SELECT_INTERACTION broadcasts from the sync slice.
-  // Debounce: if multiple messages arrive within 400ms, only the LAST one wins.
-  // Lock: after a switch fires, ignore any reverse-switch for 3s (prevents the
-  // echo where the newly-deselected task's proxy fires TAB_FOCUSED, which Tab
-  // Manager forwards back as CRM_TAB_SELECTED for the old task).
+  // Listen for SELECT_INTERACTION broadcasts from crm-sync-header.
+  //
+  // crm-sync-header only broadcasts SELECT_INTERACTION when the agent focuses a
+  // CRM tab for an interaction that is NOT already the Desktop's selected task,
+  // so every message here is a genuine switch request. The feedback loop is
+  // broken upstream (the Tab Manager suppresses the TAB_FOCUSED echoes of its
+  // own programmatic focus, and crm-sync-header only emits INTERACTION_SELECTED
+  // on a real Desktop selection change), so NO reverse-echo guard is needed here
+  // — adding one would wrongly swallow rapid legitimate A→B→A switches.
+  //
+  // A short debounce coalesces the burst the relay flush produces on connect so
+  // we only perform the final click.
   (function () {
     try {
       var _pendingTimer = null;
-      var _lastSwitchedTo = null;
-      var _prevTask = null;        // the task we just left on the last switch
-      var _lastSwitchedAt = 0;
-      var REVERSE_ECHO_MS = 1000; // guard only against the specific reverse-echo
-      var DEBOUNCE_MS     = 200;  // wait for burst to settle before acting
+      var DEBOUNCE_MS = 200;
 
       var ch = new BroadcastChannel('crm-sync');
       ch.onmessage = function (event) {
@@ -1024,21 +1335,8 @@
         var iid = event.data.interactionId;
         if (!iid) return;
 
-        // Guard only against the specific reverse-echo: the proxy for the task we
-        // just LEFT may fire TAB_FOCUSED → CRM_TAB_SELECTED back for that exact id.
-        // The Tab Manager's expectFocusEcho already handles this, but we keep a
-        // narrow 1s safety net here for that ONE task only.
-        // Any switch to a DIFFERENT task is always a genuine user action — never block it.
-        if (_prevTask && iid === _prevTask) {
-          var age = Date.now() - _lastSwitchedAt;
-          if (age < REVERSE_ECHO_MS) {
-            console.log('[panel-layout] SELECT_INTERACTION suppressed (reverse-echo guard, age=' + age + 'ms):', iid);
-            return;
-          }
-        }
-
-        // Debounce: if another message for a different task arrives very quickly,
-        // cancel the pending switch and schedule for the latest message instead.
+        // Debounce: if another message arrives very quickly, cancel the pending
+        // switch and schedule for the latest message instead.
         if (_pendingTimer !== null) {
           clearTimeout(_pendingTimer);
           _pendingTimer = null;
@@ -1046,9 +1344,6 @@
 
         _pendingTimer = setTimeout(function () {
           _pendingTimer = null;
-          _prevTask = _lastSwitchedTo;  // save the task we are about to leave
-          _lastSwitchedTo = iid;
-          _lastSwitchedAt = Date.now();
           selectInteractionInDesktop(iid);
         }, DEBOUNCE_MS);
       };
@@ -1071,6 +1366,7 @@
         this._datacenter  = null;
         this._signalColor = null;
         this._autoanswer  = null;
+        this._offerVariables = null;
       }
 
       attributeChangedCallback(name, oldVal, newVal) {
@@ -1093,6 +1389,12 @@
         _darkMode = (value === 'true' || value === true);
         console.log('[panel-layout] darkmode:', _darkMode);
         if (_lastMediaType) applyTaskIndicator(_lastMediaType);
+        // Update theme class on any live offer panels so Momentum CSS variables re-scope
+        var themeClass = _darkMode ? 'md-theme--dark' : 'md-theme--light';
+        var ids = Object.keys(_offerPanelMap);
+        for (var i = 0; i < ids.length; i++) {
+          _offerPanelMap[ids[i]].className = themeClass;
+        }
       }
       get darkmode() { return _darkMode; }
 
@@ -1126,6 +1428,13 @@
         }
       }
       get autoanswer() { return this._autoanswer; }
+
+      set offerVariables(value) {
+        this._offerVariables = value;
+        _offerVariables = _parseOfferVariablesProp(value);
+        console.log('[panel-layout] offerVariables set:', value, '→', _offerVariables);
+      }
+      get offerVariables() { return this._offerVariables; }
     });
   }
 
