@@ -14,6 +14,18 @@ const baseDictionary = {
       calling: 'Calling',
       cancelCall: 'Cancel call',
       noEntryPoint: 'Outbound calling not configured (add outdialEntryPointId to widget config)',
+      whatsapp: {
+        label: 'WhatsApp customer',
+        sent: 'WhatsApp conversation initiated',
+        failed: 'Failed to start WhatsApp conversation',
+        notConfigured: 'WhatsApp outbound not configured (add whatsappEntryPointId to widget config)',
+      },
+      sms: {
+        label: 'SMS customer',
+        sent: 'SMS conversation initiated',
+        failed: 'Failed to start SMS conversation',
+        notConfigured: 'SMS outbound not configured (add smsEntryPointId to widget config)',
+      },
     },
   },
   case: {
@@ -511,6 +523,18 @@ const deDictionary = {
       calling: 'Verbinde',
       cancelCall: 'Anruf beenden',
       noEntryPoint: 'Ausgehende Anrufe nicht konfiguriert (outdialEntryPointId in Widget-Konfiguration eintragen)',
+      whatsapp: {
+        label: 'Kunden per WhatsApp kontaktieren',
+        sent: 'WhatsApp-Konversation gestartet',
+        failed: 'WhatsApp-Konversation konnte nicht gestartet werden',
+        notConfigured: 'WhatsApp-Ausgang nicht konfiguriert (whatsappEntryPointId in Widget-Konfiguration eintragen)',
+      },
+      sms: {
+        label: 'Kunden per SMS kontaktieren',
+        sent: 'SMS-Konversation gestartet',
+        failed: 'SMS-Konversation konnte nicht gestartet werden',
+        notConfigured: 'SMS-Ausgang nicht konfiguriert (smsEntryPointId in Widget-Konfiguration eintragen)',
+      },
     },
   },
   case: {
@@ -1005,6 +1029,18 @@ const csDictionary = {
       calling: 'Volání',
       cancelCall: 'Zrušit hovor',
       noEntryPoint: 'Odchozí volání není nakonfigurováno (přidejte outdialEntryPointId do konfigurace widgetu)',
+      whatsapp: {
+        label: 'Kontaktovat zákazníka přes WhatsApp',
+        sent: 'Konverzace WhatsApp zahájena',
+        failed: 'Nepodařilo se zahájit konverzaci WhatsApp',
+        notConfigured: 'Odchozí WhatsApp není nakonfigurován (přidejte whatsappEntryPointId do konfigurace widgetu)',
+      },
+      sms: {
+        label: 'Kontaktovat zákazníka přes SMS',
+        sent: 'Konverzace SMS zahájena',
+        failed: 'Nepodařilo se zahájit konverzaci SMS',
+        notConfigured: 'Odchozí SMS není nakonfigurováno (přidejte smsEntryPointId do konfigurace widgetu)',
+      },
     },
   },
   case: {

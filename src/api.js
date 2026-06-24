@@ -317,10 +317,17 @@ export const fetchJourneyEvents = async (identity, accessToken, workspaceId, dat
 
   try {
     const baseUrl = getJDSBaseURL(datacenter);
-    // GET /v1/api/events/workspace-id/{workspaceId}?filter=identity==x&filter=identity==y
-    // Multiple filter params are OR-ed by JDS, so events for all identities are returned.
-    // When identities is empty, no identity filter is added — returns workspace-wide results
-    // for the additionalFilter type constraint.
+    // GET /v1/api/events/workspace-id/{workspaceId}?identity=<primary>
+    // Using the ?identity= parameter (NOT ?filter=identity==) so JDS applies its
+    // cross-identity graph and returns events for ALL linked identities automatically
+    // (e.g. querying by email also returns events stored under linked phone numbers).
+    // The ?filter=identity== RSQL approach only matches the exact identity string and
+    // does NOT traverse the identity graph, causing phone events to be missing.
+    // When identities is empty, no identity param is added — returns workspace-wide
+    // results filtered only by the additionalFilter type constraint.
+
+    // Prefer email identity as primary (more stable in JDS graph); fall back to first.
+    const primaryIdentity = identities.find((id) => id.includes('@')) || identities[0] || null;
 
     let allEvents = [];
     let page = 1;
@@ -328,12 +335,12 @@ export const fetchJourneyEvents = async (identity, accessToken, workspaceId, dat
     let hasMore = true;
     const pageLimit = maxPages;
 
-    // Build query string: one filter param per identity (JDS ORs them).
+    // Build query string: single ?identity= for cross-identity graph lookup.
     // URLSearchParams handles percent-encoding — do NOT pre-encode the identity value
     // or the % signs themselves get double-encoded (%40 → %2540, %2B → %252B).
     const buildQuery = (pg) => {
       const params = new URLSearchParams();
-      identities.forEach(id => params.append('filter', `identity==${id}`));
+      if (primaryIdentity) params.set('identity', primaryIdentity);
       if (additionalFilter) params.append('filter', additionalFilter);
       params.set('page', String(pg));
       params.set('pageSize', String(pageSize));
@@ -422,7 +429,7 @@ export const fetchJourneyEvents = async (identity, accessToken, workspaceId, dat
       return true;
     });
 
-    console.log(`fetchJourneyEvents: Retrieved ${allEvents.length} total events for identities [${identities.join(', ')}]`);
+    console.log(`fetchJourneyEvents: Retrieved ${allEvents.length} total events (primary identity: ${primaryIdentity}, input identities: [${identities.join(', ')}])`);
     // Debug: show distinct identity values in response
     if (allEvents.length > 0) {
       const distinctIds = [...new Set(allEvents.map(e => e.raw?.identity || e.identity).filter(Boolean))];
@@ -1430,6 +1437,78 @@ export const getTaskSummary = async (orgId, taskId, datacenter, accessToken) => 
     console.error('[API] Error fetching task summary:', error);
     return null;
   }
+};
+
+/**
+ * Create an agent-initiated digital (social) outbound task via the Webex CC
+ * Digital Flow Manager — the same endpoint the native "digital outbound" widget
+ * uses for SMS / WhatsApp.
+ *
+ * This is NOT a telephony outdial: digital channels must go through DigitalFM
+ * (`resolveTask`), not the dialer `/v1/tasks` endpoint (which only accepts
+ * telephony entry points and rejects social entry-point IDs).
+ *
+ * On success Webex CC routes the new task back to the initiating agent; the
+ * caller is expected to accept it (e.g. via `Desktop.agentContact.accept`).
+ *
+ * @param {object} params
+ * @param {string} params.entryPointId  - Digital (social) entry point ID
+ * @param {string} params.destination   - Customer number, E.164 (e.g. +420602376247)
+ * @param {string} params.mediaChannel  - 'sms' | 'whatsapp'
+ * @param {string} [params.origin]      - Sender channel address (ANI)
+ * @param {object} config
+ * @param {string} config.accessToken   - Webex CC desktop access token
+ * @param {string} config.orgId         - Organization ID
+ * @param {string} config.datacenter    - Datacenter identifier (e.g. prodeu1)
+ * @returns {Promise<string>} The created task/interaction ID
+ * @throws {Error} On missing config or non-2xx response
+ */
+export const resolveDigitalOutboundTask = async (
+  { entryPointId, destination, mediaChannel, origin },
+  { accessToken, orgId, datacenter },
+) => {
+  if (!datacenter) throw new Error('resolveDigitalOutboundTask: datacenter is required');
+  if (!entryPointId) throw new Error('resolveDigitalOutboundTask: entryPointId is required');
+  if (!destination) throw new Error('resolveDigitalOutboundTask: destination is required');
+
+  const url = `https://digitalfm.${datacenter}.ciscoccservice.com/digitalfm/v1/resolveTask`;
+
+  const body = {
+    entryPointId,
+    destination,
+    mediaType: 'social',
+    mediaChannel,
+    direction: 'OUTBOUND',
+    outboundType: 'OUTDIAL',
+    orgId: orgId || '',
+    ...(origin ? { origin } : {}),
+  };
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    let detail = '';
+    try {
+      const errJson = await response.json();
+      detail = errJson?.errorMessage || errJson?.errorData || '';
+    } catch { /* non-JSON error body */ }
+    throw new Error(detail || `DigitalFM resolveTask failed with status ${response.status}`);
+  }
+
+  const data = await response.json();
+  const taskId = data?.data?.id;
+  if (!taskId) {
+    throw new Error('DigitalFM resolveTask returned no task ID');
+  }
+  return taskId;
 };
 
 const TICKET_DB_BASE_URL = 'https://6a257cdd5447714a6f837a74.mockapi.io/helpdesk';

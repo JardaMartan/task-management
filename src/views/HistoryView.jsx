@@ -22,6 +22,25 @@ const ANALYTICS_CHANNEL_COLORS = {
   task: '#888888',
 };
 
+/** Normalize a raw channel string to one of the known translation keys. */
+function normalizeChannel(raw) {
+  const r = String(raw || 'task').toLowerCase();
+  if (r.includes('email')) return 'email';
+  if (r.includes('chat') || r.includes('webchat')) return 'chat';
+  if (r.includes('call') || r.includes('phone') || r.includes('voice') || r.includes('telephon')) return 'voice';
+  if (r.includes('whatsapp') || r === 'wa') return 'whatsapp';
+  if (r.includes('sms') || r.includes('text-message') || r.includes('text message')) return 'sms';
+  // Facebook Messenger before general social so it gets its own icon bucket
+  if (r.includes('messenger') || r === 'fb' || r === 'facebook messenger' || r === 'fb messenger') return 'messenger';
+  // Generic social-media channels
+  if (r.includes('facebook') || r.includes('instagram') || r.includes('twitter') || r.includes('linkedin') ||
+      r.includes('tiktok') || r.includes('youtube') || r.includes('social') || r.includes('community')) return 'social';
+  // Web / browser interactions
+  if (r.includes('web') || r.includes('website') || r === 'page visit' || r === 'browse') return 'web';
+  if (r.includes('task') || r.includes('workitem') || r.includes('agent') || r.includes('contact')) return 'task';
+  return r;
+}
+
 /**
  * Derive contact-centre analytics metrics from the flat JDS event array stored
  * in Redux state (state.email.customerHistory).  Returns an object with the same
@@ -73,7 +92,7 @@ const computeHistoryAnalytics = (rawEvents, t) => {
   // ── Channel mix ──────────────────────────────────────────────────────────
   const channelCount = new Map();
   interactions.forEach(({ channel }) => {
-    const ch = channel || 'task';
+    const ch = normalizeChannel(channel);
     channelCount.set(ch, (channelCount.get(ch) || 0) + 1);
   });
   const byChannel = Array.from(channelCount.entries()).map(([ch, count]) => ({
@@ -196,10 +215,14 @@ const computeHistoryAnalytics = (rawEvents, t) => {
   };
 };
 
+// Maps normalised channel name → Momentum icon name.
+// Covers all well-known Webex CC / CJDS channelType values per defaultIcons.json.
 const CHANNEL_ICONS = {
+  // Voice / telephony
   call: 'handset_16',
   phone: 'handset_16',
   voice: 'handset_16',
+  // Digital messaging
   email: 'email_16',
   chat: 'chat_16',
   webchat: 'chat_16',
@@ -208,11 +231,18 @@ const CHANNEL_ICONS = {
   rcs: 'sms-message_16',
   apple: 'chat_16',
   'in-app': 'chat_16',
+  // Social / OTT channels
+  messenger: 'chat_16',        // Facebook Messenger
+  social: 'contact-group_16', // Twitter, Instagram, LinkedIn, Facebook, TikTok, etc.
+  // Web / browser
+  web: 'cursor_16',
+  // Work-item / system
   task: 'tasks_16',
   case: 'tasks_16',
   system: 'workflows_16',
 };
 
+// Maps normalised channel name → Momentum badge-color token (used for dot tint).
 const CHANNEL_COLOR = {
   call: 'green',
   phone: 'green',
@@ -221,13 +251,124 @@ const CHANNEL_COLOR = {
   chat: 'blue',
   webchat: 'blue',
   whatsapp: 'green',
-  sms: 'blue',
+  sms: 'mint',
   rcs: 'blue',
   apple: 'blue',
   'in-app': 'violet',
+  messenger: 'cobalt',
+  social: 'mint',
+  web: 'gray',
   task: 'pastel',
   case: 'pastel',
   system: 'mint',
+};
+
+// ── CJDS custom icon map ────────────────────────────────────────────────────
+//
+// Mirrors the logic of CJDS getIconData(): each entry has a regex pattern
+// that is tested (case-insensitive) against uiData.iconType first, then the
+// raw event type string.  Entries are tried in order; first match wins.
+// icon  = Momentum icon name (passed to <Icon name={...} />)
+// src   = image URL (rendered as <img> instead of <Icon>)
+// color = Momentum badge color token, maps to a CSS hex via BADGE_COLOR_HEX
+const CJDS_ICON_MAP = [
+  { re: /^(sms|text.?message|sms.?notif)/i,                    icon: 'sms-message_16',   color: 'mint'   },
+  { re: /^(telephony|voice|call|phone)$/i,                     icon: 'handset_16',       color: 'green'  },
+  { re: /call.?incoming|inbound.?call|imi.?inbound/i,          icon: 'handset_16',       color: 'green'  },
+  { re: /call.?outgoing|outbound.?call|imi.?outbound/i,        icon: 'handset_16',       color: 'orange' },
+  { re: /^(chat|webchat|messaging|in.?app|imessage|rcs)$/i,    icon: 'chat_16',          color: 'blue'   },
+  { re: /whatsapp/i,                                           icon: 'chat_16',          color: 'green'  },
+  { re: /^(messenger|facebook.?messenger|fb.?messenger)$/i,    icon: 'chat_16',          color: 'cobalt' },
+  { re: /^(social|facebook|instagram|twitter|linkedin|tiktok)$/i, icon: 'contact-group_16', color: 'mint' },
+  { re: /^email$/i,                                            icon: 'email_16',         color: 'purple' },
+  { re: /campaign/i,                                           icon: 'email_16',         color: 'purple' },
+  { re: /payment|pay\b/i,                          icon: 'payment_16',        color: 'gold'   },
+  { re: /survey|nps/i,                             icon: 'analysis_16',        color: 'red'    },
+  { re: /feedback|review|rating/i,                 icon: 'analysis_16',        color: 'gold'   },
+  { re: /page.?visit|web.?visit|website|browse/i,  icon: 'cursor_16',          color: 'gray'   },
+  { re: /login|sign.?in|sign.?up|register/i,       icon: 'user_16',            color: 'gold'   },
+  { re: /identify|profile/i,                       icon: 'user_16',            color: 'blue'   },
+  { re: /notify|notification/i,                    icon: 'alert_16',           color: 'orange' },
+  { re: /wrapup|wrap.?up/i,                        icon: 'cancel_16',          color: 'red'    },
+  { re: /agent/i,                                  icon: 'headset_16',         color: 'pink'   },
+  { re: /location|zip.?code|address/i,             icon: 'location_16',        color: 'cyan'   },
+  { re: /task|work.?item|ticket/i,                 icon: 'tasks_16',           color: 'yellow' },
+  { re: /trigger/i,                                icon: 'event_16',           color: 'violet' },
+  { re: /quote|document|form/i,                    icon: 'file_16',            color: 'cobalt' },
+  { re: /calendar|schedule|appointment/i,          icon: 'calendar_16',        color: 'yellow' },
+  { re: /social|community/i,                       icon: 'contact-group_16',   color: 'mint'   },
+  { re: /walk.?in|video/i,                         icon: 'camera-photo_16',    color: 'orange' },
+];
+
+/** Momentum badge-color token → CSS hex for dot border/icon tint. */
+const BADGE_COLOR_HEX = {
+  green:  '#4db33d',
+  blue:   '#007aa3',
+  purple: '#9854cb',
+  violet: '#7c3aed',
+  mint:   '#009999',
+  gold:   '#b38600',
+  yellow: '#ca8a04',
+  red:    '#dc2626',
+  orange: '#f27900',
+  cyan:   '#0891b2',
+  cobalt: '#004494',
+  pink:   '#db2777',
+  pastel: '#9ca3af',
+  gray:   '#6b7280',
+  grey:   '#6b7280',
+};
+
+/**
+ * Resolve the icon to render for an event.  Priority order:
+ *
+ *  1. Custom icon from uiData.iconType (URL or keyword)
+ *  2. Channel-based icon from data.channelType / data.channel (well-known Webex CC channels)
+ *  3. Event-type semantic icon (e.g. "Payment", "NPS Survey", "Page Visit")
+ *  4. Generic fallback
+ *
+ * Returns { icon, src, color }:
+ *   icon  – Momentum icon name string, or null when src is set
+ *   src   – image URL for <img> custom icons, or null
+ *   color – Momentum badge color token (dot tint), or null
+ */
+const resolveEventIcon = (channel, eventType, uiIconType) => {
+  // 1a. Custom icon — image URL (CJDS spec allows iconType to be a full URL)
+  if (uiIconType && /^(https?:\/\/|\/\/)/i.test(uiIconType)) {
+    return { icon: null, src: uiIconType, color: null };
+  }
+  // 1b. Custom icon — keyword match against CJDS icon map
+  if (uiIconType) {
+    const m = CJDS_ICON_MAP.find(({ re }) => re.test(uiIconType));
+    if (m) return { icon: m.icon, src: null, color: m.color };
+  }
+  // 2. Channel-based icon — primary lookup for well-known Webex CC channelType values
+  if (CHANNEL_ICONS[channel]) {
+    return { icon: CHANNEL_ICONS[channel], src: null, color: CHANNEL_COLOR[channel] || null };
+  }
+  // 3. Event-type semantic — third-party / custom event names (e.g. "Payment", "Survey")
+  if (eventType) {
+    const m = CJDS_ICON_MAP.find(({ re }) => re.test(eventType));
+    if (m) return { icon: m.icon, src: null, color: m.color };
+  }
+  // 4. Generic fallback
+  return { icon: 'event_16', src: null, color: 'gray' };
+};
+
+/** Dot indicator beside each timeline event. Supports Momentum icons and custom images. */
+const EventDot = ({ channel, icon, src, color }) => {
+  const hexColor = color ? (BADGE_COLOR_HEX[color] || color) : null;
+  return (
+    <div
+      className={`history-view__dot${color ? ' history-view__dot--custom' : ` history-view__dot--${channel}`}`}
+      style={hexColor ? { '--dot-color': hexColor } : undefined}
+    >
+      {src
+        ? <img src={src} alt="" className="history-view__dot-img" />
+        : <Icon name={icon} />
+      }
+    </div>
+  );
 };
 
 const formatDateTime = (ts, locale) => {
@@ -285,12 +426,7 @@ const normalizeEvent = (e, source) => {
   const rawChannel = String(
     e.channel || d.channelType || d.channel || e.channelType || e.type || source || 'task'
   ).toLowerCase();
-  const channel = rawChannel.includes('email') ? 'email'
-    : rawChannel.includes('chat') || rawChannel.includes('webchat') ? 'chat'
-    : rawChannel.includes('call') || rawChannel.includes('phone') || rawChannel.includes('voice') ? 'voice'
-    : rawChannel.includes('sms') ? 'sms'
-    : rawChannel.includes('task') || rawChannel.includes('agent') || rawChannel.includes('contact') ? 'task'
-    : rawChannel;
+  const channel = normalizeChannel(rawChannel);
 
   // taskId can live in multiple places depending on the event source
   const taskId =
@@ -316,7 +452,7 @@ const normalizeEvent = (e, source) => {
   // agentName: on agent:routed events it is in data.agentName; uiData.subTitle
   // on the same event is also the agent display name
   const agentName = d.agentName
-    || (e.type === 'agent:routed' && d.uiData?.subTitle ? d.uiData.subTitle : null)
+    || d.uiData?.subTitle
     || null;
 
   // Title: prefer human-readable uiData.title, then subject/title fields,
@@ -326,6 +462,17 @@ const normalizeEvent = (e, source) => {
     || (isCampaign && campaign ? `Campaign: ${campaign}` : null)
     || typeLabel
     || channel;
+
+  // uiData — structured display hints per JDS spec:
+  //   title, subTitle, iconType, auxiliary, listItem: [{key, value}]
+  const uiAuxiliary = d.uiData?.auxiliary || null;
+  const uiListItems = Array.isArray(d.uiData?.listItem) ? d.uiData.listItem : null;
+  const uiIconType  = d.uiData?.iconType  || null;
+
+  // Exclude uiData from the raw data panel — rendered separately via the fields above.
+  const dataForPanel = Object.fromEntries(
+    Object.entries(d).filter(([k]) => k !== 'uiData')
+  );
 
   return {
     id: e.id || `${e.timestamp || e.ts}-${e.type || channel}`,
@@ -345,14 +492,18 @@ const normalizeEvent = (e, source) => {
     caseId: e.caseId || d.caseId || null,
     campaign,
     campaignStatus,
+    // uiData structured display fields
+    auxiliary: uiAuxiliary,
+    uiListItems,
+    uiIconType,
     // ── Business/timing fields ────────────────────────────────────────────
-    // Primary source: explicit fields on the event or inside data.
-    // Consumers use these for IVR / queue / hold / wrapup display.
-    ivrDuration:  e.ivrDuration  ?? d.ivrDuration  ?? null,   // seconds in IVR before queue
-    holdDuration: e.holdDuration ?? d.holdDuration ?? null,   // seconds on hold during interaction
+    ivrDuration:  e.ivrDuration  ?? d.ivrDuration  ?? null,
+    holdDuration: e.holdDuration ?? d.holdDuration ?? null,
     wrapUpCode:   e.wrapUpCode   ?? d.wrapUpCode   ?? d.wrapUpAuxCode       ?? null,
     wrapUpName:   e.wrapUpName   ?? d.wrapUpName   ?? d.wrapUpAuxCodeName   ?? null,
     endReason:    d.reason       ?? d.endReason    ?? null,
+    // Raw data section — uiData key excluded (rendered via structured fields above)
+    rawData: Object.keys(dataForPanel).length > 0 ? dataForPanel : null,
   };
 };
 
@@ -528,12 +679,45 @@ const groupByTaskId = (events) => {
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
+/**
+ * Render a single data value from the event detail panel.
+ * Linkifies HTTP/HTTPS URLs so agents can click through directly.
+ * Nested objects are JSON-stringified as a fallback.
+ */
+const renderDataValue = (v) => {
+  if (v === null || v === undefined) return null;
+  if (typeof v === 'object') {
+    const s = JSON.stringify(v);
+    return s && s !== '{}' && s !== '[]' ? s : null;
+  }
+  const s = String(v);
+  if (!s) return null;
+  if (/^https?:\/\//i.test(s)) {
+    return (
+      <a
+        href={s}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="history-view__data-link"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {s}
+      </a>
+    );
+  }
+  return s;
+};
+
 const EventRow = ({ ev }) => {
   const { t } = useI18n();
-  const icon = CHANNEL_ICONS[ev.channel] || CHANNEL_ICONS.task;
-  const color = CHANNEL_COLOR[ev.channel] || 'pastel';
+  const [dataOpen, setDataOpen] = useState(false);
+  const { icon, src, color } = resolveEventIcon(ev.channel, ev.eventType, ev.uiIconType);
+  const badgeColor = CHANNEL_COLOR[ev.channel] || 'pastel';
   const showMeta = ev.direction || ev.queueName || ev.agentName;
   const isCampaign = ev.eventType === 'email:out' || !!ev.campaign;
+  const hasListItems = ev.uiListItems && ev.uiListItems.length > 0;
+  const hasRawData   = ev.rawData && Object.keys(ev.rawData).length > 0;
+  const hasData = hasListItems || hasRawData;
   // Campaign status → chip colour
   const campaignStatusColor = (() => {
     const s = String(ev.campaignStatus || '').toLowerCase();
@@ -541,14 +725,22 @@ const EventRow = ({ ev }) => {
     if (s === 'failed' || s === 'error')   return 'campaign-failed';
     return 'campaign-pending';
   })();
+  const toggleData = hasData ? () => setDataOpen((o) => !o) : undefined;
+
   return (
     <li className={`history-view__item${isCampaign ? ' history-view__item--campaign' : ''}`}>
-      <div className={`history-view__dot history-view__dot--${ev.channel}`}>
-        <Icon name={icon} />
-      </div>
+      <EventDot channel={ev.channel} icon={icon} src={src} color={color} />
       <div className="history-view__body">
-        <div className="history-view__row">
-          <Badge color={color} rounded>{ev.channel}</Badge>
+        <div
+          className={`history-view__row${hasData ? ' history-view__row--clickable' : ''}`}
+          role={hasData ? 'button' : undefined}
+          tabIndex={hasData ? 0 : undefined}
+          aria-expanded={hasData ? dataOpen : undefined}
+          onClick={toggleData}
+          onKeyDown={hasData ? (e) => (e.key === 'Enter' || e.key === ' ') && toggleData() : undefined}
+          style={hasData ? { cursor: 'pointer', userSelect: 'none' } : undefined}
+        >
+          <Badge color={badgeColor} rounded>{ev.channel}</Badge>
           {ev.typeLabel && (
             <span className="history-view__type-label">{t(ev.typeLabel)}</span>
           )}
@@ -556,6 +748,11 @@ const EventRow = ({ ev }) => {
           <span className="history-view__when" title={formatDateTime(ev.ts)}>
             {formatRelative(ev.ts)}
           </span>
+          {hasData && (
+            <span className={`history-view__data-toggle${dataOpen ? ' history-view__data-toggle--open' : ''}`} aria-hidden="true">
+              {dataOpen ? '▲' : '▼'}
+            </span>
+          )}
         </div>
         {isCampaign && (
           <div className="history-view__campaign-bar">
@@ -588,10 +785,59 @@ const EventRow = ({ ev }) => {
                 {ev.agentName}
               </span>
             )}
+            {ev.auxiliary && (
+              <span className="history-view__chip history-view__chip--auxiliary">
+                {ev.auxiliary}
+              </span>
+            )}
           </div>
         )}
         {ev.summary && <div className="history-view__summary-line">{ev.summary}</div>}
         {ev.details && <div className="history-view__details">{ev.details}</div>}
+        {hasData && dataOpen && (
+          <div className="history-view__data-panel">
+            {/* uiData.listItem — curated, human-readable key/value pairs */}
+            {hasListItems && (
+              <>
+                {hasRawData && (
+                  <div className="history-view__data-section-label">Details</div>
+                )}
+                <dl className="history-view__data-grid">
+                  {ev.uiListItems.map(({ key, value }, i) => {
+                    const display = renderDataValue(value);
+                    if (!display) return null;
+                    return (
+                      <div key={i} className="history-view__data-row">
+                        <dt className="history-view__data-key">{key}</dt>
+                        <dd className="history-view__data-val">{display}</dd>
+                      </div>
+                    );
+                  })}
+                </dl>
+              </>
+            )}
+            {/* Raw event data fields */}
+            {hasRawData && (
+              <>
+                {hasListItems && (
+                  <div className="history-view__data-section-label history-view__data-section-label--secondary">Raw fields</div>
+                )}
+                <dl className="history-view__data-grid">
+                  {Object.entries(ev.rawData).map(([k, v]) => {
+                    const display = renderDataValue(v);
+                    if (!display) return null;
+                    return (
+                      <div key={k} className="history-view__data-row">
+                        <dt className="history-view__data-key">{k}</dt>
+                        <dd className="history-view__data-val">{display}</dd>
+                      </div>
+                    );
+                  })}
+                </dl>
+              </>
+            )}
+          </div>
+        )}
       </div>
     </li>
   );
@@ -615,8 +861,8 @@ const InteractionGroup = ({ taskId, events, darkMode, defaultOpen = false, cases
 
   const first = events[0];
   const metrics = deriveInteractionMetrics(events);
-  const icon = CHANNEL_ICONS[first.channel] || CHANNEL_ICONS.task;
-  const color = CHANNEL_COLOR[first.channel] || 'pastel';
+  const { icon: firstIcon, src: firstSrc, color: firstDotColor } = resolveEventIcon(first.channel, first.eventType, first.uiIconType);
+  const badgeColor = CHANNEL_COLOR[first.channel] || 'pastel';
   const shortId = taskId.length > 12 ? `${taskId.substring(0, 8)}…` : taskId;
 
   // Derive best label — prefer a meaningful title over bare channel/type strings;
@@ -638,9 +884,7 @@ const InteractionGroup = ({ taskId, events, darkMode, defaultOpen = false, cases
 
   return (
     <li className="history-view__item history-view__item--group">
-      <div className={`history-view__dot history-view__dot--${first.channel}`}>
-        <Icon name={icon} />
-      </div>
+      <EventDot channel={first.channel} icon={firstIcon} src={firstSrc} color={firstDotColor} />
       <div className="history-view__body" style={{ flex: 1 }}>
         <div
           className="history-view__row history-view__row--clickable"
@@ -651,7 +895,7 @@ const InteractionGroup = ({ taskId, events, darkMode, defaultOpen = false, cases
           aria-expanded={open}
           style={{ cursor: 'pointer', userSelect: 'none' }}
         >
-          <Badge color={color} rounded>{first.channel}</Badge>
+          <Badge color={badgeColor} rounded>{first.channel}</Badge>
           <span className="history-view__title">{label}</span>
           <span className="history-view__when" title={formatDateTime(first.ts)}>
             {formatRelative(first.ts)}

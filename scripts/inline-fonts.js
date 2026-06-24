@@ -32,6 +32,36 @@ function inlineFonts() {
     const woff2Base64 = woff2Buffer.toString('base64');
     console.log(`✓ WOFF2 font loaded: ${woff2Path} (${woff2Buffer.length} bytes)`);
 
+    // Load all CiscoSansTT text fonts referenced by momentum-ui/core CSS.
+    // These use relative paths (../fonts/<name>.woff2) which break inside shadow DOM
+    // on Edge. We inline them as base64 data URIs so the bundle is self-contained.
+    const ciscoSansFontsDir = path.join(__dirname, '../node_modules/@momentum-ui/core/fonts');
+    const ciscoSansFontNames = [
+      'CiscoSansTTRegular',
+      'CiscoSansTTBold',
+      'CiscoSansTTLight',
+      'CiscoSansTTThin',
+      'CiscoSansTTHeavy',
+      'CiscoSansTTExtraLight',
+      'CiscoSansTTRegularOblique',
+      'CiscoSansTTBoldOblique',
+      'CiscoSansTTLightOblique',
+      'CiscoSansTTThinOblique',
+      'CiscoSansTTHeavyOblique',
+      'CiscoSansTTExtraLightOblique',
+    ];
+    const ciscoSansBase64Map = {};
+    for (const fontName of ciscoSansFontNames) {
+      const fontPath = path.join(ciscoSansFontsDir, `${fontName}.woff2`);
+      if (fs.existsSync(fontPath)) {
+        const buf = fs.readFileSync(fontPath);
+        ciscoSansBase64Map[fontName] = buf.toString('base64');
+        console.log(`✓ CiscoSansTT font loaded: ${fontName}.woff2 (${buf.length} bytes)`);
+      } else {
+        console.warn(`⚠ CiscoSansTT font not found, skipping: ${fontPath}`);
+      }
+    }
+
     // WOFF is only needed for IE11 / very old browsers. Since we target evergreen
     // browsers (last 2 Chrome/Firefox/Safari/Edge) we skip it, saving ~500KB.
     console.log(`ℹ Skipping WOFF inlining (modern browsers use WOFF2 only)`);
@@ -80,6 +110,20 @@ function inlineFonts() {
         fixedCount++;
         return group1;
       });
+
+      // Inline CiscoSansTT text fonts — fixes Edge shadow-DOM font resolution.
+      // The momentum-ui CSS uses relative paths like url(../fonts/CiscoSansTTRegular.woff2)
+      // which fail inside Shadow DOM when copied by cssText injection.
+      let ciscoSansCount = 0;
+      for (const [fontName, base64] of Object.entries(ciscoSansBase64Map)) {
+        const before = bundleContent.length;
+        bundleContent = bundleContent.replace(
+          new RegExp(`url\\([^)]*${fontName}\\.woff2[^)]*\\)`, 'g'),
+          `url(data:font/woff2;base64,${base64})`
+        );
+        if (bundleContent.length !== before) ciscoSansCount++;
+      }
+      console.log(`[${path.basename(bundlePath)}] ✓ CiscoSansTT: inlined ${ciscoSansCount} font variant(s).`);
 
       fs.writeFileSync(bundlePath, bundleContent, 'utf-8');
       console.log(`[${path.basename(bundlePath)}] ✓ Font files inlined. Corrected ${fixedCount} @font-face definitions.`);

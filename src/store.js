@@ -28,7 +28,7 @@ import emailReducer, {
   setGmailToken, setActiveEmail, setThread, setCustomerThreads, setCustomerHistory,
   appendCustomerHistoryEvent, setCustomerIdentities,
   setAiEnrichment, setAiReplyDraft, setTemplates, setPendingCorrelationId,
-  fetchCustomerJdsHistory, loadJdsHistoryForEmailTask, loadJdsHistoryForWorkItemTask, loadJdsHistoryForVoiceTask, refreshAiEnrichment, generateAiReply, improveAiDraft,
+  fetchCustomerJdsHistory, loadJdsHistoryForEmailTask, loadJdsHistoryForWorkItemTask, loadJdsHistoryForVoiceTask, loadJdsHistoryForChatTask, loadJdsHistoryForSocialTask, refreshAiEnrichment, generateAiReply, improveAiDraft,
   sendEmailReply, handleSseEvent, submitWrapUp,
   // Helpers
   parseGmailMessage, decodeBase64Url, extractEmailFromTask,
@@ -59,7 +59,7 @@ export {
   setGmailToken, setActiveEmail, setThread, setCustomerThreads, setCustomerHistory,
   appendCustomerHistoryEvent, setCustomerIdentities,
   setAiEnrichment, setAiReplyDraft, setTemplates, setPendingCorrelationId,
-  fetchCustomerJdsHistory, loadJdsHistoryForEmailTask, loadJdsHistoryForWorkItemTask, loadJdsHistoryForVoiceTask, refreshAiEnrichment, generateAiReply, improveAiDraft,
+  fetchCustomerJdsHistory, loadJdsHistoryForEmailTask, loadJdsHistoryForWorkItemTask, loadJdsHistoryForVoiceTask, loadJdsHistoryForChatTask, loadJdsHistoryForSocialTask, refreshAiEnrichment, generateAiReply, improveAiDraft,
   sendEmailReply, handleSseEvent, submitWrapUp,
   // Email helpers
   parseGmailMessage, decodeBase64Url, extractEmailFromTask,

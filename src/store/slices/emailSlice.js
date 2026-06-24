@@ -1035,7 +1035,15 @@ export const loadJdsHistoryForVoiceTask = (task) => async (dispatch, getState) =
   const ani  = task.ani  || task.phoneNumber || null;
   const dnis = task.dnis || null;
 
-  if (!ani && !dnis) {
+  // If the flow set an "email" CAD variable (e.g. for guest/unknown callers whose
+  // email was collected via IVR), use it as the primary identity over ANI so JDS and
+  // CRM always resolve the right customer record.
+  const cadEmail =
+    task.callAssociatedData?.email?.value ||
+    task.callAssociatedDetails?.email ||
+    null;
+
+  if (!ani && !dnis && !cadEmail) {
     console.log('[EmailSlice] loadJdsHistoryForVoiceTask: no phone identity found in task');
     return;
   }
@@ -1066,18 +1074,24 @@ export const loadJdsHistoryForVoiceTask = (task) => async (dispatch, getState) =
 
   dispatch(setActiveInteractionId(task.interactionId));
 
-  // Determine primary lookup identity: for OUTBOUND calls prefer DNIS (customer's
-  // number); for INBOUND calls prefer ANI (customer's caller-ID).
+  // Determine primary lookup identity: CustomerEmail CAD variable takes precedence
+  // (guest callers whose email was collected via IVR).  Otherwise fall back to
+  // DNIS for OUTBOUND and ANI for INBOUND.
   const isOutbound = String(task.contactDirection || '').toUpperCase() === 'OUTBOUND';
   const primaryPhone = isOutbound ? (dnis || ani) : (ani || dnis);
-  let allIdentities = [primaryPhone, isOutbound ? ani : dnis].filter(Boolean);
+  // cadEmail is front-loaded so JDS searches by the most-specific identity first.
+  let allIdentities = [cadEmail, primaryPhone, isOutbound ? ani : dnis].filter(Boolean);
   // Deduplicate
   allIdentities = [...new Set(allIdentities)];
+
+  // Primary JDS lookup key: prefer cadEmail when available (direct match on email
+  // alias), otherwise use the resolved phone number.
+  const primaryIdentity = cadEmail || primaryPhone;
 
   // JDS person lookup — resolves the full customer profile and any additional
   // email/phone aliases so History and other tabs see the complete interaction set.
   try {
-    const persons = await searchCustomerByIdentity(primaryPhone, accesstoken, workspaceid, datacenter);
+    const persons = await searchCustomerByIdentity(primaryIdentity, accesstoken, workspaceid, datacenter);
     if (getState().email.activeInteractionId !== task.interactionId) {
       console.log('[EmailSlice] loadJdsHistoryForVoiceTask: stale identity result for', task.interactionId, '— discarding');
       return;
@@ -1092,7 +1106,12 @@ export const loadJdsHistoryForVoiceTask = (task) => async (dispatch, getState) =
       allIdentities = [...new Set([...allIdentities, ...personEmails, ...personPhones].filter(Boolean))];
       // Persist the first email address so the Email tab can open Gmail threads for this customer.
       const resolvedEmail = personEmails[0] || null;
-      if (resolvedEmail) dispatch(setCustomerEmail(resolvedEmail));
+      // cadEmail already known — prefer it; fall back to whatever JDS returned.
+      if (cadEmail) dispatch(setCustomerEmail(cadEmail));
+      else if (resolvedEmail) dispatch(setCustomerEmail(resolvedEmail));
+    } else if (cadEmail) {
+      // JDS had no record yet but we have a reliable email from the IVR — use it.
+      dispatch(setCustomerEmail(cadEmail));
     }
   } catch (err) {
     console.warn('[EmailSlice] loadJdsHistoryForVoiceTask: JDS identity lookup failed', err);
@@ -1100,11 +1119,13 @@ export const loadJdsHistoryForVoiceTask = (task) => async (dispatch, getState) =
       console.log('[EmailSlice] loadJdsHistoryForVoiceTask: stale after failed identity lookup for', task.interactionId, '— discarding');
       return;
     }
+    // Even after a failed JDS lookup, honour the CAD email.
+    if (cadEmail) dispatch(setCustomerEmail(cadEmail));
   }
 
   // Populate contact card even when JDS has no person record.
-  if (!getState().email.customerProfile && primaryPhone) {
-    dispatch(setCustomerProfile({ phone: primaryPhone }));
+  if (!getState().email.customerProfile) {
+    dispatch(setCustomerProfile(cadEmail ? { email: cadEmail } : primaryPhone ? { phone: primaryPhone } : null));
   }
 
   console.log('[EmailSlice] loadJdsHistoryForVoiceTask: resolved identities', allIdentities);
@@ -1124,6 +1145,213 @@ export const loadJdsHistoryForVoiceTask = (task) => async (dispatch, getState) =
     datacenter,
     (event) => dispatch(handleSseEvent(event)),
     (err) => console.error('[EmailSlice] SSE error (voice):', err),
+  );
+};
+
+/**
+ * Fetch JDS customer history + subscribe to real-time SSE events for a
+ * social (mediaType="social", e.g. outbound SMS) task payload.
+ *
+ * For outbound social tasks `ani` carries the ENTRY POINT name, not the
+ * customer identity.  The real customer phone number is in `customerNumber`
+ * (top-level) and `callAssociatedData.customerNumber.value`, mirrored in `dnis`.
+ */
+export const loadJdsHistoryForSocialTask = (task) => async (dispatch, getState) => {
+  if (!task) return;
+
+  // For outbound social tasks the customer number is in customerNumber / dnis.
+  // `ani` is the entry-point name (e.g. "EP_FlyHigh_SMS_Selector") — never use it.
+  const customerNumber =
+    task.customerNumber ||
+    task.callAssociatedData?.customerNumber?.value ||
+    task.dnis ||
+    null;
+
+  if (!customerNumber) {
+    console.log('[EmailSlice] loadJdsHistoryForSocialTask: no customer number found in task');
+    return;
+  }
+
+  const { widget, email: emailState } = getState();
+  if (
+    emailState.customerHistory.length > 0 &&
+    emailState.activeInteractionId === task.interactionId
+  ) {
+    console.log('[EmailSlice] loadJdsHistoryForSocialTask: already loaded for this interaction, skipping');
+    return;
+  }
+
+  const { accesstoken, workspaceid, datacenter } = widget;
+  if (!accesstoken || !workspaceid) {
+    console.warn('[EmailSlice] loadJdsHistoryForSocialTask: missing credentials');
+    return;
+  }
+
+  // Clear stale customer data when switching to a new interaction.
+  if (emailState.activeInteractionId && emailState.activeInteractionId !== task.interactionId) {
+    dispatch(setCustomerProfile(null));
+    dispatch(setCustomerHistory([]));
+    dispatch(setCustomerIdentities([]));
+    dispatch(setCustomerEmail(null));
+    dispatch(setAiEnrichment(null));
+  }
+
+  dispatch(setActiveInteractionId(task.interactionId));
+
+  let allIdentities = [customerNumber];
+
+  // JDS person lookup — resolve full profile (name, all emails/phones).
+  try {
+    const persons = await searchCustomerByIdentity(customerNumber, accesstoken, workspaceid, datacenter);
+    if (getState().email.activeInteractionId !== task.interactionId) {
+      console.log('[EmailSlice] loadJdsHistoryForSocialTask: stale result — discarding');
+      return;
+    }
+    if (persons.length > 0) {
+      const person = persons[0];
+      console.log('[EmailSlice] loadJdsHistoryForSocialTask: JDS person found', person);
+      dispatch(setCustomerProfile(person));
+      const personEmails = Array.isArray(person.email) ? person.email : (person.email ? [person.email] : []);
+      const personPhones = Array.isArray(person.phone) ? person.phone : (person.phone ? [person.phone] : []);
+      allIdentities = [...new Set([...allIdentities, ...personEmails, ...personPhones].filter(Boolean))];
+      const resolvedEmail = personEmails[0] || null;
+      if (resolvedEmail) dispatch(setCustomerEmail(resolvedEmail));
+    }
+  } catch (err) {
+    console.warn('[EmailSlice] loadJdsHistoryForSocialTask: JDS identity lookup failed', err);
+    if (getState().email.activeInteractionId !== task.interactionId) return;
+  }
+
+  // Populate contact card even when JDS has no person record.
+  if (!getState().email.customerProfile) {
+    dispatch(setCustomerProfile({ phone: customerNumber }));
+  }
+
+  console.log('[EmailSlice] loadJdsHistoryForSocialTask: resolved identities', allIdentities);
+  dispatch(setCustomerIdentities(allIdentities));
+
+  await dispatch(fetchCustomerJdsHistory(allIdentities, accesstoken, workspaceid, datacenter, undefined, task.interactionId));
+
+  // SSE — prefer an email identity if JDS returned one, otherwise use phone.
+  const sseIdentity = allIdentities.find((id) => id.includes('@')) || customerNumber;
+  if (emailSseUnsubscribe) {
+    emailSseUnsubscribe();
+  }
+  emailSseUnsubscribe = subscribeToCustomerEvents(
+    sseIdentity,
+    accesstoken,
+    workspaceid,
+    datacenter,
+    (event) => dispatch(handleSseEvent(event)),
+    (err) => console.error('[EmailSlice] SSE error (social):', err),
+  );
+};
+
+/**
+ * Fetch JDS customer history + subscribe to real-time SSE events for a
+ * chat (mediaType="chat") task payload.
+ *
+ * For chat tasks the `ani` / `displayAni` field contains the customer's email
+ * address (e.g. "jarda@kp.cz"). The backup phone identity is carried in
+ * callAssociatedData.phoneNumber.value. Both are used for the JDS person lookup
+ * so the History panel shows interactions across all channels.
+ */
+export const loadJdsHistoryForChatTask = (task) => async (dispatch, getState) => {
+  if (!task) return;
+
+  // For chat tasks, ANI is the customer's email address.
+  const email =
+    (task.ani && task.ani.includes('@') ? task.ani : null) ||
+    (task.displayAni && task.displayAni.includes('@') ? task.displayAni : null) ||
+    task.callAssociatedData?.ani?.value ||
+    null;
+
+  // Phone is a backup identity — lives in CAD phoneNumber field.
+  const phone =
+    task.callAssociatedData?.phoneNumber?.value ||
+    task.callAssociatedDetails?.phoneNumber ||
+    null;
+
+  if (!email && !phone) {
+    console.log('[EmailSlice] loadJdsHistoryForChatTask: no identity found in task');
+    return;
+  }
+
+  const { widget, email: emailState } = getState();
+  if (
+    emailState.customerHistory.length > 0 &&
+    emailState.activeInteractionId === task.interactionId
+  ) {
+    console.log('[EmailSlice] loadJdsHistoryForChatTask: already loaded for this interaction, skipping');
+    return;
+  }
+
+  const { accesstoken, workspaceid, datacenter } = widget;
+  if (!accesstoken || !workspaceid) {
+    console.warn('[EmailSlice] loadJdsHistoryForChatTask: missing credentials');
+    return;
+  }
+
+  // Clear stale customer data when switching to a new chat interaction.
+  if (emailState.activeInteractionId && emailState.activeInteractionId !== task.interactionId) {
+    dispatch(setCustomerProfile(null));
+    dispatch(setCustomerHistory([]));
+    dispatch(setCustomerIdentities([]));
+    dispatch(setCustomerEmail(null));
+    dispatch(setAiEnrichment(null));
+  }
+
+  dispatch(setActiveInteractionId(task.interactionId));
+  if (email) dispatch(setCustomerEmail(email));
+
+  let allIdentities = [email, phone].filter(Boolean);
+
+  // JDS person lookup — resolves the full customer profile and any additional aliases.
+  try {
+    const primaryLookup = email || phone;
+    const persons = await searchCustomerByIdentity(primaryLookup, accesstoken, workspaceid, datacenter);
+    if (getState().email.activeInteractionId !== task.interactionId) {
+      console.log('[EmailSlice] loadJdsHistoryForChatTask: stale identity result for', task.interactionId, '— discarding');
+      return;
+    }
+    if (persons.length > 0) {
+      const person = persons[0];
+      console.log('[EmailSlice] loadJdsHistoryForChatTask: JDS person found', person);
+      dispatch(setCustomerProfile(person));
+      const personEmails = Array.isArray(person.email) ? person.email : (person.email ? [person.email] : []);
+      const personPhones = Array.isArray(person.phone) ? person.phone : (person.phone ? [person.phone] : []);
+      allIdentities = [...new Set([email, phone, ...personEmails, ...personPhones].filter(Boolean))];
+    }
+  } catch (err) {
+    console.warn('[EmailSlice] loadJdsHistoryForChatTask: JDS identity lookup failed', err);
+    if (getState().email.activeInteractionId !== task.interactionId) {
+      console.log('[EmailSlice] loadJdsHistoryForChatTask: stale after failed identity lookup for', task.interactionId, '— discarding');
+      return;
+    }
+  }
+
+  // Populate contact card even when JDS has no person record.
+  if (!getState().email.customerProfile) {
+    dispatch(setCustomerProfile({ email: email || null, phone: phone || null }));
+  }
+
+  console.log('[EmailSlice] loadJdsHistoryForChatTask: resolved identities', allIdentities);
+  dispatch(setCustomerIdentities(allIdentities));
+
+  await dispatch(fetchCustomerJdsHistory(allIdentities, accesstoken, workspaceid, datacenter, undefined, task.interactionId));
+
+  // SSE — prefer email identity (more stable across sessions).
+  const sseIdentity = allIdentities.find((id) => id.includes('@')) || phone;
+  if (emailSseUnsubscribe) {
+    emailSseUnsubscribe();
+  }
+  emailSseUnsubscribe = subscribeToCustomerEvents(
+    sseIdentity,
+    accesstoken,
+    workspaceid,
+    datacenter,
+    (event) => dispatch(handleSseEvent(event)),
+    (err) => console.error('[EmailSlice] SSE error (chat):', err),
   );
 };
 

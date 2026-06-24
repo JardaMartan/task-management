@@ -157,7 +157,7 @@ const EN = {
       id: 'CASE-2025-0108', caseId: 'CASE-2025-0108', status: 'resolved', priority: 'medium', category: 'technical',
       customerName: 'Sarah Johnson', customerEmail: 'sarah.j@acme-corp.com',
       createdAt: ago(5 * D), owner: 'Agent Chen',
-      description: 'Customer unable to complete biometric enrollment on new iPhone 15 Pro. FaceID data not syncing with Moneta Bank app v3.2. Workaround: manual PIN fallback enabled. Permanent fix deployed in app update v3.2.1.',
+      description: 'Customer unable to complete biometric enrollment on new iPhone 15 Pro. FaceID data not syncing with Innogy app v3.2. Workaround: manual PIN fallback enabled. Permanent fix deployed in app update v3.2.1.',
     },
     {
       id: 'CASE-2025-0089', caseId: 'CASE-2025-0089', status: 'resolved', priority: 'medium', category: 'account',
@@ -264,7 +264,7 @@ const EN = {
       ],
       'conv-3': [
         { id: 'c3-m0', role: 'system',   text: 'Outbound SMS delivered to +44 7700 900456 · 26 days ago' },
-        { id: 'c3-m1', role: 'agent',    text: `Hi Sarah, this is Moneta Bank. Your overdraft fee dispute (case ${REF.case3}) has been reviewed and approved. A refund of €45 has been applied to your account today.`, time: '26d ago' },
+        { id: 'c3-m1', role: 'agent',    text: `Hi Sarah, this is Innogy. Your overdraft fee dispute (case ${REF.case3}) has been reviewed and approved. A refund of €45 has been applied to your account today.`, time: '26d ago' },
         { id: 'c3-m2', role: 'customer', text: "Thank you, that's great news!", time: '26d ago' },
       ],
       'conv-4': [
@@ -294,7 +294,7 @@ const EN = {
       { id: 'en-t3-e2', taskId: 'task-2024-0892-wa-1',    ts: ago(1 * D - 3 * MIN), channel: 'whatsapp', eventType: 'task:connected', typeLabel: 'Connected', direction: 'inbound', queueName: 'Digital Messaging',     agentName: 'Agent Chen',     title: `SEPA transfer still hasn't processed – WhatsApp`, summary: 'Agent Chen reviewing linked case and messaging customer with status update.', caseId: REF.case1 },
       { id: 'en-t3-e3', taskId: 'task-2024-0892-wa-1',    ts: ago(1 * D - 8 * MIN), channel: 'whatsapp', eventType: 'task:parked',  typeLabel: 'Parked',    direction: 'inbound',  queueName: 'Digital Messaging',      agentName: 'Agent Chen',     title: `SEPA transfer still hasn't processed – WhatsApp`, summary: 'Parked pending compliance team callback. Customer informed of 2h window.', caseId: REF.case1 },
       // ── Task 4: CASE-2024-0784 — webchat login issue (resolved, positive) ──
-      { id: 'en-t4-e1', taskId: 'task-2024-0784-chat-1',  ts: ago(8 * D),        channel: 'chat',     eventType: 'task:new',       typeLabel: 'New',       direction: 'inbound',  queueName: 'General Banking Chat',   agentName: 'Agent Chen',     title: 'Online banking access issue – webchat', summary: 'Customer reported login failure after password reset via Moneta Bank webchat. 2FA SMS not delivered.', caseId: REF.case2 },
+      { id: 'en-t4-e1', taskId: 'task-2024-0784-chat-1',  ts: ago(8 * D),        channel: 'chat',     eventType: 'task:new',       typeLabel: 'New',       direction: 'inbound',  queueName: 'General Banking Chat',   agentName: 'Agent Chen',     title: 'Online banking access issue – webchat', summary: 'Customer reported login failure after password reset via Innogy webchat. 2FA SMS not delivered.', caseId: REF.case2 },
       { id: 'en-t4-e2', taskId: 'task-2024-0784-chat-1',  ts: ago(8 * D - 5 * MIN), channel: 'chat',  eventType: 'task:connected', typeLabel: 'Connected', direction: 'inbound',  queueName: 'General Banking Chat',   agentName: 'Agent Chen',     title: 'Online banking access issue – webchat', summary: 'Agent Chen connected. Diagnosing 2FA delivery issue with IT systems.', caseId: REF.case2 },
       { id: 'en-t4-e3', taskId: 'task-2024-0784-chat-1',  ts: ago(8 * D - 18 * MIN), channel: 'chat', eventType: 'task:ended',    typeLabel: 'Ended',     direction: 'inbound',  queueName: 'General Banking Chat',   agentName: 'Agent Chen',     title: 'Online banking access issue – webchat', summary: 'Resolved: 2FA SMS routing issue fixed. Customer regained access in session. Case CASE-2024-0784 closed.', caseId: REF.case2 },
       // ── Task 5: CASE-2024-0651 — WhatsApp overdraft dispute (parked, neutral)
@@ -371,7 +371,7 @@ const EN = {
   email: {
     activeEmail: {
       messageId: 'mock-msg-001', threadId: 'mock-thread-001',
-      from: `Sarah Johnson <sarah.j@acme-corp.com>`, to: 'support@moneta-bank.com', cc: 'john.doe@acme-corp.com',
+      from: `Sarah Johnson <sarah.j@acme-corp.com>`, to: 'support@innogy.com', cc: 'john.doe@acme-corp.com',
       subject: `Urgent: Invoice #${REF.invoice} — Payment Not Processed`,
       date: 'Thu, 5 Jun 2025 14:22',
       snippet: `Third attempt to resolve payment failure for Invoice #${REF.invoice} (${REF.amount}). SEPA ref: ${REF.sepaRef}.`,
@@ -382,9 +382,9 @@ const EN = {
       ],
     },
     thread: [
-      { messageId: 'mock-msg-000', threadId: 'mock-thread-001', from: 'Support Team <support@moneta-bank.com>', to: 'sarah.j@acme-corp.com', cc: '', subject: `Re: Invoice #${REF.invoice} — Payment Not Processed`, date: 'Wed, 4 Jun 2025 10:05', snippet: 'We have received your query and our payments team is looking into this matter.', bodyHtml: '<p>Dear Sarah,</p><p>We have received your query and our payments team is looking into this. We will update you within 24 hours.</p><p>Kind regards,<br/>Moneta Bank Support</p>', bodyText: '', attachments: [] },
-      { messageId: 'mock-msg-002', threadId: 'mock-thread-001', from: `Sarah Johnson <sarah.j@acme-corp.com>`, to: 'support@moneta-bank.com', cc: '', subject: `Re: Invoice #${REF.invoice} — Payment Not Processed`, date: 'Wed, 4 Jun 2025 16:48', snippet: 'Still no update. Can you please escalate this to a supervisor?', bodyHtml: '<p>Hi,</p><p>I still have not received an update. Can you please escalate to a supervisor? We cannot close our books until this is resolved.</p><p>Sarah</p>', bodyText: '', attachments: [] },
-      { messageId: 'mock-msg-001', threadId: 'mock-thread-001', from: `Sarah Johnson <sarah.j@acme-corp.com>`, to: 'support@moneta-bank.com', cc: 'john.doe@acme-corp.com', subject: `Urgent: Invoice #${REF.invoice} — Payment Not Processed`, date: 'Thu, 5 Jun 2025 14:22', snippet: `Third attempt to resolve payment failure for Invoice #${REF.invoice} (${REF.amount}). SEPA ref: ${REF.sepaRef}.`, bodyHtml: `<div style="font-family:sans-serif;font-size:14px;line-height:1.6;color:#1a1a2e;"><p>Hello Support Team,</p><p>Urgently following up on Invoice #${REF.invoice} (${REF.amount}) — third attempt. SEPA ref: ${REF.sepaRef}.</p><p>Please treat as priority. Invoice and bank confirmation attached.</p><p>Best regards,<br/>Sarah Johnson<br/>Finance Manager, ACME Corp</p></div>`, bodyText: '', attachments: [{ attachmentId: 'mock-att-1', filename: `invoice_${REF.invoice}.pdf`, mimeType: 'application/pdf', size: 45820 }, { attachmentId: 'mock-att-2', filename: 'bank_confirmation_SEPA.pdf', mimeType: 'application/pdf', size: 23440 }] },
+      { messageId: 'mock-msg-000', threadId: 'mock-thread-001', from: 'Support Team <support@innogy.com>', to: 'sarah.j@acme-corp.com', cc: '', subject: `Re: Invoice #${REF.invoice} — Payment Not Processed`, date: 'Wed, 4 Jun 2025 10:05', snippet: 'We have received your query and our payments team is looking into this matter.', bodyHtml: '<p>Dear Sarah,</p><p>We have received your query and our payments team is looking into this. We will update you within 24 hours.</p><p>Kind regards,<br/>Innogy Support</p>', bodyText: '', attachments: [] },
+      { messageId: 'mock-msg-002', threadId: 'mock-thread-001', from: `Sarah Johnson <sarah.j@acme-corp.com>`, to: 'support@innogy.com', cc: '', subject: `Re: Invoice #${REF.invoice} — Payment Not Processed`, date: 'Wed, 4 Jun 2025 16:48', snippet: 'Still no update. Can you please escalate this to a supervisor?', bodyHtml: '<p>Hi,</p><p>I still have not received an update. Can you please escalate to a supervisor? We cannot close our books until this is resolved.</p><p>Sarah</p>', bodyText: '', attachments: [] },
+      { messageId: 'mock-msg-001', threadId: 'mock-thread-001', from: `Sarah Johnson <sarah.j@acme-corp.com>`, to: 'support@innogy.com', cc: 'john.doe@acme-corp.com', subject: `Urgent: Invoice #${REF.invoice} — Payment Not Processed`, date: 'Thu, 5 Jun 2025 14:22', snippet: `Third attempt to resolve payment failure for Invoice #${REF.invoice} (${REF.amount}). SEPA ref: ${REF.sepaRef}.`, bodyHtml: `<div style="font-family:sans-serif;font-size:14px;line-height:1.6;color:#1a1a2e;"><p>Hello Support Team,</p><p>Urgently following up on Invoice #${REF.invoice} (${REF.amount}) — third attempt. SEPA ref: ${REF.sepaRef}.</p><p>Please treat as priority. Invoice and bank confirmation attached.</p><p>Best regards,<br/>Sarah Johnson<br/>Finance Manager, ACME Corp</p></div>`, bodyText: '', attachments: [{ attachmentId: 'mock-att-1', filename: `invoice_${REF.invoice}.pdf`, mimeType: 'application/pdf', size: 45820 }, { attachmentId: 'mock-att-2', filename: 'bank_confirmation_SEPA.pdf', mimeType: 'application/pdf', size: 23440 }] },
     ],
     aiEnrichment: {
       summary: `Customer reports repeated payment failure for Invoice #${REF.invoice} (${REF.amount}). Third follow-up in 5 days. SEPA transfer debited but not in system. Escalating to supervisor.`,
@@ -406,7 +406,7 @@ const EN = {
     'task-stmt-email-1': {
       activeEmail: {
         messageId: 'mock-msg-stmt-q', topicKey: 'account', statusKey: 'resolved', threadId: 'mock-thread-stmt',
-        from: `Sarah Johnson <sarah.j@acme-corp.com>`, to: 'support@moneta-bank.com', cc: '',
+        from: `Sarah Johnson <sarah.j@acme-corp.com>`, to: 'support@innogy.com', cc: '',
         subject: 'April statement query — USD transaction fee',
         date: 'Thu, 1 May 2025 09:30',
         snippet: 'Querying a USD 340 currency conversion fee (approx. \u20ac312) on the April statement.',
@@ -414,8 +414,8 @@ const EN = {
         bodyText: '', attachments: [],
       },
       thread: [
-        { messageId: 'mock-msg-stmt-r', threadId: 'mock-thread-stmt', from: 'Moneta Bank Support <support@moneta-bank.com>', to: 'sarah.j@acme-corp.com', cc: '', subject: 'Re: April statement query — USD transaction fee', date: 'Thu, 1 May 2025 14:15', snippet: 'USD fee at ECB mid-market + 1.5%. Gold tier one-time quarterly waiver applied — \u20ac312 credited today.', bodyHtml: '<p>Dear Sarah,</p><p>The USD 340 fee was applied at the ECB mid-market rate of 1.083 plus our standard 1.5% non-sterling transaction fee, totalling \u20ac312.40. As a Gold tier customer you are eligible for a one-time quarterly waiver. I have applied a credit of \u20ac312.40 to your account effective today.</p><p>Kind regards,<br/>Agent Martinez<br/>Moneta Bank Support</p>', bodyText: '', attachments: [] },
-        { messageId: 'mock-msg-stmt-q', topicKey: 'account', statusKey: 'resolved', threadId: 'mock-thread-stmt', from: `Sarah Johnson <sarah.j@acme-corp.com>`, to: 'support@moneta-bank.com', cc: '', subject: 'April statement query — USD transaction fee', date: 'Thu, 1 May 2025 09:30', snippet: 'Query on April statement: USD 340 currency conversion fee.', bodyHtml: `<p>Dear Support,</p><p>Querying USD 340 (\u20ac312) conversion fee on 15 April purchase. Please clarify exchange rate applied.</p><p>Sarah Johnson</p>`, bodyText: '', attachments: [] },
+        { messageId: 'mock-msg-stmt-r', threadId: 'mock-thread-stmt', from: 'Innogy Support <support@innogy.com>', to: 'sarah.j@acme-corp.com', cc: '', subject: 'Re: April statement query — USD transaction fee', date: 'Thu, 1 May 2025 14:15', snippet: 'USD fee at ECB mid-market + 1.5%. Gold tier one-time quarterly waiver applied — \u20ac312 credited today.', bodyHtml: '<p>Dear Sarah,</p><p>The USD 340 fee was applied at the ECB mid-market rate of 1.083 plus our standard 1.5% non-sterling transaction fee, totalling \u20ac312.40. As a Gold tier customer you are eligible for a one-time quarterly waiver. I have applied a credit of \u20ac312.40 to your account effective today.</p><p>Kind regards,<br/>Agent Martinez<br/>Innogy Support</p>', bodyText: '', attachments: [] },
+        { messageId: 'mock-msg-stmt-q', topicKey: 'account', statusKey: 'resolved', threadId: 'mock-thread-stmt', from: `Sarah Johnson <sarah.j@acme-corp.com>`, to: 'support@innogy.com', cc: '', subject: 'April statement query — USD transaction fee', date: 'Thu, 1 May 2025 09:30', snippet: 'Query on April statement: USD 340 currency conversion fee.', bodyHtml: `<p>Dear Support,</p><p>Querying USD 340 (\u20ac312) conversion fee on 15 April purchase. Please clarify exchange rate applied.</p><p>Sarah Johnson</p>`, bodyText: '', attachments: [] },
       ],
       aiEnrichment: {
         summary: 'Customer querying USD currency conversion fee on April statement. ECB rate + 1.5% correctly applied. Gold tier one-time quarterly waiver applied — \u20ac312.40 credited.',
@@ -433,7 +433,7 @@ const EN = {
     'task-2024-0784-email-1': {
       activeEmail: {
         messageId: 'mock-msg-login-q', threadId: 'mock-thread-login',
-        from: `Sarah Johnson <sarah.j@acme-corp.com>`, to: 'support@moneta-bank.com', cc: '',
+        from: `Sarah Johnson <sarah.j@acme-corp.com>`, to: 'support@innogy.com', cc: '',
         subject: 'Online banking — app update after login fix',
         date: 'Mon, 26 May 2025 10:12',
         snippet: '2FA working now — thank you! Getting an error when updating to the new app version (v3.2).',
@@ -441,13 +441,13 @@ const EN = {
         bodyText: '', attachments: [],
       },
       thread: [
-        { messageId: 'mock-msg-login-r', threadId: 'mock-thread-login', from: 'Moneta Bank Support <support@moneta-bank.com>', to: 'sarah.j@acme-corp.com', cc: '', subject: 'Re: Online banking — app update after login fix', date: 'Mon, 26 May 2025 11:45', snippet: 'iOS 16+ required. App Store \u2192 Moneta Bank \u2192 Update. Takes 2 min. 2FA settings preserved.', bodyHtml: '<p>Dear Sarah,</p><p>Glad the 2FA is sorted! For the app update (v3.2 requires iOS 16+):</p><ol><li>Open the App Store and search \u201cMoneta Bank\u201d</li><li>Tap \u201cUpdate\u201d (not \u201cGet\u201d)</li><li>Enter your Apple ID if prompted</li><li>Allow ~2 minutes to install</li></ol><p>Restart the app and log in normally \u2014 your 2FA settings will be preserved.</p><p>Kind regards,<br/>Agent Chen<br/>Digital Support</p>', bodyText: '', attachments: [] },
-        { messageId: 'mock-msg-login-q', threadId: 'mock-thread-login', from: `Sarah Johnson <sarah.j@acme-corp.com>`, to: 'support@moneta-bank.com', cc: '', subject: 'Online banking — app update after login fix', date: 'Mon, 26 May 2025 10:12', snippet: '2FA fixed. App v3.2 update error persists. Please send instructions.', bodyHtml: `<p>Hi,</p><p>2FA is working. Getting error on app v3.2 update. Please send instructions.</p><p>Sarah</p>`, bodyText: '', attachments: [] },
+        { messageId: 'mock-msg-login-r', threadId: 'mock-thread-login', from: 'Innogy Support <support@innogy.com>', to: 'sarah.j@acme-corp.com', cc: '', subject: 'Re: Online banking — app update after login fix', date: 'Mon, 26 May 2025 11:45', snippet: 'iOS 16+ required. App Store \u2192 Innogy \u2192 Update. Takes 2 min. 2FA settings preserved.', bodyHtml: '<p>Dear Sarah,</p><p>Glad the 2FA is sorted! For the app update (v3.2 requires iOS 16+):</p><ol><li>Open the App Store and search \u201cInnogy\u201d</li><li>Tap \u201cUpdate\u201d (not \u201cGet\u201d)</li><li>Enter your Apple ID if prompted</li><li>Allow ~2 minutes to install</li></ol><p>Restart the app and log in normally \u2014 your 2FA settings will be preserved.</p><p>Kind regards,<br/>Agent Chen<br/>Digital Support</p>', bodyText: '', attachments: [] },
+        { messageId: 'mock-msg-login-q', threadId: 'mock-thread-login', from: `Sarah Johnson <sarah.j@acme-corp.com>`, to: 'support@innogy.com', cc: '', subject: 'Online banking — app update after login fix', date: 'Mon, 26 May 2025 10:12', snippet: '2FA fixed. App v3.2 update error persists. Please send instructions.', bodyHtml: `<p>Hi,</p><p>2FA is working. Getting error on app v3.2 update. Please send instructions.</p><p>Sarah</p>`, bodyText: '', attachments: [] },
       ],
       aiEnrichment: {
         summary: 'Follow-up after login/2FA resolution. Customer requesting mobile app v3.2 update instructions. Requires iOS 16+. Step-by-step guide sent by Agent Chen.',
         category: 'Technical Support', sentiment: 'positive', confidence: 0.88,
-        suggestedReply: `Hi Sarah, great that 2FA is working! For the v3.2 update: App Store \u2192 search \u201cMoneta Bank\u201d \u2192 tap Update. Requires iOS 16+. Takes about 2 minutes, 2FA settings preserved.`,
+        suggestedReply: `Hi Sarah, great that 2FA is working! For the v3.2 update: App Store \u2192 search \u201cInnogy\u201d \u2192 tap Update. Requires iOS 16+. Takes about 2 minutes, 2FA settings preserved.`,
         source: 'ai',
       },
       customerThreads: [
@@ -460,7 +460,7 @@ const EN = {
     'task-2025-0104-email-1': {
       activeEmail: {
         messageId: 'mock-msg-mortgage-q', threadId: 'mock-thread-mortgage',
-        from: `Sarah Johnson <sarah.j@acme-corp.com>`, to: 'lending@moneta-bank.com', cc: '',
+        from: `Sarah Johnson <sarah.j@acme-corp.com>`, to: 'lending@innogy.com', cc: '',
         subject: 'Gold tier offer — mortgage refinancing at 3.9% fixed',
         date: 'Wed, 4 Jun 2025 15:35',
         snippet: 'Interested in the fixed-rate conversion offer. Please send rate comparison and cost illustration.',
@@ -468,7 +468,7 @@ const EN = {
         bodyText: '', attachments: [],
       },
       thread: [
-        { messageId: 'mock-msg-mortgage-q', threadId: 'mock-thread-mortgage', from: `Sarah Johnson <sarah.j@acme-corp.com>`, to: 'lending@moneta-bank.com', cc: '', subject: 'Gold tier offer — mortgage refinancing at 3.9% fixed', date: 'Wed, 4 Jun 2025 15:35', snippet: 'Requesting rate comparison and ESIS illustration for fixed-rate conversion.', bodyHtml: `<p>Dear Lending Team,</p><p>Interested in 3.9% fixed rate offer. Please send full comparison and total cost illustration.</p><p>Sarah Johnson</p>`, bodyText: '', attachments: [] },
+        { messageId: 'mock-msg-mortgage-q', threadId: 'mock-thread-mortgage', from: `Sarah Johnson <sarah.j@acme-corp.com>`, to: 'lending@innogy.com', cc: '', subject: 'Gold tier offer — mortgage refinancing at 3.9% fixed', date: 'Wed, 4 Jun 2025 15:35', snippet: 'Requesting rate comparison and ESIS illustration for fixed-rate conversion.', bodyHtml: `<p>Dear Lending Team,</p><p>Interested in 3.9% fixed rate offer. Please send full comparison and total cost illustration.</p><p>Sarah Johnson</p>`, bodyText: '', attachments: [] },
       ],
       aiEnrichment: {
         summary: 'Customer responding positively to ECB rate cut mortgage refinancing offer. Requesting full rate comparison and ESIS illustration before advisor call. Gold tier — high-value opportunity.',
@@ -486,7 +486,7 @@ const EN = {
     'task-2024-0312-email-1': {
       activeEmail: {
         messageId: 'mock-msg-sepa-delay', threadId: 'mock-thread-sepa-delay',
-        from: `Sarah Johnson <sarah.j@acme-corp.com>`, to: 'support@moneta-bank.com', cc: '',
+        from: `Sarah Johnson <sarah.j@acme-corp.com>`, to: 'support@innogy.com', cc: '',
         subject: `SEPA transfer delay – Invoice #${REF.invoice} to ${REF.supplier}`,
         date: 'Fri, 14 Mar 2025 11:05',
         snippet: 'Payment to supplier delayed. AML screening triggered. Please advise on timeline.',
@@ -494,8 +494,8 @@ const EN = {
         bodyText: '', attachments: [],
       },
       thread: [
-        { messageId: 'mock-sepa-delay-r1', threadId: 'mock-thread-sepa-delay', from: 'Moneta Bank Support <support@moneta-bank.com>', to: 'sarah.j@acme-corp.com', cc: '', subject: `Re: SEPA transfer delay – Invoice #${REF.invoice} to ${REF.supplier}`, date: 'Fri, 14 Mar 2025 14:30', snippet: 'We have identified the AML hold and escalated for expedited review.', bodyHtml: '<p>Dear Ms. Johnson,</p><p>We have identified the compliance hold on your transfer. Our AML team is reviewing it as a priority and expects to release the funds within 3 business days. No additional documentation is required at this stage.</p><p>We apologise for the inconvenience.</p><p>Kind regards,<br/>Agent Martinez<br/>Moneta Bank Priority Support</p>', bodyText: '', attachments: [] },
-        { messageId: 'mock-msg-sepa-delay', threadId: 'mock-thread-sepa-delay', from: `Sarah Johnson <sarah.j@acme-corp.com>`, to: 'support@moneta-bank.com', cc: '', subject: `SEPA transfer delay – Invoice #${REF.invoice} to ${REF.supplier}`, date: 'Fri, 14 Mar 2025 11:05', snippet: 'Payment to supplier delayed. AML screening triggered. Please advise on timeline.', bodyHtml: `<p>Dear Support,</p><p>SEPA transfer to ${REF.supplier} on 12 March (ref: ${REF.sepaRef}) not yet credited. AML screening may have triggered. Please advise on timeline.</p><p>Sarah Johnson</p>`, bodyText: '', attachments: [] },
+        { messageId: 'mock-sepa-delay-r1', threadId: 'mock-thread-sepa-delay', from: 'Innogy Support <support@innogy.com>', to: 'sarah.j@acme-corp.com', cc: '', subject: `Re: SEPA transfer delay – Invoice #${REF.invoice} to ${REF.supplier}`, date: 'Fri, 14 Mar 2025 14:30', snippet: 'We have identified the AML hold and escalated for expedited review.', bodyHtml: '<p>Dear Ms. Johnson,</p><p>We have identified the compliance hold on your transfer. Our AML team is reviewing it as a priority and expects to release the funds within 3 business days. No additional documentation is required at this stage.</p><p>We apologise for the inconvenience.</p><p>Kind regards,<br/>Agent Martinez<br/>Innogy Priority Support</p>', bodyText: '', attachments: [] },
+        { messageId: 'mock-msg-sepa-delay', threadId: 'mock-thread-sepa-delay', from: `Sarah Johnson <sarah.j@acme-corp.com>`, to: 'support@innogy.com', cc: '', subject: `SEPA transfer delay – Invoice #${REF.invoice} to ${REF.supplier}`, date: 'Fri, 14 Mar 2025 11:05', snippet: 'Payment to supplier delayed. AML screening triggered. Please advise on timeline.', bodyHtml: `<p>Dear Support,</p><p>SEPA transfer to ${REF.supplier} on 12 March (ref: ${REF.sepaRef}) not yet credited. AML screening may have triggered. Please advise on timeline.</p><p>Sarah Johnson</p>`, bodyText: '', attachments: [] },
       ],
       aiEnrichment: {
         summary: `Customer querying delayed SEPA transfer to ${REF.supplier}. AML screening triggered for regular monthly supplier payment. Funds held for up to 3 business days.`,
@@ -561,12 +561,12 @@ const EN = {
       {
         id: 'sig-en-default',
         name: 'Standard EN',
-        html: '<p style="font-size:12px;color:#545454">Kind regards,<br><strong>{{agentName}}</strong><br>Customer Support | Moneta Bank<br>+44 20 7946 0800</p>',
+        html: '<p style="font-size:12px;color:#545454">Kind regards,<br><strong>{{agentName}}</strong><br>Customer Support | Innogy<br>+44 20 7946 0800</p>',
       },
       {
         id: 'sig-en-brief',
         name: 'Brief EN',
-        html: '<p style="font-size:12px;color:#545454">Best regards, {{agentName}} &mdash; Moneta Bank Support</p>',
+        html: '<p style="font-size:12px;color:#545454">Best regards, {{agentName}} &mdash; Innogy Support</p>',
       },
     ],
     templates: [
@@ -577,7 +577,7 @@ const EN = {
         category: 'greeting',
         subject: 'Re: {{subject}}',
         variables: ['customerName', 'agentName'],
-        body: '<p>Dear {{customerName}},</p><p>Thank you for contacting Moneta Bank. My name is {{agentName}} and I will be assisting you today.</p><p>I have reviewed your enquiry and will respond shortly with a full resolution.</p><p>Please feel free to let me know if you have any additional information to share.</p>',
+        body: '<p>Dear {{customerName}},</p><p>Thank you for contacting Innogy. My name is {{agentName}} and I will be assisting you today.</p><p>I have reviewed your enquiry and will respond shortly with a full resolution.</p><p>Please feel free to let me know if you have any additional information to share.</p>',
       },
       {
         id: 'tpl-en-followup',
@@ -825,7 +825,7 @@ const DE = {
       ],
       'conv-3': [
         { id: 'c3-m0', role: 'system',   text: 'Ausgehende SMS zugestellt an +49 89 1234 5678 · vor 26 Tagen' },
-        { id: 'c3-m1', role: 'agent',    text: `Guten Tag Frau Müller, hier ist die Moneta Bank. Ihr Überziehungsgebühr-Widerspruch (Fall ${REF.case3}) wurde geprüft und genehmigt. Eine Rückerstattung von €45 wurde heute auf Ihr Konto gebucht.`, time: 'vor 26 Tg.' },
+        { id: 'c3-m1', role: 'agent',    text: `Guten Tag Frau Müller, hier ist die Innogy. Ihr Überziehungsgebühr-Widerspruch (Fall ${REF.case3}) wurde geprüft und genehmigt. Eine Rückerstattung von €45 wurde heute auf Ihr Konto gebucht.`, time: 'vor 26 Tg.' },
         { id: 'c3-m2', role: 'customer', text: 'Danke, das sind tolle Nachrichten!', time: 'vor 26 Tg.' },
       ],
       'conv-4': [
@@ -952,7 +952,7 @@ const DE = {
   email: {
     activeEmail: {
       messageId: 'mock-msg-001', threadId: 'mock-thread-001',
-      from: `Anna Müller <a.mueller@bavarian-tech.de>`, to: 'support@moneta-bank.com', cc: 'buchhaltung@bavarian-tech.de',
+      from: `Anna Müller <a.mueller@bavarian-tech.de>`, to: 'support@innogy.com', cc: 'buchhaltung@bavarian-tech.de',
       subject: `Dringend: Rechnung #${REF.invoice} – Zahlung nicht verbucht`,
       date: 'Do., 5. Jun 2025 14:22',
       snippet: `Dritter Versuch, Zahlungsfehler für Rechnung #${REF.invoice} (${REF.amount}) zu lösen. SEPA-Ref.: ${REF.sepaRef}.`,
@@ -963,9 +963,9 @@ const DE = {
       ],
     },
     thread: [
-      { messageId: 'mock-msg-000', threadId: 'mock-thread-001', from: 'Support-Team <support@moneta-bank.com>', to: 'a.mueller@bavarian-tech.de', cc: '', subject: `Re: Rechnung #${REF.invoice} – Zahlung nicht verbucht`, date: 'Mi., 4. Jun 2025 10:05', snippet: 'Wir haben Ihre Anfrage erhalten und unser Zahlungs-Team kümmert sich darum.', bodyHtml: '<p>Sehr geehrte Frau Müller,</p><p>wir haben Ihre Anfrage erhalten und unser Zahlungs-Team prüft dies. Wir werden Sie innerhalb von 24 Stunden informieren.</p><p>Mit freundlichen Grüßen,<br/>Moneta Bank Support</p>', bodyText: '', attachments: [] },
-      { messageId: 'mock-msg-002', threadId: 'mock-thread-001', from: `Anna Müller <a.mueller@bavarian-tech.de>`, to: 'support@moneta-bank.com', cc: '', subject: `Re: Rechnung #${REF.invoice} – Zahlung nicht verbucht`, date: 'Mi., 4. Jun 2025 16:48', snippet: 'Noch keine Rückmeldung. Können Sie bitte eskalieren?', bodyHtml: '<p>Hallo,</p><p>ich habe immer noch kein Update erhalten. Können Sie das bitte an einen Vorgesetzten eskalieren? Wir können unsere Bücher nicht abschließen, bis dies gelöst ist.</p><p>A. Müller</p>', bodyText: '', attachments: [] },
-      { messageId: 'mock-msg-001', threadId: 'mock-thread-001', from: `Anna Müller <a.mueller@bavarian-tech.de>`, to: 'support@moneta-bank.com', cc: 'buchhaltung@bavarian-tech.de', subject: `Dringend: Rechnung #${REF.invoice} – Zahlung nicht verbucht`, date: 'Do., 5. Jun 2025 14:22', snippet: `Dritter Versuch, Zahlungsfehler für Rechnung #${REF.invoice} (${REF.amount}) zu lösen.`, bodyHtml: `<div style="font-family:sans-serif;font-size:14px;line-height:1.6;color:#1a1a2e;"><p>Sehr geehrtes Support-Team,</p><p>Dringender Rückruf zu Rechnung #${REF.invoice} (${REF.amount}) — dritter Versuch. SEPA-Ref.: ${REF.sepaRef}.</p><p>Bitte als Priorität behandeln. Rechnung und Bankbestätigung beigefügt.</p><p>Mit freundlichen Grüßen,<br/>Anna Müller<br/>Finanzdirektorin, Bavarian Tech GmbH</p></div>`, bodyText: '', attachments: [{ attachmentId: 'mock-att-1', filename: `rechnung_${REF.invoice}.pdf`, mimeType: 'application/pdf', size: 45820 }, { attachmentId: 'mock-att-2', filename: 'bank_bestaetigung_SEPA.pdf', mimeType: 'application/pdf', size: 23440 }] },
+      { messageId: 'mock-msg-000', threadId: 'mock-thread-001', from: 'Support-Team <support@innogy.com>', to: 'a.mueller@bavarian-tech.de', cc: '', subject: `Re: Rechnung #${REF.invoice} – Zahlung nicht verbucht`, date: 'Mi., 4. Jun 2025 10:05', snippet: 'Wir haben Ihre Anfrage erhalten und unser Zahlungs-Team kümmert sich darum.', bodyHtml: '<p>Sehr geehrte Frau Müller,</p><p>wir haben Ihre Anfrage erhalten und unser Zahlungs-Team prüft dies. Wir werden Sie innerhalb von 24 Stunden informieren.</p><p>Mit freundlichen Grüßen,<br/>Innogy Support</p>', bodyText: '', attachments: [] },
+      { messageId: 'mock-msg-002', threadId: 'mock-thread-001', from: `Anna Müller <a.mueller@bavarian-tech.de>`, to: 'support@innogy.com', cc: '', subject: `Re: Rechnung #${REF.invoice} – Zahlung nicht verbucht`, date: 'Mi., 4. Jun 2025 16:48', snippet: 'Noch keine Rückmeldung. Können Sie bitte eskalieren?', bodyHtml: '<p>Hallo,</p><p>ich habe immer noch kein Update erhalten. Können Sie das bitte an einen Vorgesetzten eskalieren? Wir können unsere Bücher nicht abschließen, bis dies gelöst ist.</p><p>A. Müller</p>', bodyText: '', attachments: [] },
+      { messageId: 'mock-msg-001', threadId: 'mock-thread-001', from: `Anna Müller <a.mueller@bavarian-tech.de>`, to: 'support@innogy.com', cc: 'buchhaltung@bavarian-tech.de', subject: `Dringend: Rechnung #${REF.invoice} – Zahlung nicht verbucht`, date: 'Do., 5. Jun 2025 14:22', snippet: `Dritter Versuch, Zahlungsfehler für Rechnung #${REF.invoice} (${REF.amount}) zu lösen.`, bodyHtml: `<div style="font-family:sans-serif;font-size:14px;line-height:1.6;color:#1a1a2e;"><p>Sehr geehrtes Support-Team,</p><p>Dringender Rückruf zu Rechnung #${REF.invoice} (${REF.amount}) — dritter Versuch. SEPA-Ref.: ${REF.sepaRef}.</p><p>Bitte als Priorität behandeln. Rechnung und Bankbestätigung beigefügt.</p><p>Mit freundlichen Grüßen,<br/>Anna Müller<br/>Finanzdirektorin, Bavarian Tech GmbH</p></div>`, bodyText: '', attachments: [{ attachmentId: 'mock-att-1', filename: `rechnung_${REF.invoice}.pdf`, mimeType: 'application/pdf', size: 45820 }, { attachmentId: 'mock-att-2', filename: 'bank_bestaetigung_SEPA.pdf', mimeType: 'application/pdf', size: 23440 }] },
     ],
     aiEnrichment: {
       summary: `Kundin meldet wiederholten Zahlungsfehler für Rechnung #${REF.invoice} (${REF.amount}). Dritte Nachfrage in 5 Tagen. SEPA-Überweisung belastet, aber nicht im System. Eskalation an Vorgesetzten.`,
@@ -990,7 +990,7 @@ const DE = {
     'task-stmt-email-1': {
       activeEmail: {
         messageId: 'mock-msg-stmt-q-de', threadId: 'mock-thread-stmt-de',
-        from: `Anna Müller <a.mueller@bavarian-tech.de>`, to: 'support@moneta-bank.com', cc: '',
+        from: `Anna Müller <a.mueller@bavarian-tech.de>`, to: 'support@innogy.com', cc: '',
         subject: 'Kontoauszug April — USD-Transaktionsgebühr',
         date: 'Do., 1. Mai 2025 09:30',
         snippet: 'Anfrage zu USD-340-Währungsumrechnungsgebühr (ca. \u20ac312) im April-Auszug.',
@@ -998,8 +998,8 @@ const DE = {
         bodyText: '', attachments: [],
       },
       thread: [
-        { messageId: 'mock-msg-stmt-r-de', threadId: 'mock-thread-stmt-de', from: 'Moneta Bank Support <support@moneta-bank.com>', to: 'a.mueller@bavarian-tech.de', cc: '', subject: 'Re: Kontoauszug April — USD-Transaktionsgebühr', date: 'Do., 1. Mai 2025 14:15', snippet: 'USD-Gebühr zu EZB-Mittelkurs + 1,5\u00a0%. Gold-Tier-Einmalnachlass angewendet — \u20ac312 heute gutgeschrieben.', bodyHtml: '<p>Sehr geehrte Frau Müller,</p><p>die USD-340-Gebühr wurde zum EZB-Mittelkurs von 1,083 plus unserer Standard-Fremdwährungsgebühr von 1,5\u00a0% berechnet (gesamt \u20ac312,40). Als Gold-Tier-Kundin haben Sie Anspruch auf einen einmaligen viertjährlichen Erlass. Ich habe heute eine Gutschrift von \u20ac312,40 auf Ihr Konto vorgenommen.</p><p>Mit freundlichen Grüßen,<br/>Agent Hoffmann<br/>Moneta Bank Support</p>', bodyText: '', attachments: [] },
-        { messageId: 'mock-msg-stmt-q-de', threadId: 'mock-thread-stmt-de', from: `Anna Müller <a.mueller@bavarian-tech.de>`, to: 'support@moneta-bank.com', cc: '', subject: 'Kontoauszug April — USD-Transaktionsgebühr', date: 'Do., 1. Mai 2025 09:30', snippet: 'Anfrage zu USD-340-Währungsumrechnungsgebühr im April-Auszug.', bodyHtml: `<p>Sehr geehrtes Support-Team,</p><p>Währungsumrechnungsgebühr USD 340 (\u20ac312) für Kauf vom 15. April. Bitte Wechselkurs erläutern.</p><p>Anna Müller</p>`, bodyText: '', attachments: [] },
+        { messageId: 'mock-msg-stmt-r-de', threadId: 'mock-thread-stmt-de', from: 'Innogy Support <support@innogy.com>', to: 'a.mueller@bavarian-tech.de', cc: '', subject: 'Re: Kontoauszug April — USD-Transaktionsgebühr', date: 'Do., 1. Mai 2025 14:15', snippet: 'USD-Gebühr zu EZB-Mittelkurs + 1,5\u00a0%. Gold-Tier-Einmalnachlass angewendet — \u20ac312 heute gutgeschrieben.', bodyHtml: '<p>Sehr geehrte Frau Müller,</p><p>die USD-340-Gebühr wurde zum EZB-Mittelkurs von 1,083 plus unserer Standard-Fremdwährungsgebühr von 1,5\u00a0% berechnet (gesamt \u20ac312,40). Als Gold-Tier-Kundin haben Sie Anspruch auf einen einmaligen viertjährlichen Erlass. Ich habe heute eine Gutschrift von \u20ac312,40 auf Ihr Konto vorgenommen.</p><p>Mit freundlichen Grüßen,<br/>Agent Hoffmann<br/>Innogy Support</p>', bodyText: '', attachments: [] },
+        { messageId: 'mock-msg-stmt-q-de', threadId: 'mock-thread-stmt-de', from: `Anna Müller <a.mueller@bavarian-tech.de>`, to: 'support@innogy.com', cc: '', subject: 'Kontoauszug April — USD-Transaktionsgebühr', date: 'Do., 1. Mai 2025 09:30', snippet: 'Anfrage zu USD-340-Währungsumrechnungsgebühr im April-Auszug.', bodyHtml: `<p>Sehr geehrtes Support-Team,</p><p>Währungsumrechnungsgebühr USD 340 (\u20ac312) für Kauf vom 15. April. Bitte Wechselkurs erläutern.</p><p>Anna Müller</p>`, bodyText: '', attachments: [] },
       ],
       aiEnrichment: {
         summary: 'Kundin fragt nach USD-Währungsumrechnungsgebühr im April-Auszug. EZB-Kurs + 1,5\u00a0% korrekt angewendet. Gold-Tier-Einmalerlassene \u20ac312,40 gutgeschrieben.',
@@ -1021,7 +1021,7 @@ const DE = {
     'task-2024-0784-email-1': {
       activeEmail: {
         messageId: 'mock-msg-login-q-de', threadId: 'mock-thread-login-de',
-        from: `Anna Müller <a.mueller@bavarian-tech.de>`, to: 'support@moneta-bank.com', cc: '',
+        from: `Anna Müller <a.mueller@bavarian-tech.de>`, to: 'support@innogy.com', cc: '',
         subject: 'Online-Banking — App-Update nach Login-Behebung',
         date: 'Mo., 26. Mai 2025 10:12',
         snippet: '2FA funktioniert jetzt — danke! Fehler beim Update auf neue App-Version (v3.2).',
@@ -1029,13 +1029,13 @@ const DE = {
         bodyText: '', attachments: [],
       },
       thread: [
-        { messageId: 'mock-msg-login-r-de', threadId: 'mock-thread-login-de', from: 'Moneta Bank Support <support@moneta-bank.com>', to: 'a.mueller@bavarian-tech.de', cc: '', subject: 'Re: Online-Banking — App-Update nach Login-Behebung', date: 'Mo., 26. Mai 2025 11:45', snippet: 'iOS 16+ erforderlich. App Store \u2192 Moneta Bank \u2192 Aktualisieren. Ca. 2 Min. 2FA-Einstellungen bleiben erhalten.', bodyHtml: '<p>Sehr geehrte Frau Müller,</p><p>für das Update (v3.2 benötigt iOS 16+): App Store \u2192 \u201eMoneta Bank\u201c suchen \u2192 \u201eAktualisieren\u201c tippen \u2192 ca. 2 Minuten warten. 2FA-Einstellungen bleiben erhalten. Bei Bedarf bitte Apple-ID eingeben.</p><p>Mit freundlichen Grüßen,<br/>Agent Hoffmann<br/>Digital Support</p>', bodyText: '', attachments: [] },
-        { messageId: 'mock-msg-login-q-de', threadId: 'mock-thread-login-de', from: `Anna Müller <a.mueller@bavarian-tech.de>`, to: 'support@moneta-bank.com', cc: '', subject: 'Online-Banking — App-Update nach Login-Behebung', date: 'Mo., 26. Mai 2025 10:12', snippet: '2FA behoben. App-v3.2-Update-Fehler besteht. Bitte Anleitung senden.', bodyHtml: `<p>Hallo,</p><p>2FA funktioniert. App-v3.2-Update-Fehler besteht. Bitte Anleitung senden.</p><p>Anna Müller</p>`, bodyText: '', attachments: [] },
+        { messageId: 'mock-msg-login-r-de', threadId: 'mock-thread-login-de', from: 'Innogy Support <support@innogy.com>', to: 'a.mueller@bavarian-tech.de', cc: '', subject: 'Re: Online-Banking — App-Update nach Login-Behebung', date: 'Mo., 26. Mai 2025 11:45', snippet: 'iOS 16+ erforderlich. App Store \u2192 Innogy \u2192 Aktualisieren. Ca. 2 Min. 2FA-Einstellungen bleiben erhalten.', bodyHtml: '<p>Sehr geehrte Frau Müller,</p><p>für das Update (v3.2 benötigt iOS 16+): App Store \u2192 \u201eInnogy\u201c suchen \u2192 \u201eAktualisieren\u201c tippen \u2192 ca. 2 Minuten warten. 2FA-Einstellungen bleiben erhalten. Bei Bedarf bitte Apple-ID eingeben.</p><p>Mit freundlichen Grüßen,<br/>Agent Hoffmann<br/>Digital Support</p>', bodyText: '', attachments: [] },
+        { messageId: 'mock-msg-login-q-de', threadId: 'mock-thread-login-de', from: `Anna Müller <a.mueller@bavarian-tech.de>`, to: 'support@innogy.com', cc: '', subject: 'Online-Banking — App-Update nach Login-Behebung', date: 'Mo., 26. Mai 2025 10:12', snippet: '2FA behoben. App-v3.2-Update-Fehler besteht. Bitte Anleitung senden.', bodyHtml: `<p>Hallo,</p><p>2FA funktioniert. App-v3.2-Update-Fehler besteht. Bitte Anleitung senden.</p><p>Anna Müller</p>`, bodyText: '', attachments: [] },
       ],
       aiEnrichment: {
         summary: 'Nachverfolgung nach Login/2FA-Behebung. Kundin bittet um App-v3.2-Updateanleitung. iOS 16+ erforderlich. Schritt-für-Schritt-Anleitung von Agent Hoffmann gesendet.',
         category: 'Technischer Support', sentiment: 'positive', confidence: 0.88,
-        suggestedReply: `Sehr geehrte Frau Müller, schön, dass 2FA funktioniert! Für das v3.2-Update: App Store \u2192 \u201eMoneta Bank\u201c suchen \u2192 Aktualisieren. iOS 16+ erforderlich, ca. 2 Minuten, 2FA-Einstellungen bleiben erhalten.`,
+        suggestedReply: `Sehr geehrte Frau Müller, schön, dass 2FA funktioniert! Für das v3.2-Update: App Store \u2192 \u201eInnogy\u201c suchen \u2192 Aktualisieren. iOS 16+ erforderlich, ca. 2 Minuten, 2FA-Einstellungen bleiben erhalten.`,
         source: 'ai',
       },
       customerThreads: [
@@ -1052,7 +1052,7 @@ const DE = {
     'task-2025-0104-email-1': {
       activeEmail: {
         messageId: 'mock-msg-mortgage-q-de', threadId: 'mock-thread-mortgage-de',
-        from: `Anna Müller <a.mueller@bavarian-tech.de>`, to: 'kredit@moneta-bank.com', cc: '',
+        from: `Anna Müller <a.mueller@bavarian-tech.de>`, to: 'kredit@innogy.com', cc: '',
         subject: 'Gold-Tier-Angebot — Hypothekenrefinanzierung 3,9\u00a0% fest',
         date: 'Mi., 4. Jun 2025 15:35',
         snippet: 'Interesse am Festzinsangebot. Bitte vollständigen Zinsvergleich und Kostendarstellung senden.',
@@ -1060,7 +1060,7 @@ const DE = {
         bodyText: '', attachments: [],
       },
       thread: [
-        { messageId: 'mock-msg-mortgage-q-de', threadId: 'mock-thread-mortgage-de', from: `Anna Müller <a.mueller@bavarian-tech.de>`, to: 'kredit@moneta-bank.com', cc: '', subject: 'Gold-Tier-Angebot — Hypothekenrefinanzierung 3,9\u00a0% fest', date: 'Mi., 4. Jun 2025 15:35', snippet: 'Vollständigen Zinsvergleich und ESIS-Darstellung angefordert.', bodyHtml: `<p>Sehr geehrtes Kreditteam,</p><p>Interesse am 3,9\u00a0%-Festzinsangebot. Bitte vollständigen Vergleich und Kostendarstellung senden.</p><p>Anna Müller</p>`, bodyText: '', attachments: [] },
+        { messageId: 'mock-msg-mortgage-q-de', threadId: 'mock-thread-mortgage-de', from: `Anna Müller <a.mueller@bavarian-tech.de>`, to: 'kredit@innogy.com', cc: '', subject: 'Gold-Tier-Angebot — Hypothekenrefinanzierung 3,9\u00a0% fest', date: 'Mi., 4. Jun 2025 15:35', snippet: 'Vollständigen Zinsvergleich und ESIS-Darstellung angefordert.', bodyHtml: `<p>Sehr geehrtes Kreditteam,</p><p>Interesse am 3,9\u00a0%-Festzinsangebot. Bitte vollständigen Vergleich und Kostendarstellung senden.</p><p>Anna Müller</p>`, bodyText: '', attachments: [] },
       ],
       aiEnrichment: {
         summary: 'Kundin reagiert positiv auf EZB-Zinssenkungsangebot. Bittet um vollständigen Zinsvergleich und ESIS-Darstellung. Gold-Tier — hochwertige Opportunity.',
@@ -1083,7 +1083,7 @@ const DE = {
       activeEmail: {
         messageId: 'mock-msg-sepa-delay-de', threadId: 'mock-thread-sepa-de',
         from: `Anna Müller <a.mueller@bavarian-tech.de>`,
-        to: 'support@moneta-bank.com', cc: '',
+        to: 'support@innogy.com', cc: '',
         subject: `SEPA-Überweisung verzögert – Rechnung #${REF.invoice}`,
         date: 'Mo., 2. Jun 2025 09:14',
         snippet: `SEPA-Überweisung Ref. ${REF.sepaRef} wurde vor 3 Tagen initiiert, aber der Empfänger hat das Geld noch nicht erhalten.`,
@@ -1091,7 +1091,7 @@ const DE = {
         bodyText: '', attachments: [],
       },
       thread: [
-        { messageId: 'mock-msg-sepa-delay-de', threadId: 'mock-thread-sepa-de', from: `Anna Müller <a.mueller@bavarian-tech.de>`, to: 'support@moneta-bank.com', cc: '', subject: `SEPA-Überweisung verzögert – Rechnung #${REF.invoice}`, date: 'Mo., 2. Jun 2025 09:14', snippet: `SEPA-Überweisung Ref. ${REF.sepaRef} noch nicht beim Empfänger eingetroffen.`, bodyHtml: `<p>Details wie oben.</p>`, bodyText: '', attachments: [] },
+        { messageId: 'mock-msg-sepa-delay-de', threadId: 'mock-thread-sepa-de', from: `Anna Müller <a.mueller@bavarian-tech.de>`, to: 'support@innogy.com', cc: '', subject: `SEPA-Überweisung verzögert – Rechnung #${REF.invoice}`, date: 'Mo., 2. Jun 2025 09:14', snippet: `SEPA-Überweisung Ref. ${REF.sepaRef} noch nicht beim Empfänger eingetroffen.`, bodyHtml: `<p>Details wie oben.</p>`, bodyText: '', attachments: [] },
       ],
       aiEnrichment: {
         summary: `Kundin meldet, dass SEPA-Überweisung Ref. ${REF.sepaRef} (${REF.amount}) für Rechnung #${REF.invoice} den Empfänger nach 3 Tagen nicht erreicht hat. Erstanfrage für diese Transaktion.`,
@@ -1162,12 +1162,12 @@ const DE = {
       {
         id: 'sig-de-default',
         name: 'Standard DE',
-        html: '<p style="font-size:12px;color:#545454">Mit freundlichen Gr&uuml;&szlig;en,<br><strong>{{agentName}}</strong><br>Kundendienst | Moneta Bank<br>+49 89 1234 5678</p>',
+        html: '<p style="font-size:12px;color:#545454">Mit freundlichen Gr&uuml;&szlig;en,<br><strong>{{agentName}}</strong><br>Kundendienst | Innogy<br>+49 89 1234 5678</p>',
       },
       {
         id: 'sig-de-brief',
         name: 'Kurz DE',
-        html: '<p style="font-size:12px;color:#545454">MfG, {{agentName}} &mdash; Moneta Bank Support</p>',
+        html: '<p style="font-size:12px;color:#545454">MfG, {{agentName}} &mdash; Innogy Support</p>',
       },
     ],
     templates: [
@@ -1177,7 +1177,7 @@ const DE = {
         locale: 'de',
         category: 'greeting',
         variables: ['customerName', 'agentName'],
-        body: '<p>Sehr geehrte(r) {{customerName}},</p><p>vielen Dank f&uuml;r Ihre Kontaktaufnahme mit der Moneta Bank. Mein Name ist {{agentName}} und ich stehe Ihnen heute gerne zur Verf&uuml;gung.</p><p>Ich habe Ihre Anfrage gepr&uuml;ft und werde Ihnen in K&uuml;rze eine vollst&auml;ndige Antwort zukommen lassen.</p>',
+        body: '<p>Sehr geehrte(r) {{customerName}},</p><p>vielen Dank f&uuml;r Ihre Kontaktaufnahme mit der Innogy. Mein Name ist {{agentName}} und ich stehe Ihnen heute gerne zur Verf&uuml;gung.</p><p>Ich habe Ihre Anfrage gepr&uuml;ft und werde Ihnen in K&uuml;rze eine vollst&auml;ndige Antwort zukommen lassen.</p>',
       },
       {
         id: 'tpl-de-apology',
@@ -1386,7 +1386,7 @@ const CS = {
       ],
       'conv-3': [
         { id: 'c3-m0', role: 'system',   text: 'Odchozí SMS doručena na +420 222 333 444 · před 26 dny' },
-        { id: 'c3-m1', role: 'agent',    text: `Dobrý den, paní Nováková, zde Moneta Bank. Váš spor o poplatek za kontokorent (případ ${REF.case3}) byl posouzen a schválen. Na váš účet byl dnes připsán refund €45.`, time: 'před 26 d.' },
+        { id: 'c3-m1', role: 'agent',    text: `Dobrý den, paní Nováková, zde Innogy. Váš spor o poplatek za kontokorent (případ ${REF.case3}) byl posouzen a schválen. Na váš účet byl dnes připsán refund €45.`, time: 'před 26 d.' },
         { id: 'c3-m2', role: 'customer', text: 'Děkuji, to jsou skvělé zprávy!', time: 'před 26 d.' },
       ],
       'conv-4': [
@@ -1513,7 +1513,7 @@ const CS = {
   email: {
     activeEmail: {
       messageId: 'mock-msg-001', threadId: 'mock-thread-001',
-      from: `Jana Nováková <j.novakova@praha-systems.cz>`, to: 'support@moneta-bank.com', cc: 'finance@praha-systems.cz',
+      from: `Jana Nováková <j.novakova@praha-systems.cz>`, to: 'support@innogy.com', cc: 'finance@praha-systems.cz',
       subject: `Urgentní: Faktura #${REF.invoice} – Platba nebyla zaúčtována`,
       date: 'Čt, 5. 6. 2025 14:22',
       snippet: `Třetí pokus o vyřešení selhání platby za fakturu #${REF.invoice} (${REF.amount}). SEPA ref.: ${REF.sepaRef}.`,
@@ -1524,9 +1524,9 @@ const CS = {
       ],
     },
     thread: [
-      { messageId: 'mock-msg-000', threadId: 'mock-thread-001', from: 'Tým podpory <support@moneta-bank.com>', to: 'j.novakova@praha-systems.cz', cc: '', subject: `Re: Faktura #${REF.invoice} – Platba nebyla zaúčtována`, date: 'St, 4. 6. 2025 10:05', snippet: 'Obdrželi jsme váš dotaz a náš platební tým se věcí zabývá.', bodyHtml: '<p>Vážená paní Nováková,</p><p>obdrželi jsme váš dotaz a náš platební tým věc prošetřuje. Do 24 hodin vás budeme informovat.</p><p>S pozdravem,<br/>Tým podpory Moneta Bank</p>', bodyText: '', attachments: [] },
-      { messageId: 'mock-msg-002', threadId: 'mock-thread-001', from: `Jana Nováková <j.novakova@praha-systems.cz>`, to: 'support@moneta-bank.com', cc: '', subject: `Re: Faktura #${REF.invoice} – Platba nebyla zaúčtována`, date: 'St, 4. 6. 2025 16:48', snippet: 'Stále žádná odpověď. Můžete prosím eskalovat?', bodyHtml: '<p>Dobrý den,</p><p>stále jsem neobdržela žádnou aktualizaci. Můžete prosím eskalovat na nadřízeného? Nemůžeme uzavřít naše knihy, dokud není toto vyřešeno.</p><p>Jana Nováková</p>', bodyText: '', attachments: [] },
-      { messageId: 'mock-msg-001', threadId: 'mock-thread-001', from: `Jana Nováková <j.novakova@praha-systems.cz>`, to: 'support@moneta-bank.com', cc: 'finance@praha-systems.cz', subject: `Urgentní: Faktura #${REF.invoice} – Platba nebyla zaúčtována`, date: 'Čt, 5. 6. 2025 14:22', snippet: `Třetí pokus o vyřešení selhání platby za fakturu #${REF.invoice} (${REF.amount}).`, bodyHtml: `<div style="font-family:sans-serif;font-size:14px;line-height:1.6;color:#1a1a2e;"><p>Dobrý den, vážený tým podpory,</p><p>Urgentní upomínka k Faktuře #${REF.invoice} (${REF.amount}) — třetí pokus. SEPA ref.: ${REF.sepaRef}.</p><p>Prosím o prioritní zpracování. Faktura a bankovní potvrzení přiloženy.</p><p>S pozdravem,<br/>Jana Nováková<br/>Finanční ředitelka, Praha Systems s.r.o.</p></div>`, bodyText: '', attachments: [{ attachmentId: 'mock-att-1', filename: `faktura_${REF.invoice}.pdf`, mimeType: 'application/pdf', size: 45820 }, { attachmentId: 'mock-att-2', filename: 'potvrzeni_banky_SEPA.pdf', mimeType: 'application/pdf', size: 23440 }] },
+      { messageId: 'mock-msg-000', threadId: 'mock-thread-001', from: 'Tým podpory <support@innogy.com>', to: 'j.novakova@praha-systems.cz', cc: '', subject: `Re: Faktura #${REF.invoice} – Platba nebyla zaúčtována`, date: 'St, 4. 6. 2025 10:05', snippet: 'Obdrželi jsme váš dotaz a náš platební tým se věcí zabývá.', bodyHtml: '<p>Vážená paní Nováková,</p><p>obdrželi jsme váš dotaz a náš platební tým věc prošetřuje. Do 24 hodin vás budeme informovat.</p><p>S pozdravem,<br/>Tým podpory Innogy</p>', bodyText: '', attachments: [] },
+      { messageId: 'mock-msg-002', threadId: 'mock-thread-001', from: `Jana Nováková <j.novakova@praha-systems.cz>`, to: 'support@innogy.com', cc: '', subject: `Re: Faktura #${REF.invoice} – Platba nebyla zaúčtována`, date: 'St, 4. 6. 2025 16:48', snippet: 'Stále žádná odpověď. Můžete prosím eskalovat?', bodyHtml: '<p>Dobrý den,</p><p>stále jsem neobdržela žádnou aktualizaci. Můžete prosím eskalovat na nadřízeného? Nemůžeme uzavřít naše knihy, dokud není toto vyřešeno.</p><p>Jana Nováková</p>', bodyText: '', attachments: [] },
+      { messageId: 'mock-msg-001', threadId: 'mock-thread-001', from: `Jana Nováková <j.novakova@praha-systems.cz>`, to: 'support@innogy.com', cc: 'finance@praha-systems.cz', subject: `Urgentní: Faktura #${REF.invoice} – Platba nebyla zaúčtována`, date: 'Čt, 5. 6. 2025 14:22', snippet: `Třetí pokus o vyřešení selhání platby za fakturu #${REF.invoice} (${REF.amount}).`, bodyHtml: `<div style="font-family:sans-serif;font-size:14px;line-height:1.6;color:#1a1a2e;"><p>Dobrý den, vážený tým podpory,</p><p>Urgentní upomínka k Faktuře #${REF.invoice} (${REF.amount}) — třetí pokus. SEPA ref.: ${REF.sepaRef}.</p><p>Prosím o prioritní zpracování. Faktura a bankovní potvrzení přiloženy.</p><p>S pozdravem,<br/>Jana Nováková<br/>Finanční ředitelka, Praha Systems s.r.o.</p></div>`, bodyText: '', attachments: [{ attachmentId: 'mock-att-1', filename: `faktura_${REF.invoice}.pdf`, mimeType: 'application/pdf', size: 45820 }, { attachmentId: 'mock-att-2', filename: 'potvrzeni_banky_SEPA.pdf', mimeType: 'application/pdf', size: 23440 }] },
     ],
     aiEnrichment: {
       summary: `Zákaznice hlásí opakované selhání platby za fakturu #${REF.invoice} (${REF.amount}). Třetí dotaz za 5 dní. SEPA převod odepsán, ale nezaúčtován v systému. Eskalace na vedúcho.`,
@@ -1551,7 +1551,7 @@ const CS = {
     'task-stmt-email-1': {
       activeEmail: {
         messageId: 'mock-msg-stmt-q-cs', threadId: 'mock-thread-stmt-cs',
-        from: `Jana Nováková <j.novakova@praha-systems.cz>`, to: 'support@moneta-bank.com', cc: '',
+        from: `Jana Nováková <j.novakova@praha-systems.cz>`, to: 'support@innogy.com', cc: '',
         subject: 'Výpis dubna — poplatek za transakci v USD',
         date: 'Čt, 1. 5. 2025 09:30',
         snippet: 'Dotaz na poplatek za konverzi měny USD 340 (cca 312 Kč) na výpisu za duben.',
@@ -1559,8 +1559,8 @@ const CS = {
         bodyText: '', attachments: [],
       },
       thread: [
-        { messageId: 'mock-msg-stmt-r-cs', threadId: 'mock-thread-stmt-cs', from: 'Tým podpory Moneta Bank <support@moneta-bank.com>', to: 'j.novakova@praha-systems.cz', cc: '', subject: 'Re: Výpis dubna — poplatek za transakci v USD', date: 'Čt, 1. 5. 2025 14:15', snippet: 'Poplatek za USD dle kurzu ECB + 1,5 %. Jednorázové prominutí Gold tier aplikováno — 312 Kč dnes přepsáno.', bodyHtml: '<p>Vitám Vás, paní Nováková,</p><p>poplatek USD 340 byl vyčíslen dle středního kurzu ECB 1,083 plus našeho standardního poplatku za nekorunovou transakci 1,5 %, celkem 312,40 Kč. Jako členka Gold tier máte nárok na jednorázové čtvrtletní prominutí. Dnes jsem na Váš účet připsala 312,40 Kč.</p><p>S pozdravem,<br/>Agent Dvořák<br/>Moneta Bank</p>', bodyText: '', attachments: [] },
-        { messageId: 'mock-msg-stmt-q-cs', threadId: 'mock-thread-stmt-cs', from: `Jana Nováková <j.novakova@praha-systems.cz>`, to: 'support@moneta-bank.com', cc: '', subject: 'Výpis dubna — poplatek za transakci v USD', date: 'Čt, 1. 5. 2025 09:30', snippet: 'Dotaz na poplatek za konverzi měny USD 340 na výpisu za duben.', bodyHtml: `<p>Dobrý den,</p><p>poplatek za konverzi měny USD 340 (312 Kč) na výpisu za duben. Prosím upesnit směnný kurz.</p><p>Jana Nováková</p>`, bodyText: '', attachments: [] },
+        { messageId: 'mock-msg-stmt-r-cs', threadId: 'mock-thread-stmt-cs', from: 'Tým podpory Innogy <support@innogy.com>', to: 'j.novakova@praha-systems.cz', cc: '', subject: 'Re: Výpis dubna — poplatek za transakci v USD', date: 'Čt, 1. 5. 2025 14:15', snippet: 'Poplatek za USD dle kurzu ECB + 1,5 %. Jednorázové prominutí Gold tier aplikováno — 312 Kč dnes přepsáno.', bodyHtml: '<p>Vitám Vás, paní Nováková,</p><p>poplatek USD 340 byl vyčíslen dle středního kurzu ECB 1,083 plus našeho standardního poplatku za nekorunovou transakci 1,5 %, celkem 312,40 Kč. Jako členka Gold tier máte nárok na jednorázové čtvrtletní prominutí. Dnes jsem na Váš účet připsala 312,40 Kč.</p><p>S pozdravem,<br/>Agent Dvořák<br/>Innogy</p>', bodyText: '', attachments: [] },
+        { messageId: 'mock-msg-stmt-q-cs', threadId: 'mock-thread-stmt-cs', from: `Jana Nováková <j.novakova@praha-systems.cz>`, to: 'support@innogy.com', cc: '', subject: 'Výpis dubna — poplatek za transakci v USD', date: 'Čt, 1. 5. 2025 09:30', snippet: 'Dotaz na poplatek za konverzi měny USD 340 na výpisu za duben.', bodyHtml: `<p>Dobrý den,</p><p>poplatek za konverzi měny USD 340 (312 Kč) na výpisu za duben. Prosím upesnit směnný kurz.</p><p>Jana Nováková</p>`, bodyText: '', attachments: [] },
       ],
       aiEnrichment: {
         summary: 'Zákaznice se dotává na poplatek za konverzi měny USD na výpisu za duben. Kurz ECB + 1,5 % správně aplikováno. Jednorázové prominutí Gold tier 312,40 Kč připsáno.',
@@ -1582,7 +1582,7 @@ const CS = {
     'task-2024-0784-email-1': {
       activeEmail: {
         messageId: 'mock-msg-login-q-cs', threadId: 'mock-thread-login-cs',
-        from: `Jana Nováková <j.novakova@praha-systems.cz>`, to: 'support@moneta-bank.com', cc: '',
+        from: `Jana Nováková <j.novakova@praha-systems.cz>`, to: 'support@innogy.com', cc: '',
         subject: 'Internet banking — aktualizace aplikace po obnovení přihlášení',
         date: 'Po, 26. 5. 2025 10:12',
         snippet: '2FA funguje — děkuji! Chyba při aktualizaci na novou verzi aplikace (v3.2).',
@@ -1590,13 +1590,13 @@ const CS = {
         bodyText: '', attachments: [],
       },
       thread: [
-        { messageId: 'mock-msg-login-r-cs', threadId: 'mock-thread-login-cs', from: 'Tým podpory Moneta Bank <support@moneta-bank.com>', to: 'j.novakova@praha-systems.cz', cc: '', subject: 'Re: Internet banking — aktualizace aplikace po obnovení přihlášení', date: 'Po, 26. 5. 2025 11:45', snippet: 'Vyžadován iOS 16+. App Store → Moneta Bank → Aktualizovat. Cca 2 min. Nastavení 2FA zůstane zachováno.', bodyHtml: '<p>Dobrý den, paní Nováková,</p><p>pro aktualizaci (v3.2 vyžaduje iOS 16+): App Store → vyhledat „Moneta Bank“ → klepnout na „Aktualizovat“ → cca 2 minuty instalace. Nastavení 2FA zůstane zachováno. Vítejte.</p><p>S pozdravem,<br/>Agent Dvořák<br/>Digitální podpora</p>', bodyText: '', attachments: [] },
-        { messageId: 'mock-msg-login-q-cs', threadId: 'mock-thread-login-cs', from: `Jana Nováková <j.novakova@praha-systems.cz>`, to: 'support@moneta-bank.com', cc: '', subject: 'Internet banking — aktualizace aplikace po obnovení přihlášení', date: 'Po, 26. 5. 2025 10:12', snippet: '2FA vyřešeno. Chyba aktualizace aplikace v3.2 trvajá.', bodyHtml: `<p>Dobrý den,</p><p>2FA funguje. Chyba při aktualizaci v3.2 trvajá. Prosím zaslat instrukce.</p><p>Jana Nováková</p>`, bodyText: '', attachments: [] },
+        { messageId: 'mock-msg-login-r-cs', threadId: 'mock-thread-login-cs', from: 'Tým podpory Innogy <support@innogy.com>', to: 'j.novakova@praha-systems.cz', cc: '', subject: 'Re: Internet banking — aktualizace aplikace po obnovení přihlášení', date: 'Po, 26. 5. 2025 11:45', snippet: 'Vyžadován iOS 16+. App Store → Innogy → Aktualizovat. Cca 2 min. Nastavení 2FA zůstane zachováno.', bodyHtml: '<p>Dobrý den, paní Nováková,</p><p>pro aktualizaci (v3.2 vyžaduje iOS 16+): App Store → vyhledat „Innogy“ → klepnout na „Aktualizovat“ → cca 2 minuty instalace. Nastavení 2FA zůstane zachováno. Vítejte.</p><p>S pozdravem,<br/>Agent Dvořák<br/>Digitální podpora</p>', bodyText: '', attachments: [] },
+        { messageId: 'mock-msg-login-q-cs', threadId: 'mock-thread-login-cs', from: `Jana Nováková <j.novakova@praha-systems.cz>`, to: 'support@innogy.com', cc: '', subject: 'Internet banking — aktualizace aplikace po obnovení přihlášení', date: 'Po, 26. 5. 2025 10:12', snippet: '2FA vyřešeno. Chyba aktualizace aplikace v3.2 trvajá.', bodyHtml: `<p>Dobrý den,</p><p>2FA funguje. Chyba při aktualizaci v3.2 trvajá. Prosím zaslat instrukce.</p><p>Jana Nováková</p>`, bodyText: '', attachments: [] },
       ],
       aiEnrichment: {
         summary: 'Navazující e-mail po obnovení přihlášení/2FA. Zákaznice žádá instrukce k aktualizaci mobilní aplikace v3.2. Vyžadován iOS 16+. Instrukce krok za krokem zaslány agentem Dvořákem.',
         category: 'Technická podpora', sentiment: 'positive', confidence: 0.88,
-        suggestedReply: `Dobrý den, paní Nováková, ráda slyším, že 2FA funguje! Pro aktualizaci v3.2: App Store → vyhledat „Moneta Bank“ → Aktualizovat. Vyžadován iOS 16+, cca 2 minuty, nastavení 2FA zůstane zachováno.`,
+        suggestedReply: `Dobrý den, paní Nováková, ráda slyším, že 2FA funguje! Pro aktualizaci v3.2: App Store → vyhledat „Innogy“ → Aktualizovat. Vyžadován iOS 16+, cca 2 minuty, nastavení 2FA zůstane zachováno.`,
         source: 'ai',
       },
       customerThreads: [
@@ -1613,7 +1613,7 @@ const CS = {
     'task-2025-0104-email-1': {
       activeEmail: {
         messageId: 'mock-msg-mortgage-q-cs', threadId: 'mock-thread-mortgage-cs',
-        from: `Jana Nováková <j.novakova@praha-systems.cz>`, to: 'uvery@moneta-bank.com', cc: '',
+        from: `Jana Nováková <j.novakova@praha-systems.cz>`, to: 'uvery@innogy.com', cc: '',
         subject: 'Nabídka Gold tier — refinancování hypotéky 3,9 % fix',
         date: 'St, 4. 6. 2025 15:35',
         snippet: 'Mám zájem o nabídku fixní sazby. Prosím zaslat porovnání sazeb a ilustraci nákladů.',
@@ -1621,7 +1621,7 @@ const CS = {
         bodyText: '', attachments: [],
       },
       thread: [
-        { messageId: 'mock-msg-mortgage-q-cs', threadId: 'mock-thread-mortgage-cs', from: `Jana Nováková <j.novakova@praha-systems.cz>`, to: 'uvery@moneta-bank.com', cc: '', subject: 'Nabídka Gold tier — refinancování hypotéky 3,9 % fix', date: 'St, 4. 6. 2025 15:35', snippet: 'Porovnání sazeb a ESIS ilustrace požadovány.', bodyHtml: `<p>Dobrý den,</p><p>Mám zájem o nabídku 3,9 % fix. Prosím zaslat porovnání a ilustraci nákladů.</p><p>Jana Nováková</p>`, bodyText: '', attachments: [] },
+        { messageId: 'mock-msg-mortgage-q-cs', threadId: 'mock-thread-mortgage-cs', from: `Jana Nováková <j.novakova@praha-systems.cz>`, to: 'uvery@innogy.com', cc: '', subject: 'Nabídka Gold tier — refinancování hypotéky 3,9 % fix', date: 'St, 4. 6. 2025 15:35', snippet: 'Porovnání sazeb a ESIS ilustrace požadovány.', bodyHtml: `<p>Dobrý den,</p><p>Mám zájem o nabídku 3,9 % fix. Prosím zaslat porovnání a ilustraci nákladů.</p><p>Jana Nováková</p>`, bodyText: '', attachments: [] },
       ],
       aiEnrichment: {
         summary: 'Zákaznice reaguje pozitivně na nabídku refinancování hypotéky. Žádá porovnání sazeb a ESIS ilustraci. Gold tier — významná příležitost.',
@@ -1644,7 +1644,7 @@ const CS = {
       activeEmail: {
         messageId: 'mock-msg-sepa-delay-cs', threadId: 'mock-thread-sepa-cs',
         from: `Jana Nováková <j.novakova@praha-systems.cz>`,
-        to: 'support@moneta-bank.com', cc: '',
+        to: 'support@innogy.com', cc: '',
         subject: `Zpoždění SEPA převodu – Faktura #${REF.invoice}`,
         date: 'Po, 2. 6. 2025 09:14',
         snippet: `SEPA převod ref. ${REF.sepaRef} byl iniciován před 3 dny, ale příjemce prostředky dosud neobdržel.`,
@@ -1652,7 +1652,7 @@ const CS = {
         bodyText: '', attachments: [],
       },
       thread: [
-        { messageId: 'mock-msg-sepa-delay-cs', threadId: 'mock-thread-sepa-cs', from: `Jana Nováková <j.novakova@praha-systems.cz>`, to: 'support@moneta-bank.com', cc: '', subject: `Zpoždění SEPA převodu – Faktura #${REF.invoice}`, date: 'Po, 2. 6. 2025 09:14', snippet: `SEPA převod ref. ${REF.sepaRef} dosud nedorazil k příjemci.`, bodyHtml: `<p>Detaily viz výše.</p>`, bodyText: '', attachments: [] },
+        { messageId: 'mock-msg-sepa-delay-cs', threadId: 'mock-thread-sepa-cs', from: `Jana Nováková <j.novakova@praha-systems.cz>`, to: 'support@innogy.com', cc: '', subject: `Zpoždění SEPA převodu – Faktura #${REF.invoice}`, date: 'Po, 2. 6. 2025 09:14', snippet: `SEPA převod ref. ${REF.sepaRef} dosud nedorazil k příjemci.`, bodyHtml: `<p>Detaily viz výše.</p>`, bodyText: '', attachments: [] },
       ],
       aiEnrichment: {
         summary: `Zákaznice oznamuje, že SEPA převod ref. ${REF.sepaRef} (${REF.amount}) pro fakturu #${REF.invoice} nedorazil příjemci po 3 dnech. Jde o první dotaz k této transakci.`,
@@ -1795,12 +1795,12 @@ const CS = {
       {
         id: 'sig-cs-default',
         name: 'Standard CS',
-        html: '<p style="font-size:12px;color:#545454">S pozdravem,<br><strong>{{agentName}}</strong><br>Zákaznická podpora | Moneta Bank<br>+420 800 123 456</p>',
+        html: '<p style="font-size:12px;color:#545454">S pozdravem,<br><strong>{{agentName}}</strong><br>Zákaznická podpora | Innogy<br>+420 800 123 456</p>',
       },
       {
         id: 'sig-cs-formal',
         name: 'Formální CS',
-        html: '<p style="font-size:12px;color:#545454">S úctou,<br><strong>{{agentName}}</strong> | Moneta Bank a.s. | Zákaznické centrum</p>',
+        html: '<p style="font-size:12px;color:#545454">S úctou,<br><strong>{{agentName}}</strong> | Innogy a.s. | Zákaznické centrum</p>',
       },
     ],
     templates: [
@@ -1810,7 +1810,7 @@ const CS = {
         locale: 'cs',
         category: 'greeting',
         variables: ['customerName', 'agentName'],
-        body: '<p>Vážený/á {{customerName}},</p><p>děkujeme Vám za kontaktování Moneta Bank. Jmenuji se {{agentName}} a dnes Vám budu pomáhat s Vaší žádostí.</p><p>Vaší otázce jsem věnoval/a pozornost a brzy Vás kontaktuji s plným vyřešením.</p>',
+        body: '<p>Vážený/á {{customerName}},</p><p>děkujeme Vám za kontaktování Innogy. Jmenuji se {{agentName}} a dnes Vám budu pomáhat s Vaší žádostí.</p><p>Vaší otázce jsem věnoval/a pozornost a brzy Vás kontaktuji s plným vyřešením.</p>',
       },
       {
         id: 'tpl-cs-omluva',

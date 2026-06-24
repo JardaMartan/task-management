@@ -5,6 +5,7 @@ import {
     resolveWorkspaceForTaskType,
     updateCaseNotesInTicketDB,
     updateCaseStatusInTicketDB,
+    resolveDigitalOutboundTask,
 } from '../../api';
 
 // ─── Analytics UI prefs (localStorage-backed) ─────────────────────────────
@@ -95,6 +96,18 @@ const widgetSlice = createSlice({
             // If not set, the URL is derived automatically from the relay wsUrl.
             // Example: 'https://relay.example.com/crm-tab-manager/'
             crmTabManagerUrl: null,
+            // Optional: Webex CC entry point ID for agent-initiated SMS outbound (digital channel).
+            // When set, an SMS button appears in the CustomerContactCard for mobile numbers.
+            // Initiating creates an OUTBOUND social/sms outdial task (via the Desktop SDK dialer)
+            // that Webex CC routes back to this agent — the same path the native digital-outbound widget uses.
+            smsEntryPointId: null,
+            // Optional: sender channel address used as the SMS `origin` (ANI), e.g. '447908663416'.
+            smsOrigin: null,
+            // Optional: Webex CC entry point ID for agent-initiated WhatsApp outbound (digital channel).
+            // When set, a WhatsApp button appears in the CustomerContactCard for mobile numbers.
+            whatsappEntryPointId: null,
+            // Optional: sender channel address used as the WhatsApp `origin` (ANI).
+            whatsappOrigin: null,
         },
         outdialPending: null,  // { destination: string } while an outdial call is active, null otherwise
         emailConfig: {
@@ -184,6 +197,10 @@ const widgetSlice = createSlice({
                 workspaceOverrideTaskTypes: DEFAULT_WORKSPACE_OVERRIDE_TASK_TYPES,
                 outdialEntryPointId: state.widgetConfig.outdialEntryPointId ?? null,
                 crmTabManagerUrl: state.widgetConfig.crmTabManagerUrl ?? null,
+                smsEntryPointId: state.widgetConfig.smsEntryPointId ?? null,
+                smsOrigin: state.widgetConfig.smsOrigin ?? null,
+                whatsappEntryPointId: state.widgetConfig.whatsappEntryPointId ?? null,
+                whatsappOrigin: state.widgetConfig.whatsappOrigin ?? null,
                 ...action.payload,
             };
         },
@@ -388,7 +405,10 @@ export const initializeDesktopSDK = () => async (dispatch, getState) => {
                     await new Promise((r) => setTimeout(r, delay));
                 }
                 try {
-                    await Desktop.config.init();
+                    await Desktop.config.init({
+                        widgetName: 'task-management',
+                        widgetProvider: 'task-management',
+                    });
                     sdkInitOk = true;
                     break;
                 } catch (e) {
@@ -780,5 +800,174 @@ export const cancelOutdialCall = () => async (dispatch) => {
     } catch (err) {
         // Non-fatal — the UI is already reset; agent can end from task panel
         console.warn('[WidgetSlice] cancelOutdialCall error (non-fatal):', err.message);
+    }
+};
+
+/**
+ * Shared helper: create an agent-initiated digital (social) outbound task via
+ * the Webex CC Digital Flow Manager and accept it onto this agent's desktop.
+ *
+ * Digital channels (SMS / WhatsApp) do NOT go through the telephony dialer:
+ * the dialer `/v1/tasks` endpoint rejects social entry-point IDs.  The native
+ * digital-outbound widget posts to DigitalFM `resolveTask`, then accepts the
+ * routed task — which is exactly what this helper replicates.
+ *
+ * Acceptance timing is critical: the task must be *offered* to the agent by the
+ * routing engine before it can be accepted.  Calling `accept` immediately after
+ * `resolveTask` fails (the offer hasn't arrived yet) and the task RONAs.  We
+ * therefore arm an `eAgentOfferContact` listener *before* creating the task and
+ * accept only once the matching offer event fires — mirroring the ~2s
+ * create→offer→accept sequence the native widget performs.
+ *
+ * @param {object} args
+ * @param {'sms'|'whatsapp'} args.mediaChannel
+ * @param {string} args.destination - Customer mobile number
+ * @param {string} args.entryPointId
+ * @param {string} [args.origin]
+ * @param {object} args.state - getState().widget
+ * @returns {Promise<string>} The created task/interaction ID
+ */
+const startDigitalOutbound = async ({ mediaChannel, destination, entryPointId, origin, state }) => {
+    const dialDestination = String(destination || '').replace(/[\s\-().]/g, '');
+
+    let Desktop;
+    try {
+        ({ Desktop } = await import('@wxcc-desktop/sdk'));
+    } catch (e) {
+        Desktop = null;
+    }
+
+    // Holds the task ID once resolveTask returns, so the offer listener (armed
+    // first) can match the right interaction.
+    const taskRef = { id: null };
+
+    // Arm the offer→accept flow BEFORE creating the task to avoid missing a fast
+    // offer event.  Resolves once accepted (or on timeout); never rejects.
+    const acceptOnOffer = (Desktop?.agentContact?.addEventListener)
+        ? new Promise((resolve) => {
+            let settled = false;
+            let timer = null;
+
+            const finish = (result) => {
+                if (settled) return;
+                settled = true;
+                if (timer) clearTimeout(timer);
+                try { Desktop.agentContact.removeEventListener('eAgentOfferContact', onOffer); } catch { /* ignore */ }
+                resolve(result);
+            };
+
+            const onOffer = async (msg) => {
+                const offeredId = msg?.data?.interactionId;
+                // Ignore offers for unrelated interactions once our task ID is known.
+                if (taskRef.id && offeredId && offeredId !== taskRef.id) return;
+                try {
+                    await Desktop.agentContact.accept({ interactionId: offeredId || taskRef.id });
+                    finish({ accepted: true });
+                } catch (acceptErr) {
+                    finish({ accepted: false, error: acceptErr });
+                }
+            };
+
+            Desktop.agentContact.addEventListener('eAgentOfferContact', onOffer);
+            // Safety timeout: if the task is never offered, stop waiting.  The
+            // task (if created) will still be presented by the desktop task list.
+            timer = setTimeout(() => finish({ accepted: false, timedOut: true }), 30000);
+        })
+        : Promise.resolve({ accepted: false, noSdk: true });
+
+    const taskId = await resolveDigitalOutboundTask(
+        { entryPointId, destination: dialDestination, mediaChannel, origin },
+        { accessToken: state.accesstoken, orgId: state.orgid, datacenter: state.datacenter },
+    );
+    taskRef.id = taskId;
+
+    const result = await acceptOnOffer;
+    if (result.accepted) {
+        console.log('[WidgetSlice] startDigitalOutbound: task accepted onto desktop:', taskId);
+    } else if (result.timedOut) {
+        console.warn('[WidgetSlice] startDigitalOutbound: no offer within timeout — task will be presented for manual accept:', taskId);
+    } else if (result.error) {
+        console.warn('[WidgetSlice] startDigitalOutbound: accept failed — task will be presented for manual accept:', result.error?.message || result.error);
+    }
+
+    return taskId;
+};
+
+/**
+ * Initiate an agent-initiated WhatsApp conversation via the Webex CC Digital
+ * Flow Manager — the same path the native "digital outbound" widget uses.
+ *
+ * Creates an OUTBOUND digital task (mediaType 'social', mediaChannel 'whatsapp')
+ * which Webex CC routes back to this agent, opening the native digital-channel
+ * UI where the agent composes the message (subject to WhatsApp's 24-hour
+ * session / template rules, enforced by that UI).
+ *
+ * Requires `whatsappEntryPointId` in the widget layout config; `whatsappOrigin`
+ * (sender channel address) is optional.  In demo mode (no SDK / token) the
+ * action surfaces a failure status but raises no exception.
+ *
+ * @param {object} params
+ * @param {string} params.destination - Customer mobile number (E.164 preferred)
+ */
+export const initiateWhatsAppChat = ({ destination }) => async (dispatch, getState) => {
+    const state = getState().widget;
+    const entryPointId = state.widgetConfig?.whatsappEntryPointId;
+    const origin = state.widgetConfig?.whatsappOrigin;
+
+    if (!entryPointId) {
+        console.error('[WidgetSlice] initiateWhatsAppChat: whatsappEntryPointId not configured');
+        dispatch(setStatus({ message: 'customer.action.whatsapp.notConfigured', type: 'error' }));
+        setTimeout(() => dispatch(clearStatus()), 4000);
+        return;
+    }
+
+    try {
+        const taskId = await startDigitalOutbound({ mediaChannel: 'whatsapp', destination, entryPointId, origin, state });
+        console.log('[WidgetSlice] WhatsApp outbound task initiated:', taskId);
+        dispatch(setStatus({ message: 'customer.action.whatsapp.sent', type: 'success' }));
+        setTimeout(() => dispatch(clearStatus()), 3000);
+    } catch (err) {
+        console.error('[WidgetSlice] initiateWhatsAppChat error:', err);
+        dispatch(setStatus({ message: err.message || 'customer.action.whatsapp.failed', type: 'error' }));
+        setTimeout(() => dispatch(clearStatus()), 4000);
+    }
+};
+
+/**
+ * Initiate an agent-initiated SMS conversation via the Webex CC Digital Flow
+ * Manager — the same path the native "digital outbound" widget uses.
+ *
+ * Creates an OUTBOUND digital task (mediaType 'social', mediaChannel 'sms')
+ * which Webex CC routes back to this agent, opening the native digital-channel
+ * UI where the agent composes the message.
+ *
+ * Requires `smsEntryPointId` in the widget layout config; `smsOrigin` (sender
+ * channel address) is optional.  In demo mode (no SDK / token) the action
+ * surfaces a failure status but raises no exception.
+ *
+ * @param {object} params
+ * @param {string} params.destination - Customer mobile number (E.164 preferred)
+ */
+export const initiateSmsChat = ({ destination }) => async (dispatch, getState) => {
+    const state = getState().widget;
+    const entryPointId = state.widgetConfig?.smsEntryPointId;
+    const origin = state.widgetConfig?.smsOrigin;
+
+    if (!entryPointId) {
+        console.error('[WidgetSlice] initiateSmsChat: smsEntryPointId not configured');
+        dispatch(setStatus({ message: 'customer.action.sms.notConfigured', type: 'error' }));
+        setTimeout(() => dispatch(clearStatus()), 4000);
+        return;
+    }
+
+    try {
+        const taskId = await startDigitalOutbound({ mediaChannel: 'sms', destination, entryPointId, origin, state });
+        console.log('[WidgetSlice] SMS outbound task initiated:', taskId);
+        dispatch(setStatus({ message: 'customer.action.sms.sent', type: 'success' }));
+        setTimeout(() => dispatch(clearStatus()), 3000);
+    } catch (err) {
+        console.error('[WidgetSlice] initiateSmsChat error:', err);
+        dispatch(setStatus({ message: err.message || 'customer.action.sms.failed', type: 'error' }));
+        setTimeout(() => dispatch(clearStatus()), 4000);
     }
 };

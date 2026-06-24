@@ -159,7 +159,7 @@ const TaskWidget = ({ task, darkMode, mockMode, onNavigate }) => {
   const caseId       = cadVal(cad, 'caseId') || '-';
   const taskId       = cadVal(cad, 'taskId') || resolvedTask.interactionId || '-';
   const email        = cadVal(cad, 'email') || resolvedTask.email || '-';
-  const phone        = cadVal(cad, 'phone') || cadVal(cad, 'ani') || resolvedTask.ani || '-';
+  const phone        = cadVal(cad, 'phone') || '-';
   const queue        = resolvedTask.virtualTeamName || '-';
   const state        = resolvedTask.state || 'connected';
 

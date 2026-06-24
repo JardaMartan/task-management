@@ -15,6 +15,8 @@ import {
   loadJdsHistoryForEmailTask,
   loadJdsHistoryForWorkItemTask,
   loadJdsHistoryForVoiceTask,
+  loadJdsHistoryForChatTask,
+  loadJdsHistoryForSocialTask,
   markOutdialDelivered,
   setOutdialPending,
   extractEmailFromTask,
@@ -184,6 +186,11 @@ const TaskManagement = (props) => {
     dispatch(loadCaseTask(taskPayload));
   }, [dispatch, taskPayload]);
 
+  // Read credentials from Redux so JDS history effects re-fire when they arrive
+  // (task props often arrive before workspaceid/accesstoken are hydrated into state).
+  const reduxAccesstoken = useSelector((s) => s.widget.accesstoken);
+  const reduxWorkspaceid = useSelector((s) => s.widget.workspaceid);
+
   // When an email task arrives (native email channel OR work-item with taskType=email),
   // fetch the customer's full event history from JDS so the History panel is populated.
   const isEmailTaskForJds =
@@ -213,9 +220,9 @@ const TaskManagement = (props) => {
     if (isWorkItemForJds && taskPayload) {
       dispatch(loadJdsHistoryForWorkItemTask(taskPayload));
     }
-  // Stable identity deps only — interactionId changes when a new workItem arrives
+  // Include credential deps — workitem task can arrive before credentials are hydrated
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dispatch, taskPayload?.interactionId, isWorkItemForJds]);
+  }, [dispatch, taskPayload?.interactionId, isWorkItemForJds, reduxAccesstoken, reduxWorkspaceid]);
 
   // Telephony (voice) tasks: fetch JDS customer history using the ANI/DNIS phone
   // identities and subscribe to SSE so the History and other tabs are populated.
@@ -227,9 +234,29 @@ const TaskManagement = (props) => {
       // remove the cancel button from the calling pill.
       dispatch(markOutdialDelivered());
     }
-  // Stable identity deps only
+  // Include credential deps — task can arrive before credentials are hydrated
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dispatch, taskPayload?.interactionId, isVoiceTaskForJds]);
+  }, [dispatch, taskPayload?.interactionId, isVoiceTaskForJds, reduxAccesstoken, reduxWorkspaceid]);
+
+  // Chat tasks: fetch JDS customer history using the email (ANI) and phone identities.
+  const isChatTaskForJds = taskPayload?.mediaType === 'chat';
+  useEffect(() => {
+    if (isChatTaskForJds && taskPayload) {
+      dispatch(loadJdsHistoryForChatTask(taskPayload));
+    }
+  // Include credential deps — chat task arrives before workspaceid is hydrated
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dispatch, taskPayload?.interactionId, isChatTaskForJds, reduxAccesstoken, reduxWorkspaceid]);
+
+  // Social tasks (outbound SMS): fetch JDS using customerNumber/dnis as identity.
+  // The ani field contains the entry-point name, not the customer's phone number.
+  const isSocialTaskForJds = taskPayload?.mediaType === 'social';
+  useEffect(() => {
+    if (isSocialTaskForJds && taskPayload) {
+      dispatch(loadJdsHistoryForSocialTask(taskPayload));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dispatch, taskPayload?.interactionId, isSocialTaskForJds, reduxAccesstoken, reduxWorkspaceid]);
 
   // Clear the calling pill when the telephony task ends. Watches isTerminated and
   // the task itself becoming null (Desktop removes the task from the widget after
@@ -325,7 +352,14 @@ const TaskManagement = (props) => {
   if (explicitView === 'chat') {
     return (
       <div className={`tm-view-mount${darkMode ? ' md--dark' : ''}`}>
-        <ChatView darkMode={darkMode} />
+        <ChatWidget
+          darkMode={darkMode}
+          mockMode={!taskPayload}
+          initialTaskId={taskPayload?.interactionId}
+          onNavigate={(view, opts) => {
+            // Bubble up navigation if needed in future
+          }}
+        />
       </div>
     );
   }

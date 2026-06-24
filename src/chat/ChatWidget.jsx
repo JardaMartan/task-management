@@ -5,6 +5,7 @@ import ChatAnalyticsBar from './ChatAnalyticsBar';
 import { useI18n } from '../i18n/I18nContext';
 import { getMockData } from '../mock/mockData';
 import { toggleAnalyticsOpen } from '../store/slices/widgetSlice';
+import HistoryView from '../views/HistoryView';
 import './chat.css';
 
 // ─── Channel metadata (display-only, no mock data) ────────────────────────
@@ -84,6 +85,7 @@ const ChatWidget = ({ darkMode, mockMode, initialTaskId, onNavigate }) => {
   const OPEN_CASES = mock.chat.openCases;
   const [activeFilters, setActiveFilters] = useState({ channel: null, status: null });
   const isDemoMode = Boolean(mockMode);
+  const [activeTab, setActiveTab] = useState('chat');
 
   const handleFilterChange = useCallback(({ type, key }) => {
     setActiveFilters((f) => ({ ...f, [type]: key }));
@@ -191,6 +193,34 @@ const ChatWidget = ({ darkMode, mockMode, initialTaskId, onNavigate }) => {
           />
         )}
       </div>
+
+      {/* ── Tab bar ── */}
+      <div className="widget-tab-bar" role="tablist">
+        <button
+          role="tab"
+          aria-selected={activeTab === 'chat'}
+          className={`widget-tab${activeTab === 'chat' ? ' widget-tab--active' : ''}`}
+          onClick={() => setActiveTab('chat')}
+        >
+          {t('tabs.chat')}
+        </button>
+        <button
+          role="tab"
+          aria-selected={activeTab === 'history'}
+          className={`widget-tab${activeTab === 'history' ? ' widget-tab--active' : ''}`}
+          onClick={() => setActiveTab('history')}
+        >
+          {t('tabs.history')}
+        </button>
+      </div>
+
+      {/* ── History tab ── */}
+      {activeTab === 'history' && (
+        <HistoryView darkMode={darkMode} mockMode={isDemoMode} />
+      )}
+
+      {/* ── Chat tab content ── */}
+      {activeTab === 'chat' && (<>
 
       {/* ── Active filter indicator ── */}
       {isFiltered && (
@@ -326,6 +356,8 @@ const ChatWidget = ({ darkMode, mockMode, initialTaskId, onNavigate }) => {
 
         </div>
       </div>
+
+      </>)} {/* end activeTab === 'chat' */}
     </div>
   );
 };

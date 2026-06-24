@@ -8,7 +8,7 @@ var _tabManagerI18n = {
     config:               'Configuration',
     wsUrlLabel:           'Relay WebSocket URL',
     crmUrlLabel:          'CRM URL Template',
-    crmUrlHint:           'Placeholders: <code>{ani}</code> &middot; <code>{interactionId}</code> &middot; <code>{customerId}</code>',
+    crmUrlHint:           'Placeholders: <code>{ani}</code> &middot; <code>{email}</code> &middot; <code>{interactionId}</code> &middot; <code>{customerId}</code>',
     autoClose:            'Automatically close CRM tab when agent completes wrapup',
     placementLabel:       'Embedded tab placement (Chrome)',
     placementSide:        'Side (left)',
@@ -37,7 +37,7 @@ var _tabManagerI18n = {
     config:               'Konfiguration',
     wsUrlLabel:           'Relay WebSocket-URL',
     crmUrlLabel:          'CRM-URL-Vorlage',
-    crmUrlHint:           'Platzhalter: <code>{ani}</code> &middot; <code>{interactionId}</code> &middot; <code>{customerId}</code>',
+    crmUrlHint:           'Platzhalter: <code>{ani}</code> &middot; <code>{email}</code> &middot; <code>{interactionId}</code> &middot; <code>{customerId}</code>',
     autoClose:            'CRM-Tab automatisch schließen, wenn der Agent die Nachbearbeitung abschließt',
     placementLabel:       'Position der eingebetteten Tabs (Chrome)',
     placementSide:        'Seitlich (links)',
@@ -66,7 +66,7 @@ var _tabManagerI18n = {
     config:               'Konfigurace',
     wsUrlLabel:           'URL relé WebSocket',
     crmUrlLabel:          'Šablona URL CRM',
-    crmUrlHint:           'Zástupné znaky: <code>{ani}</code> &middot; <code>{interactionId}</code> &middot; <code>{customerId}</code>',
+    crmUrlHint:           'Zástupné znaky: <code>{ani}</code> &middot; <code>{email}</code> &middot; <code>{interactionId}</code> &middot; <code>{customerId}</code>',
     autoClose:            'Automaticky zavřít kartu CRM po dokončení vyhodnocení hovoru',
     placementLabel:       'Umístění vložených karet (Chrome)',
     placementSide:        'Po straně (vlevo)',
@@ -396,10 +396,11 @@ function isEmailIdentity(value) {
 
 // Resolve a stable per-customer key. Two interactions that produce the same key
 // share a single CRM tab. Priority:
-//   1. customerId   — a unified CRM identity (best; unifies across media types)
-//   2. email in ani — preferred over phone per product requirement
-//   3. ani (phone)
-//   4. displayUrl   — last resort so identical CRM pages still dedupe
+//   1. customerId    — a unified CRM identity (best; unifies across media types)
+//   2. email         — explicit customer email (alternative to ani)
+//   3. email in ani  — preferred over phone per product requirement
+//   4. ani (phone)
+//   5. displayUrl    — last resort so identical CRM pages still dedupe
 // Falls back to the interaction ID so a tab can always be tracked.
 function customerKeyFor(data, interactionId) {
   if (data) {
@@ -409,6 +410,7 @@ function customerKeyFor(data, interactionId) {
       if (isEmailIdentity(data.customerId)) return 'email:' + data.customerId.toLowerCase();
       return 'cid:' + String(data.customerId).toLowerCase();
     }
+    if (isEmailIdentity(data.email)) return 'email:' + data.email.toLowerCase();
     if (isEmailIdentity(data.ani))  return 'email:' + data.ani.toLowerCase();
     if (data.ani)                   return 'ani:'   + String(data.ani).toLowerCase();
     if (data.displayUrl)            return 'url:'   + data.displayUrl;
@@ -429,14 +431,23 @@ function findRegistryEntryByInteraction(interactionId) {
   return null;
 }
 
-function buildCrmUrl(ani, interactionId, customerId) {
+function buildCrmUrl(ani, interactionId, customerId, email) {
   if (!config.crmUrlTemplate) return null;
   // Prefer the resolved customer identity (email from JDS) over the raw ANI
   // (phone number).  For email tasks ani == customerId so this is a no-op;
   // for voice tasks with JDS resolution customerId is the email address.
   const effectiveCustomerId = customerId || ani || '';
+  // {email} resolves to the explicit customer email when known, falling back to
+  // any email-shaped ani/customerId, then the raw ani — so the placeholder is an
+  // alternative lookup key to {ani} that always yields something usable.
+  const effectiveEmail =
+    email ||
+    (isEmailIdentity(ani) ? ani : '') ||
+    (isEmailIdentity(customerId) ? customerId : '') ||
+    ani || '';
   return config.crmUrlTemplate
     .replace('{ani}', encodeURIComponent(effectiveCustomerId))
+    .replace('{email}', encodeURIComponent(effectiveEmail))
     .replace('{interactionId}', encodeURIComponent(interactionId || ''))
     .replace('{customerId}', encodeURIComponent(effectiveCustomerId));
 }
@@ -447,15 +458,15 @@ function buildProxyUrl(interactionId, crmUrl, title) {
   return PROXY_BASE + '?' + params.toString();
 }
 
-function openOrFocusCrmTab(interactionId, ani, customerId, displayUrl, title) {
-  const crmUrl = displayUrl || buildCrmUrl(ani, interactionId, customerId);
+function openOrFocusCrmTab(interactionId, ani, customerId, displayUrl, title, email) {
+  const crmUrl = displayUrl || buildCrmUrl(ani, interactionId, customerId, email);
   if (!crmUrl) {
     console.warn('[tab-manager] No CRM URL — configure the CRM URL template or set displayUrl CAD variable');
     showPopupBlockedWarning(true /* templateMissing */);
     return;
   }
 
-  const customerKey = customerKeyFor({ ani, customerId, displayUrl }, interactionId);
+  const customerKey = customerKeyFor({ ani, customerId, displayUrl, email }, interactionId);
   const proxyUrl    = buildProxyUrl(interactionId, crmUrl, title);
   const tabName     = tabNameFor(customerKey);
 
@@ -632,7 +643,7 @@ interactionsList.addEventListener('click', (e) => {
     const d = interactions.get(id);
     if (d) {
       _desktopSelectedId = id;
-      openOrFocusCrmTab(id, d.ani, d.customerId, d.displayUrl, d.title);
+      openOrFocusCrmTab(id, d.ani, d.customerId, d.displayUrl, d.title, d.email);
       sendWs({ type: 'CRM_TAB_SELECTED', interactionId: id });
     }
   } else if (btn.dataset.action === 'close') {
@@ -733,10 +744,10 @@ function handleMessage(msg) {
     }
 
     case 'INTERACTION_ARRIVED': {
-      const { interactionId, ani, customerId, displayUrl, title, state } = msg;
-      interactions.set(interactionId, { ani, customerId: customerId || null, displayUrl: displayUrl || null, title: title || null, state: state || 'connected' });
+      const { interactionId, ani, email, customerId, displayUrl, title, state } = msg;
+      interactions.set(interactionId, { ani, email: email || null, customerId: customerId || null, displayUrl: displayUrl || null, title: title || null, state: state || 'connected' });
       renderInteractions();
-      openOrFocusCrmTab(interactionId, ani, customerId || null, displayUrl || null, title || null);
+      openOrFocusCrmTab(interactionId, ani, customerId || null, displayUrl || null, title || null, email || null);
       // Opening/reusing a tab brings it to the front. If the Desktop is actually
       // showing a DIFFERENT task, restore focus to that task's tab so the CRM
       // window mirrors the Desktop (the single source of truth). Suppress the
@@ -755,7 +766,7 @@ function handleMessage(msg) {
       _desktopSelectedId = msg.interactionId;
       const _sel = interactions.get(msg.interactionId);
       if (_sel) {
-        openOrFocusCrmTab(msg.interactionId, _sel.ani, _sel.customerId, _sel.displayUrl, _sel.title);
+        openOrFocusCrmTab(msg.interactionId, _sel.ani, _sel.customerId, _sel.displayUrl, _sel.title, _sel.email);
       } else {
         focusCrmTab(msg.interactionId);
       }

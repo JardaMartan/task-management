@@ -67,7 +67,7 @@
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  font-family: var(--md-font-family, 'CiscoSansTT', sans-serif);
+  font-family: var(--md-font-family, 'CiscoSansTT Regular', 'CiscoSansTT', sans-serif);
   padding: var(--tm-gutter);
   gap: var(--tm-row-gap);
   box-sizing: border-box;
@@ -235,5 +235,5 @@
   gap: var(--tm-view-gap);
   box-sizing: border-box;
   overflow-y: auto;
-  font-family: var(--md-font-family, 'CiscoSansTT', sans-serif);
+  font-family: var(--md-font-family, 'CiscoSansTT Regular', 'CiscoSansTT', sans-serif);
 }

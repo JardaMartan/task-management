@@ -108,7 +108,7 @@ const CHANNEL_BADGE_COLOR = {
   task: 'pastel', system: 'mint',
 };
 
-// ─── Mock data (Moneta Bank / ACME Corp context) ───────────────────────────
+// ─── Mock data (Innogy / ACME Corp context) ───────────────────────────
 
 const MOCK_CUSTOMER = {
   name: 'Sarah Johnson',

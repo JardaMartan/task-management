@@ -79,7 +79,7 @@
   var _wrapupWatchers = {};   // interactionId → watcher object
 
   // Tracks known active interactions for deduplication and CRM reconnect flush.
-  // interactionId → { ani, customerId, displayUrl, title, state }
+  // interactionId → { ani, email, customerId, displayUrl, title, state }
   var _activeInteractions = {};
 
   // Last interaction the agent had selected in the Desktop.
@@ -228,7 +228,7 @@
             if (data.state === 'ended') return;
             var msgType = data.state === 'wrapup' ? 'INTERACTION_WRAPUP' : 'INTERACTION_ARRIVED';
             _relaySend({ type: msgType, interactionId: interactionId, ani: data.ani,
-              customerId: data.customerId, displayUrl: data.displayUrl, title: data.title, state: data.state });
+              email: data.email, customerId: data.customerId, displayUrl: data.displayUrl, title: data.title, state: data.state });
             if (data.title) {
               _relaySend({ type: 'TASK_TITLE', interactionId: interactionId, title: data.title });
             }
@@ -451,9 +451,21 @@
     var _isOutbound = (parsed.contactDirection || '').toUpperCase() === 'OUTBOUND' ||
                       (parsed.outboundType || '').toUpperCase() === 'OUTDIAL';
 
-    // For workItem, prefer CAD email/phone over the internal UUID in ani.
-    // For OUTBOUND telephony, `ani` is the agent's outbound caller ID, so the
-    // customer number is the dialled destination (dnis / dn) instead.
+    // "email" CAD variable: collected by the IVR flow (e.g. for guest/unknown callers).
+    // Used as the primary customer identity in place of ANI — both for JDS lookup and
+    // for what is sent to CRM.
+    var _cadEmail = (parsed.callAssociatedData && parsed.callAssociatedData.email &&
+                     parsed.callAssociatedData.email.value) ||
+                    (parsed.callAssociatedDetails && parsed.callAssociatedDetails.email) ||
+                    null;
+
+    // Compute the effective customer identity (_ani) used for JDS lookup and sent
+    // to the Tab Manager / CRM:
+    //   • workItem:        prefer CAD email, then CAD phone, then raw ANI
+    //   • OUTBOUND voice:  customer number is DNIS (agent's outbound line ≠ customer)
+    //   • INBOUND voice:   prefer "email" CAD variable over raw ANI (phone);
+    //                      if no email CAD the raw phone ANI is used and JDS will
+    //                      attempt to resolve an email from it.
     var _ani = (_mediaType === 'workitem')
       ? ((parsed.callAssociatedData && parsed.callAssociatedData.email &&
           parsed.callAssociatedData.email.value) ||
@@ -468,7 +480,14 @@
              (parsed.callAssociatedData && parsed.callAssociatedData.dn &&
               parsed.callAssociatedData.dn.value) ||
              _rawAni)
-          : _rawAni);
+          : (_cadEmail || _rawAni));
+
+    // Explicit customer email sent alongside `ani` so the CRM URL template can
+    // use {email} as an alternative lookup key to {ani}. Prefer the CAD email,
+    // then the effective identity when it is itself an email address. When JDS
+    // resolves an email below, this is upgraded to the resolved value.
+    var _email = _isEmail(_cadEmail) ? _cadEmail
+               : (_isEmail(_ani) ? _ani : null);
 
     var _displayUrl = (
       (parsed.callAssociatedData && parsed.callAssociatedData.displayUrl &&
@@ -512,25 +531,30 @@
       // Track the interaction synchronously so a rapid follow-up task prop hits
       // the dedup short-circuit above instead of triggering a second lookup/send.
       _activeInteractions[parsed.interactionId] = {
-        ani: _ani, customerId: parsed.customerId || null,
+        ani: _ani, email: _email, customerId: parsed.customerId || null,
         displayUrl: _displayUrl, title: title || null, state: _state,
       };
       // Resolve a unified customer email (preferred over phone) so voice and
       // email interactions for the same person share a single CRM tab. The
       // ARRIVED/WRAPUP message is sent only once resolution completes, to avoid
       // the Tab Manager opening a second tab keyed on the raw phone number.
+      // _ani already carries the CAD email for inbound voice (when available),
+      // so _resolveCustomerEmail short-circuits immediately without a JDS call.
       _resolveCustomerEmail(_ani, function (resolvedEmail, resolvedName) {
         var _customerId = resolvedEmail || parsed.customerId || null;
+        var _finalEmail = resolvedEmail || _email || null;
         var _resolvedTitle = title || resolvedName || null;
         var _entry = _activeInteractions[parsed.interactionId];
         if (_entry) {
           _entry.customerId = _customerId;
+          _entry.email = _finalEmail;
           if (!_entry.title && _resolvedTitle) _entry.title = _resolvedTitle;
         }
         _relaySend({
           type: _msgType,
           interactionId: parsed.interactionId,
           ani: _ani,
+          email: _finalEmail,
           customerId: _customerId,
           displayUrl: _displayUrl,
           title: _resolvedTitle,

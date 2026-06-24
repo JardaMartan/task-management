@@ -46,9 +46,17 @@ const buildEmailCallDetails = (task) => {
   // For workItem tasks the ANI is a phone number, not an email — prefer the
   // explicit CAD 'email' field.  For native email tasks, ANI IS the sender address.
   const isWorkItem = task.mediaType === 'workItem';
-  const fromAddress = isWorkItem
-    ? (cadVal('email') || raw.fromAddress || cadVal('fromAddress') || task.email || null)
-    : (raw.fromAddress || cadVal('fromAddress') || task.ani || task.displayAni || task.phoneNumber || null);
+  const isSocial   = task.mediaType === 'social';
+  // For social/SMS outbound tasks the customer number is in customerNumber/dnis.
+  // ani is the entry-point name — never use it as a customer identity.
+  const fromAddress = isSocial
+    ? (task.customerNumber ||
+       task.callAssociatedData?.customerNumber?.value ||
+       task.dnis ||
+       null)
+    : isWorkItem
+      ? (cadVal('email') || raw.fromAddress || cadVal('fromAddress') || task.email || null)
+      : (raw.fromAddress || cadVal('fromAddress') || task.ani || task.displayAni || task.phoneNumber || null);
   const subject = raw.subject || cadVal('subject') || task.mediaProperties?.emailSubject || null;
   const gmailThreadId = raw.gmailThreadId || cadVal('gmailThreadId') || null;
   const rfcMessageId = raw.rfcMessageId || cadVal('rfcMessageId') || null;
@@ -61,6 +69,7 @@ const UnifiedView360 = ({ darkMode, mockMode, task }) => {
   const isEmailTask = task?.mediaType === 'email' || task?.mediaChannel === 'email';
   const isWorkItemTask = task?.mediaType === 'workItem';
   const isVoiceTask = task?.mediaType === 'telephony';
+  const isSocialTask = task?.mediaType === 'social'; // outbound SMS, etc.
   const initialTab = isEmailTask ? 'email' : isWorkItemTask ? 'task' : isVoiceTask ? 'voice' : 'history';
 
   // Customer email resolved from JDS (used when agent opens Email tab during a voice call).
@@ -99,7 +108,9 @@ const UnifiedView360 = ({ darkMode, mockMode, task }) => {
         ? 'task'
         : task?.mediaType === 'telephony'
           ? 'voice'
-          : null;
+          : task?.mediaType === 'social'
+            ? 'history'
+            : null;
     if (!targetTab) return;
     autoSwitchedForRef.current = id;
     // Reset nav history — new task context
