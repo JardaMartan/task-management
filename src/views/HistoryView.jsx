@@ -455,9 +455,13 @@ const normalizeEvent = (e, source) => {
     || d.uiData?.subTitle
     || null;
 
-  // Title: prefer human-readable uiData.title, then subject/title fields,
-  // then campaign template name, then typeLabel i18n key (translated at render time)
-  const title = d.uiData?.title
+  // Title resolution: for well-known Webex CC event types (task:*, agent:*, etc.) the
+  // CJDS uiData.title is set by the CC platform in the *tenant's* configured language,
+  // which may differ from the agent UI locale (e.g. Czech text on an English UI).
+  // Skip uiData.title for known types and fall through to the locale-agnostic typeLabel.
+  // For custom/unknown event types there is no i18n key, so uiData.title is kept.
+  const knownType = Boolean(EVENT_TYPE_LABELS[e.type]);
+  const title = (!knownType ? d.uiData?.title : null)
     || e.subject || e.title || e.summary
     || (isCampaign && campaign ? `Campaign: ${campaign}` : null)
     || typeLabel
@@ -593,13 +597,14 @@ const deriveInteractionMetrics = (events) => {
 const InteractionMetrics = ({ metrics }) => {
   if (!metrics) return null;
   const { ivrSec, queueSec, talkSec, holdSec, wrapupDurSec, wrapUpName } = metrics;
+  const { t } = useI18n();
 
   const chips = [];
-  if (ivrSec > 0)       chips.push({ key: 'ivr',    label: 'IVR',     value: fmtSec(ivrSec)       });
-  if (queueSec > 0)     chips.push({ key: 'queue',  label: 'Queue',   value: fmtSec(queueSec)     });
-  if (talkSec > 0)      chips.push({ key: 'talk',   label: 'Talk',    value: fmtSec(talkSec)      });
-  if (holdSec > 0)      chips.push({ key: 'hold',   label: 'Hold',    value: fmtSec(holdSec)      });
-  if (wrapupDurSec > 0) chips.push({ key: 'wrapup', label: 'Wrap-up', value: fmtSec(wrapupDurSec) });
+  if (ivrSec > 0)       chips.push({ key: 'ivr',    label: t('history.metrics.ivr'),    value: fmtSec(ivrSec)       });
+  if (queueSec > 0)     chips.push({ key: 'queue',  label: t('history.metrics.queue'),  value: fmtSec(queueSec)     });
+  if (talkSec > 0)      chips.push({ key: 'talk',   label: t('history.metrics.talk'),   value: fmtSec(talkSec)      });
+  if (holdSec > 0)      chips.push({ key: 'hold',   label: t('history.metrics.hold'),   value: fmtSec(holdSec)      });
+  if (wrapupDurSec > 0) chips.push({ key: 'wrapup', label: t('history.metrics.wrapup'), value: fmtSec(wrapupDurSec) });
 
   if (chips.length === 0 && !wrapUpName) return null;
 
@@ -613,7 +618,7 @@ const InteractionMetrics = ({ metrics }) => {
       ))}
       {wrapUpName && (
         <span className="history-view__metric-chip history-view__metric-chip--wrapup-name">
-          <span className="history-view__metric-label">Wrap-up</span>
+          <span className="history-view__metric-label">{t('history.metrics.wrapup')}</span>
           <span className="history-view__metric-value">{wrapUpName}</span>
         </span>
       )}
@@ -625,12 +630,13 @@ const InteractionMetrics = ({ metrics }) => {
 
 const InteractionSummary = ({ summary }) => {
   if (!summary) return null;
+  const { t } = useI18n();
   const { initialContactReason, keyActionsTaken, nextSteps, additionalContactReasons } = summary;
   const rows = [
-    { key: 'reason',     icon: '💬', label: 'Reason',      text: initialContactReason },
-    { key: 'actions',    icon: '✅',    label: 'Actions',     text: keyActionsTaken },
-    { key: 'next',       icon: '➡️',    label: 'Next steps',  text: nextSteps },
-    { key: 'additional', icon: '📎',    label: 'Additional',  text: additionalContactReasons },
+    { key: 'reason',     icon: '💬', label: t('history.aiSummaryReason'),      text: initialContactReason },
+    { key: 'actions',    icon: '✅',    label: t('history.aiSummaryActions'),     text: keyActionsTaken },
+    { key: 'next',       icon: '➡️',    label: t('history.aiSummaryNextSteps'),  text: nextSteps },
+    { key: 'additional', icon: '📎',    label: t('history.aiSummaryAdditional'),  text: additionalContactReasons },
   ].filter((r) => r.text);
 
   if (rows.length === 0) return null;
@@ -639,7 +645,7 @@ const InteractionSummary = ({ summary }) => {
     <div className="history-view__interaction-summary">
       <div className="history-view__interaction-summary-header">
         <span className="history-view__interaction-summary-icon">🤖</span>
-        AI Summary
+        {t('history.aiSummaryTitle')}
       </div>
       {rows.map((r) => (
         <div key={r.key} className="history-view__interaction-summary-row">
@@ -772,7 +778,7 @@ const EventRow = ({ ev }) => {
           <div className="history-view__meta">
             {ev.direction && (
               <span className={`history-view__chip history-view__chip--${ev.direction}`}>
-                {ev.direction === 'inbound' ? '↓' : '↑'} {ev.direction}
+                {ev.direction === 'inbound' ? '↓' : '↑'} {t(ev.direction === 'inbound' ? 'history.directionInbound' : 'history.directionOutbound')}
               </span>
             )}
             {ev.queueName && (
@@ -800,7 +806,7 @@ const EventRow = ({ ev }) => {
             {hasListItems && (
               <>
                 {hasRawData && (
-                  <div className="history-view__data-section-label">Details</div>
+                  <div className="history-view__data-section-label">{t('history.dataPanel.details')}</div>
                 )}
                 <dl className="history-view__data-grid">
                   {ev.uiListItems.map(({ key, value }, i) => {
@@ -820,7 +826,7 @@ const EventRow = ({ ev }) => {
             {hasRawData && (
               <>
                 {hasListItems && (
-                  <div className="history-view__data-section-label history-view__data-section-label--secondary">Raw fields</div>
+                  <div className="history-view__data-section-label history-view__data-section-label--secondary">{t('history.dataPanel.rawFields')}</div>
                 )}
                 <dl className="history-view__data-grid">
                   {Object.entries(ev.rawData).map(([k, v]) => {
@@ -907,7 +913,7 @@ const InteractionGroup = ({ taskId, events, darkMode, defaultOpen = false, cases
           <div className="history-view__meta">
             {direction && (
               <span className={`history-view__chip history-view__chip--${direction}`}>
-                {direction === 'inbound' ? '↓' : '↑'} {direction}
+                {direction === 'inbound' ? '↓' : '↑'} {t(direction === 'inbound' ? 'history.directionInbound' : 'history.directionOutbound')}
               </span>
             )}
             {queueName && (
@@ -987,7 +993,7 @@ const InteractionGroup = ({ taskId, events, darkMode, defaultOpen = false, cases
             )}
             {!caseData && (
               <div className="history-view__case-panel-meta" style={{ fontStyle: 'italic', opacity: 0.6 }}>
-                Case details not available in live mode
+                {t('history.dataPanel.caseDetailsNotAvailable')}
               </div>
             )}
           </div>
