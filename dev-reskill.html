@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bulk Reskilling Widget – Dev Harness</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="node_modules/@momentum-ui/core/css/momentum-ui.min.css" />
+  <!-- React externals expected by the webpack dev build -->
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-redux@8/dist/react-redux.js" crossorigin></script>
+  <script src="https://unpkg.com/redux@4/dist/redux.js" crossorigin></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body { margin: 0; font-family: "Segoe UI", "Helvetica Neue", sans-serif; background: #e8ecf0; color: #0a2236; }
+    .harness { display: flex; flex-direction: column; min-height: 100vh; }
+    .harness__bar {
+      display: flex; align-items: center; gap: 12px; padding: 8px 14px;
+      background: #1b2a38; color: #c8d8e8; font-size: 13px;
+    }
+    .harness__bar strong { color: #fff; }
+    .harness__bar label { color: #9cb0c4; }
+    .harness__bar select, .harness__bar button {
+      padding: 5px 10px; border-radius: 6px; border: 1px solid #374d5e;
+      background: #243547; color: #d4e4f0; font-size: 12px; cursor: pointer;
+    }
+    .harness__stage { flex: 1; display: flex; padding: 16px; }
+    .harness__frame {
+      flex: 1; background: #fff; border-radius: 10px; overflow: hidden;
+      box-shadow: 0 4px 18px rgba(0,0,0,.12); display: flex; min-height: 0;
+    }
+    #react-root { flex: 1; display: flex; min-height: 0; }
+  </style>
+</head>
+<body>
+  <div class="harness">
+    <div class="harness__bar">
+      <strong>Bulk Reskilling — Dev Harness</strong>
+      <span style="flex:1"></span>
+      <label for="locale">Locale</label>
+      <select id="locale">
+        <option value="en">en</option>
+        <option value="de">de</option>
+        <option value="cs">cs</option>
+      </select>
+      <button id="darkToggle" type="button">Toggle dark</button>
+    </div>
+    <div class="harness__stage">
+      <div class="harness__frame">
+        <div id="react-root"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Webpack dev bundle -->
+  <script src="bulk-reskill-dev.js"></script>
+
+  <script>
+    // Simple harness controls. The widget reads locale via the I18nProvider on
+    // mount; switching locale reloads with a ?locale= override.
+    (function () {
+      var params = new URLSearchParams(location.search);
+      var sel = document.getElementById('locale');
+      if (params.get('locale')) sel.value = params.get('locale');
+      sel.addEventListener('change', function () {
+        params.set('locale', sel.value);
+        location.search = params.toString();
+      });
+      document.getElementById('darkToggle').addEventListener('click', function () {
+        var root = document.querySelector('.reskill-root');
+        if (root) root.classList.toggle('md--dark');
+      });
+    })();
+  </script>
+</body>
+</html>

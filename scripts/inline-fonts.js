@@ -13,6 +13,8 @@ function inlineFonts() {
     const bundlePaths = [
       path.join(__dirname, '../dist/task-management.js'),
       path.join(__dirname, '../dist/task-management-standalone.js'),
+      path.join(__dirname, '../dist/bulk-reskill.js'),
+      path.join(__dirname, '../dist/bulk-reskill-standalone.js'),
     ].filter((p) => fs.existsSync(p));
 
     if (bundlePaths.length === 0) {
