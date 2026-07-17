@@ -9,8 +9,11 @@ coverage/
 *.env
 .DS_Store
 
-# Skip the large React bundle files; keep the small headless/header widget scripts.
-# dist/panel-layout-headless.js and dist/crm-sync-header.js are needed by the
-# relay-server Dockerfile (COPY dist/ dist/ → served at /dist/).
+# Skip only the non-standalone dev bundle (externalizes React; never served from
+# gcloud). The standalone bundles ARE served from /dist/ and referenced by the
+# Desktop layout JSON, so they must be uploaded:
+#   dist/task-management-standalone.js  → served at /dist/task-management-standalone.js
+#   dist/bulk-reskill-standalone.js     → served at /dist/bulk-reskill-standalone.js
+#   dist/panel-layout-headless.js, dist/crm-sync-header.js → header/headless widgets
+#   dist/crm-clicktocall-extension.zip  → downloadable extension package
 dist/task-management.js
-dist/task-management-standalone.js
