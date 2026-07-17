@@ -12,7 +12,7 @@
 
 const DEFAULTS = {
   enabled: true,
-  desktopUrlPattern: 'desktop.wxcc-us1.cisco.com',
+  desktopUrlPattern: 'desktop.wxcc',
   allowlist: [],
   channels: { call: true, sms: true, email: true },
 };

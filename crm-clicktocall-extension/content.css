@@ -1,10 +1,11 @@
-/* Injected click-to-contact buttons. Kept visually neutral so they blend into
-   any CRM. Uses high-contrast, small pills placed inline after the contact. */
+/* Injected click-to-contact buttons — styled as Momentum UI pills so they read
+   as first-class Webex CC actions on any CRM page. Icons are inline SVG glyphs
+   shaped after the Momentum handset / chat / email icons. */
 
 .crm-c2c-group {
   display: inline-flex;
-  gap: 3px;
-  margin: 0 4px;
+  gap: 6px;
+  margin: 0 6px;
   vertical-align: middle;
   white-space: nowrap;
 }
@@ -14,33 +15,45 @@
   box-sizing: border-box;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 5px;
+  gap: 5px;
+  height: 22px;
+  padding: 0 10px;
+  border-radius: 999px;               /* Momentum pill */
+  font-family: "CiscoSansTT", "Helvetica Neue", Helvetica, Arial, sans-serif;
   font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.2px;
   line-height: 1;
   cursor: pointer;
   color: #fff;
-  background: #4a8fe8;
-  border: 1px solid rgba(0, 0, 0, 0.15);
-  transition: transform 0.1s ease, background 0.15s ease;
+  background: #0052bf;                 /* Momentum blue-50 (interactive) */
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+  transition: background 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
   user-select: none;
 }
 
-.crm-c2c-btn:hover { transform: translateY(-1px); }
+.crm-c2c-btn:hover  { background: #00419e; transform: translateY(-1px); }
 .crm-c2c-btn:active { transform: translateY(0); }
+.crm-c2c-btn:focus-visible { outline: 2px solid #64b5f6; outline-offset: 1px; }
 
-.crm-c2c-btn--call  { background: #2fa060; }
-.crm-c2c-btn--sms   { background: #7a5cd8; }
-.crm-c2c-btn--email { background: #e08a2f; }
+.crm-c2c-ico { display: inline-flex; align-items: center; }
+.crm-c2c-ico svg { display: block; width: 14px; height: 14px; }
+.crm-c2c-label { white-space: nowrap; }
+
+/* Per-channel Momentum semantic accents */
+.crm-c2c-btn--call        { background: #279900; }   /* Momentum green-50 */
+.crm-c2c-btn--call:hover  { background: #1f7a00; }
+.crm-c2c-btn--sms         { background: #0052bf; }   /* Momentum blue-50 */
+.crm-c2c-btn--sms:hover   { background: #00419e; }
+.crm-c2c-btn--email       { background: #0052bf; }
+.crm-c2c-btn--email:hover { background: #00419e; }
 
 .crm-c2c-btn--sent {
-  background: #1f6f3f !important;
+  background: #148a00 !important;
   animation: crm-c2c-pulse 0.9s ease;
 }
 
 @keyframes crm-c2c-pulse {
-  0%   { box-shadow: 0 0 0 0 rgba(47, 160, 96, 0.6); }
-  100% { box-shadow: 0 0 0 8px rgba(47, 160, 96, 0); }
+  0%   { box-shadow: 0 0 0 0 rgba(39, 153, 0, 0.55); }
+  100% { box-shadow: 0 0 0 8px rgba(39, 153, 0, 0); }
 }
