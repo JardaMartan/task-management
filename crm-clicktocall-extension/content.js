@@ -131,8 +131,8 @@
 
   /* ── CRM SCANNER role ────────────────────────────────────────────────── */
 
-  // Momentum-style inline SVG glyphs (handset / chat / email) so the injected
-  // pills match Webex CC Desktop iconography without pulling in the icon font.
+  // Icons mirror the task-management Customer 360 contact card: Momentum handset
+  // / envelope glyphs, and the "SMS" speech-badge used by the widget.
   var CHANNEL_META = {
     call: {
       title: 'Call',
@@ -140,7 +140,7 @@
     },
     sms: {
       title: 'SMS',
-      svg: '<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M2 4.2C2 3.26 2.76 2.5 3.7 2.5h8.6c.94 0 1.7.76 1.7 1.7v4.6c0 .94-.76 1.7-1.7 1.7H6.9l-3.1 2.4a.4.4 0 0 1-.64-.32v-2.09C2.5 10.32 2 9.5 2 8.8V4.2z"/></svg>',
+      svg: '<svg viewBox="0 0 24 14" width="24" height="13" aria-hidden="true"><rect x="0" y="0" width="24" height="14" rx="4" fill="currentColor"/><text x="12" y="10.4" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="8" font-weight="700" fill="#fff">SMS</text></svg>',
     },
     email: {
       title: 'Email',
@@ -153,14 +153,12 @@
     group.className = 'crm-c2c-group';
     group.setAttribute('contenteditable', 'false');
 
-    var channels = contact.kind === 'email'
-      ? ['email']                     // an email address → email only
-      : ['call', 'sms', 'email'];     // a phone → call/sms (email disabled unless enabled)
+    // Mirror the Customer 360 card: one pill per action, labelled with the
+    // contact value. An email → Email pill; a phone → Call pill (+ SMS pill).
+    var channels = contact.kind === 'email' ? ['email'] : ['call', 'sms'];
 
     channels.forEach(function (ch) {
       if (!cfg.channels[ch]) return;
-      // For a phone contact we cannot email it, so skip email on phones.
-      if (ch === 'email' && contact.kind !== 'email') return;
       var meta = CHANNEL_META[ch];
       var btn = document.createElement('button');
       btn.type = 'button';
@@ -171,7 +169,7 @@
       ico.innerHTML = meta.svg;          // static, extension-authored markup only
       var lbl = document.createElement('span');
       lbl.className = 'crm-c2c-label';
-      lbl.textContent = meta.title;
+      lbl.textContent = contact.value;
       btn.appendChild(ico);
       btn.appendChild(lbl);
       btn.addEventListener('click', function (ev) {

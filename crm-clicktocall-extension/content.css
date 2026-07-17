@@ -1,19 +1,14 @@
-/* Injected click-to-contact buttons — styled to match the Customer 360 contact
-   card (soft pastel channel pills). When a contact offers more than one action
-   (e.g. a phone → Call + SMS) the actions are merged into ONE rounded pill with
-   thin dividers between the segments. Icons are inline SVG glyphs. */
+/* Injected click-to-contact buttons — one pastel pill per action, matching the
+   task-management Customer 360 contact card exactly (same colours, radius, icon
+   + value label). Icons are inline SVG (Momentum handset / envelope + SMS badge). */
 
 .crm-c2c-group {
   display: inline-flex;
-  align-items: stretch;
+  align-items: center;
+  gap: 6px;
   margin: 0 6px;
   vertical-align: middle;
   white-space: nowrap;
-  border: 1px solid #d5d9e0;
-  border-radius: 14px;                 /* single divided pill */
-  background: #fff;
-  overflow: hidden;
-  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.04);
   font-family: "CiscoSansTT", "Helvetica Neue", Helvetica, Arial, sans-serif;
 }
 
@@ -23,45 +18,38 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 3px 10px;
+  padding: 3px 10px 3px 8px;
+  border-radius: 14px;
+  border: 1px solid transparent;
   font-size: 12px;
   line-height: 1.4;
   cursor: pointer;
-  color: #495057;
-  background: transparent;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: background 0.15s, border-color 0.15s, opacity 0.15s;
   user-select: none;
 }
 
-/* Divider between grouped actions */
-.crm-c2c-btn + .crm-c2c-btn { border-left: 1px solid #e4e7ec; }
-
 .crm-c2c-ico { display: inline-flex; align-items: center; }
-.crm-c2c-ico svg { display: block; width: 13px; height: 13px; }
+.crm-c2c-ico svg { display: block; }
 .crm-c2c-label { white-space: nowrap; }
 
-/* Channel accents — Customer 360 palette */
-.crm-c2c-btn--call        { color: #1a6b35; }
-.crm-c2c-btn--call:hover  { background: #eaf7ee; }
-.crm-c2c-btn--sms         { color: #0d5fa0; }
-.crm-c2c-btn--sms:hover   { background: #e8f4fd; }
-.crm-c2c-btn--email       { color: #7c35b5; }
-.crm-c2c-btn--email:hover { background: #f0e8fb; }
+/* Email pill — purple */
+.crm-c2c-btn--email        { background: #f0e8fb; color: #7c35b5; border-color: #d5aef5; }
+.crm-c2c-btn--email:hover  { background: #e3d0f8; border-color: #9c4dcc; }
 
-.crm-c2c-btn:focus-visible { outline: 2px solid #1a73e8; outline-offset: -2px; }
+/* Call pill — green */
+.crm-c2c-btn--call         { background: #eaf7ee; color: #1a6b35; border-color: #9ad4ad; }
+.crm-c2c-btn--call:hover   { background: #d4f0dc; border-color: #2e8b57; }
 
-/* Brief confirmation flash after a click */
-.crm-c2c-btn--sent { background: #eaf7ee; color: #1a6b35; }
+/* SMS pill — blue */
+.crm-c2c-btn--sms          { background: #e8f4fd; color: #0d5fa0; border-color: #6ab4f5; }
+.crm-c2c-btn--sms:hover    { background: #cce6fc; border-color: #1a73e8; }
 
-/* Adapt to dark CRM pages */
+.crm-c2c-btn:focus-visible { outline: 2px solid #1a73e8; outline-offset: 1px; }
+.crm-c2c-btn--sent         { filter: brightness(0.95); }
+
+/* Adapt to dark CRM pages (mirrors the widget's md--dark accents) */
 @media (prefers-color-scheme: dark) {
-  .crm-c2c-group { background: rgba(255, 255, 255, 0.06); border-color: rgba(255, 255, 255, 0.18); }
-  .crm-c2c-btn { color: rgba(255, 255, 255, 0.75); }
-  .crm-c2c-btn + .crm-c2c-btn { border-left-color: rgba(255, 255, 255, 0.14); }
-  .crm-c2c-btn--call        { color: #6ddc8b; }
-  .crm-c2c-btn--call:hover  { background: rgba(26, 107, 53, 0.28); }
-  .crm-c2c-btn--sms         { color: #79b8ff; }
-  .crm-c2c-btn--sms:hover   { background: rgba(26, 115, 232, 0.24); }
-  .crm-c2c-btn--email       { color: #c990ff; }
-  .crm-c2c-btn--email:hover { background: rgba(152, 84, 203, 0.26); }
+  .crm-c2c-btn--email { background: rgba(152, 84, 203, 0.18); color: #c990ff; border-color: rgba(152, 84, 203, 0.35); }
+  .crm-c2c-btn--call  { background: rgba(26, 107, 53, 0.2);  color: #6ddc8b; border-color: rgba(26, 107, 53, 0.4); }
+  .crm-c2c-btn--sms   { background: rgba(26, 115, 232, 0.15); color: #79b8ff; border-color: rgba(26, 115, 232, 0.4); }
 }
