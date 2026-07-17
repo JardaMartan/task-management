@@ -66,6 +66,10 @@ const app = express();
 // Serve CRM Tab Manager static files
 app.use('/crm-tab-manager', express.static(path.join(__dirname, '..', 'crm-tab-manager')));
 
+// Serve the CRM Click-to-Contact browser extension (unpacked folder + demo).
+// The packaged zip is downloadable from /dist/crm-clicktocall-extension.zip.
+app.use('/crm-clicktocall-extension', express.static(path.join(__dirname, '..', 'crm-clicktocall-extension')));
+
 // Serve pre-built headless/header widget JS files
 app.use('/dist', express.static(path.join(__dirname, '..', 'dist')));
 

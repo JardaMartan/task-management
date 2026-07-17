@@ -15,9 +15,11 @@ WORKDIR /srv
 COPY relay-server/package.json relay-server/
 RUN cd relay-server && npm install --omit=dev
 
-# Copy server source, CRM Tab Manager static files, and pre-built widget scripts
+# Copy server source, CRM Tab Manager static files, the click-to-contact
+# extension, and pre-built widget scripts (dist includes the extension zip).
 COPY relay-server/server.js relay-server/
 COPY crm-tab-manager/ crm-tab-manager/
+COPY crm-clicktocall-extension/ crm-clicktocall-extension/
 COPY dist/ dist/
 
 WORKDIR /srv/relay-server
