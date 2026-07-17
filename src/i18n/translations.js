@@ -10,6 +10,7 @@ const baseDictionary = {
     },
     action: {
       email: 'Email customer',
+      emailRequested: 'Email requested from CRM',
       call: 'Call customer',
       calling: 'Calling',
       cancelCall: 'Cancel call',
@@ -538,6 +539,7 @@ const deDictionary = {
     },
     action: {
       email: 'Kunden per E-Mail kontaktieren',
+      emailRequested: 'E-Mail aus CRM angefordert',
       call: 'Kunden anrufen',
       calling: 'Verbinde',
       cancelCall: 'Anruf beenden',
@@ -1063,6 +1065,7 @@ const csDictionary = {
     },
     action: {
       email: 'Napsat zákazníkovi e-mail',
+      emailRequested: 'E-mail vyžádán z CRM',
       call: 'Zavolat zákazníkovi',
       calling: 'Volání',
       cancelCall: 'Zrušit hovor',

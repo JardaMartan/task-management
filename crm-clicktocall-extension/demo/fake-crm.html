@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Acme CRM (demo)</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+           max-width: 720px; margin: 40px auto; color: #1c2030; padding: 0 20px; }
+    h1 { font-size: 22px; }
+    .card { border: 1px solid #dde1ea; border-radius: 10px; padding: 18px 20px; margin: 16px 0; }
+    .card h2 { margin: 0 0 10px; font-size: 16px; }
+    .row { margin: 6px 0; }
+    .muted { color: #6b7280; }
+    button.add { margin-top: 20px; padding: 8px 14px; }
+  </style>
+</head>
+<body>
+  <h1>Acme CRM — Contact Records <span class="muted">(demo page)</span></h1>
+  <p class="muted">
+    Load the <strong>CRM Click-to-Contact</strong> extension, then reload this page.
+    Call / SMS / email buttons will be injected next to each contact below.
+  </p>
+
+  <div class="card">
+    <h2>Jane Doe</h2>
+    <div class="row">Mobile: +1 (415) 555-0142</div>
+    <div class="row">Office: 020 7946 0958</div>
+    <div class="row">Email: jane.doe@example.com</div>
+  </div>
+
+  <div class="card">
+    <h2>Karel Novák</h2>
+    <div class="row">Phone: <a href="tel:+420602123456">+420 602 123 456</a></div>
+    <div class="row">Email: <a href="mailto:karel.novak@example.cz">karel.novak@example.cz</a></div>
+  </div>
+
+  <div class="card">
+    <h2>Support queue</h2>
+    <div class="row">Reach the customer on +49 30 901820 or support@acme.example.</div>
+    <div class="row muted">Order #10029384756 — not a phone number (should be ignored).</div>
+  </div>
+
+  <button class="add" id="add">Add contact dynamically (tests SPA rescan)</button>
+
+  <script>
+    // Simulate an SPA injecting new content after load — the extension's
+    // MutationObserver should pick this up and inject buttons.
+    document.getElementById('add').addEventListener('click', function () {
+      var card = document.createElement('div');
+      card.className = 'card';
+      card.innerHTML = '<h2>New Lead</h2>' +
+        '<div class="row">Cell: +1 202-555-0175</div>' +
+        '<div class="row">Email: new.lead@example.io</div>';
+      document.body.insertBefore(card, document.getElementById('add'));
+    });
+  </script>
+</body>
+</html>

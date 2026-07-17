@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+           background: #12141a; color: #d8ddf0; margin: 0; padding: 14px; width: 240px; }
+    h1 { font-size: 14px; margin: 0 0 10px; }
+    .row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .status { font-size: 12px; }
+    .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }
+    .dot--on { background: #3ddc84; } .dot--off { background: #e05c5c; }
+    button { width: 100%; padding: 8px; background: #2c3140; color: #d8ddf0; border: none;
+      border-radius: 6px; font-size: 12px; cursor: pointer; margin-top: 6px; }
+    button.primary { background: #4a8fe8; color: #fff; }
+    button:hover { filter: brightness(1.1); }
+  </style>
+</head>
+<body>
+  <h1>CRM Click-to-Contact</h1>
+  <div class="row">
+    <span class="status"><span class="dot" id="dot"></span><span id="state">…</span></span>
+  </div>
+  <div class="status" id="page" style="color:#7880a0; margin-bottom:8px;"></div>
+  <button class="primary" id="toggle">Toggle on/off</button>
+  <button id="options">Open settings</button>
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CRM Click-to-Contact — Options</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+           background: #12141a; color: #d8ddf0; margin: 0; padding: 24px; }
+    .wrap { max-width: 560px; margin: 0 auto; }
+    h1 { font-size: 18px; margin: 0 0 4px; }
+    p.sub { color: #7880a0; font-size: 13px; margin: 0 0 20px; }
+    .field { margin-bottom: 16px; }
+    label { display: block; font-size: 13px; margin-bottom: 6px; font-weight: 600; }
+    input[type=text] { width: 100%; box-sizing: border-box; padding: 8px 10px;
+      background: #1b1e27; border: 1px solid #2c3140; border-radius: 6px; color: #d8ddf0; font-size: 13px; }
+    small { display: block; color: #7880a0; font-size: 12px; margin-top: 4px; }
+    .row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .channels { display: flex; gap: 16px; }
+    button { padding: 9px 18px; background: #4a8fe8; color: #fff; border: none;
+      border-radius: 6px; font-size: 13px; cursor: pointer; }
+    button:hover { background: #3f7fd0; }
+    .saved { color: #3ddc84; font-size: 13px; margin-left: 12px; opacity: 0; transition: opacity .2s; }
+    .saved.show { opacity: 1; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>CRM Click-to-Contact</h1>
+    <p class="sub">Scan CRM pages for contacts and drive the Webex CC Desktop widget.</p>
+
+    <div class="field row">
+      <input type="checkbox" id="enabled" />
+      <label for="enabled" style="margin:0;">Enabled</label>
+    </div>
+
+    <div class="field">
+      <label for="desktopUrlPattern">Webex CC Desktop URL pattern</label>
+      <input type="text" id="desktopUrlPattern" placeholder="desktop.wxcc-us1.cisco.com" />
+      <small>Substring or <code>*</code>-glob matched against the Desktop tab URL. Clicks are routed to tabs matching this.</small>
+    </div>
+
+    <div class="field">
+      <label for="allowlist">CRM URL allowlist (optional)</label>
+      <input type="text" id="allowlist" placeholder="crm.example.com, salesforce.com" />
+      <small>Comma-separated substrings. Leave empty to scan every non-Desktop page.</small>
+    </div>
+
+    <div class="field">
+      <label>Channels</label>
+      <div class="channels">
+        <span class="row"><input type="checkbox" id="ch-call" /><label for="ch-call" style="margin:0;">Call</label></span>
+        <span class="row"><input type="checkbox" id="ch-sms" /><label for="ch-sms" style="margin:0;">SMS</label></span>
+        <span class="row"><input type="checkbox" id="ch-email" /><label for="ch-email" style="margin:0;">Email</label></span>
+      </div>
+    </div>
+
+    <div class="field">
+      <button id="save">Save</button>
+      <span class="saved" id="saved">Saved ✓</span>
+    </div>
+  </div>
+  <script src="options.js"></script>
+</body>
+</html>

@@ -6,10 +6,16 @@ import ReactDOM from 'react-dom';
 import { Provider } from 'react-redux';
 import store from './store';
 import { clearSearch, stopJDSStreaming } from './store';
+import { initCrmContactBridge } from './crmContactBridge';
 import { setJDSDataCenter } from './api';
 import TaskManagement from './TaskManagement';
 import { I18nProvider } from './i18n/I18nContext';
 import { detectBrowserLocale } from './i18n/translations';
+
+// Bridge for the CRM Click-to-Contact browser extension: turns inbound
+// window.postMessage requests into Desktop SDK actions. Safe to call in every
+// mount path — it self-guards against double registration.
+initCrmContactBridge(store);
 
 /**
  * Inject CSS into the container (shadow DOM or document head)

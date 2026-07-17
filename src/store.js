@@ -16,6 +16,7 @@ import widgetReducer, {
   setWidgetConfig, setEmailConfig, setDarkMode,
   toggleRelatedCaseExpanded,
   clearSearch, stopJDSStreaming, setOutdialPending, markOutdialDelivered,
+  setPendingEmailCompose,
   // Thunks
   initializeDesktopSDK, hydrateWidgetContext, loadCaseTask, loadMoreCaseHistory,
   saveCaseNotes, saveCaseStatus, toggleCustomerPanelAndLoadCases,
@@ -50,6 +51,7 @@ export {
   setWidgetConfig, setEmailConfig, setDarkMode,
   toggleRelatedCaseExpanded,
   clearSearch, stopJDSStreaming, setOutdialPending, markOutdialDelivered,
+  setPendingEmailCompose,
   // Widget thunks
   initializeDesktopSDK, hydrateWidgetContext, loadCaseTask, loadMoreCaseHistory,
   saveCaseNotes, saveCaseStatus, toggleCustomerPanelAndLoadCases,

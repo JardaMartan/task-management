@@ -18,10 +18,11 @@
  */
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { useSelector } from 'react-redux';
+import { useSelector, useDispatch } from 'react-redux';
 import { Icon } from '@momentum-ui/react';
 import { useI18n } from '../i18n/I18nContext';
 import { getMockData } from '../mock/mockData';
+import { setPendingEmailCompose } from '../store/slices/widgetSlice';
 import CasesView from './CasesView';
 import HistoryView from './HistoryView';
 import CustomerContactCard from './CustomerContactCard';
@@ -65,6 +66,7 @@ const buildEmailCallDetails = (task) => {
 
 const UnifiedView360 = ({ darkMode, mockMode, task }) => {
   const { t, locale } = useI18n();
+  const dispatch = useDispatch();
   // Auto-navigate to the correct tab when a task arrives.
   const isEmailTask = task?.mediaType === 'email' || task?.mediaChannel === 'email';
   const isWorkItemTask = task?.mediaType === 'workItem';
@@ -142,6 +144,18 @@ const UnifiedView360 = ({ darkMode, mockMode, task }) => {
     setFwdStack([]);
     applyNav(id, {});
   };
+
+  // External email-compose trigger (e.g. CRM Click-to-Contact extension via
+  // handleInboundContactRequest → setPendingEmailCompose). Navigates to the
+  // Email tab in compose mode for the requested address — the same result as
+  // clicking the email button on the CustomerContactCard — then clears the
+  // signal so it fires once per request.
+  const pendingEmailCompose = useSelector((s) => s.widget?.pendingEmailCompose);
+  useEffect(() => {
+    if (!pendingEmailCompose || !pendingEmailCompose.address) return;
+    navigate('email', { composeMode: true, composeTo: pendingEmailCompose.address });
+    dispatch(setPendingEmailCompose(null));
+  }, [pendingEmailCompose, navigate, dispatch]);
 
   const handleBack = () => {
     if (histStack.length === 0) return;

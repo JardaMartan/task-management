@@ -110,6 +110,11 @@ const widgetSlice = createSlice({
             whatsappOrigin: null,
         },
         outdialPending: null,  // { destination: string } while an outdial call is active, null otherwise
+        // Signal to open the Email composer for a given address, set by an external
+        // trigger (e.g. the CRM Click-to-Contact extension via handleInboundContactRequest).
+        // UnifiedView360 consumes this and navigates to the Email tab in compose mode,
+        // then clears it. Shape: { address: string, ts: number } | null
+        pendingEmailCompose: null,
         emailConfig: {
             tokenBrokerUrl: null,
             webexConnectOutboundWebhook: null,
@@ -324,6 +329,10 @@ const widgetSlice = createSlice({
                 state.outdialPending = { ...state.outdialPending, delivered: true };
             }
         },
+        setPendingEmailCompose: (state, action) => {
+            // action.payload: { address, ts } to request the Email composer, null to clear.
+            state.pendingEmailCompose = action.payload || null;
+        },
         setAnalyticsOpen: (state, action) => {
             state.analyticsOpen = Boolean(action.payload);
             try { localStorage.setItem('wx_analytics_open', String(state.analyticsOpen)); } catch {}
@@ -377,6 +386,7 @@ export const {
     stopJDSStreaming,
     setOutdialPending,
     markOutdialDelivered,
+    setPendingEmailCompose,
     setAnalyticsOpen,
     toggleAnalyticsOpen,
     setAnalyticsTrendDays,
@@ -969,5 +979,50 @@ export const initiateSmsChat = ({ destination }) => async (dispatch, getState) =
         console.error('[WidgetSlice] initiateSmsChat error:', err);
         dispatch(setStatus({ message: err.message || 'customer.action.sms.failed', type: 'error' }));
         setTimeout(() => dispatch(clearStatus()), 4000);
+    }
+};
+
+/**
+ * Handle an inbound "initiate contact" request originating from the CRM
+ * Click-to-Contact browser extension (via crmContactBridge.js).
+ *
+ * The extension detects a phone/email in the CRM page and posts a message that
+ * the widget bridge forwards here. We route it to the matching Desktop SDK
+ * action, reusing the exact same thunks the CustomerContactCard buttons use.
+ *
+ * @param {object} params
+ * @param {'call'|'sms'|'email'} params.channel
+ * @param {string} params.destination - phone number (call/sms) or email address
+ */
+export const handleInboundContactRequest = ({ channel, destination }) => async (dispatch, getState) => {
+    const dest = (destination || '').trim();
+    if (!dest) {
+        console.warn('[WidgetSlice] handleInboundContactRequest: empty destination');
+        return;
+    }
+    console.log('[WidgetSlice] inbound contact request:', channel, dest);
+
+    switch (channel) {
+        case 'call': {
+            const entryPointId = getState().widget?.widgetConfig?.outdialEntryPointId;
+            dispatch(initiateOutdialCall({ entryPointId, destination: dest }));
+            break;
+        }
+        case 'sms': {
+            dispatch(initiateSmsChat({ destination: dest }));
+            break;
+        }
+        case 'email': {
+            // Mirror the Customer360 email button: open the Email composer for
+            // this address. UnifiedView360 consumes pendingEmailCompose and
+            // navigates to the Email tab in compose mode (composeMode + composeTo).
+            dispatch(setPendingEmailCompose({ address: dest, ts: Date.now() }));
+            dispatch(setStatus({ message: 'customer.action.emailRequested', type: 'info', detail: dest }));
+            setTimeout(() => dispatch(clearStatus()), 4000);
+            console.log('[WidgetSlice] email compose requested for', dest);
+            break;
+        }
+        default:
+            console.warn('[WidgetSlice] handleInboundContactRequest: unknown channel', channel);
     }
 };
