@@ -1,13 +1,20 @@
-/* Injected click-to-contact buttons — styled as Momentum UI pills so they read
-   as first-class Webex CC actions on any CRM page. Icons are inline SVG glyphs
-   shaped after the Momentum handset / chat / email icons. */
+/* Injected click-to-contact buttons — styled to match the Customer 360 contact
+   card (soft pastel channel pills). When a contact offers more than one action
+   (e.g. a phone → Call + SMS) the actions are merged into ONE rounded pill with
+   thin dividers between the segments. Icons are inline SVG glyphs. */
 
 .crm-c2c-group {
   display: inline-flex;
-  gap: 6px;
+  align-items: stretch;
   margin: 0 6px;
   vertical-align: middle;
   white-space: nowrap;
+  border: 1px solid #d5d9e0;
+  border-radius: 14px;                 /* single divided pill */
+  background: #fff;
+  overflow: hidden;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.04);
+  font-family: "CiscoSansTT", "Helvetica Neue", Helvetica, Arial, sans-serif;
 }
 
 .crm-c2c-btn {
@@ -16,44 +23,45 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  height: 22px;
-  padding: 0 10px;
-  border-radius: 999px;               /* Momentum pill */
-  font-family: "CiscoSansTT", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  padding: 3px 10px;
   font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0.2px;
-  line-height: 1;
+  line-height: 1.4;
   cursor: pointer;
-  color: #fff;
-  background: #0052bf;                 /* Momentum blue-50 (interactive) */
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
-  transition: background 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+  color: #495057;
+  background: transparent;
+  transition: background 0.15s ease, color 0.15s ease;
   user-select: none;
 }
 
-.crm-c2c-btn:hover  { background: #00419e; transform: translateY(-1px); }
-.crm-c2c-btn:active { transform: translateY(0); }
-.crm-c2c-btn:focus-visible { outline: 2px solid #64b5f6; outline-offset: 1px; }
+/* Divider between grouped actions */
+.crm-c2c-btn + .crm-c2c-btn { border-left: 1px solid #e4e7ec; }
 
 .crm-c2c-ico { display: inline-flex; align-items: center; }
-.crm-c2c-ico svg { display: block; width: 14px; height: 14px; }
+.crm-c2c-ico svg { display: block; width: 13px; height: 13px; }
 .crm-c2c-label { white-space: nowrap; }
 
-/* Per-channel Momentum semantic accents */
-.crm-c2c-btn--call        { background: #279900; }   /* Momentum green-50 */
-.crm-c2c-btn--call:hover  { background: #1f7a00; }
-.crm-c2c-btn--sms         { background: #0052bf; }   /* Momentum blue-50 */
-.crm-c2c-btn--sms:hover   { background: #00419e; }
-.crm-c2c-btn--email       { background: #0052bf; }
-.crm-c2c-btn--email:hover { background: #00419e; }
+/* Channel accents — Customer 360 palette */
+.crm-c2c-btn--call        { color: #1a6b35; }
+.crm-c2c-btn--call:hover  { background: #eaf7ee; }
+.crm-c2c-btn--sms         { color: #0d5fa0; }
+.crm-c2c-btn--sms:hover   { background: #e8f4fd; }
+.crm-c2c-btn--email       { color: #7c35b5; }
+.crm-c2c-btn--email:hover { background: #f0e8fb; }
 
-.crm-c2c-btn--sent {
-  background: #148a00 !important;
-  animation: crm-c2c-pulse 0.9s ease;
-}
+.crm-c2c-btn:focus-visible { outline: 2px solid #1a73e8; outline-offset: -2px; }
 
-@keyframes crm-c2c-pulse {
-  0%   { box-shadow: 0 0 0 0 rgba(39, 153, 0, 0.55); }
-  100% { box-shadow: 0 0 0 8px rgba(39, 153, 0, 0); }
+/* Brief confirmation flash after a click */
+.crm-c2c-btn--sent { background: #eaf7ee; color: #1a6b35; }
+
+/* Adapt to dark CRM pages */
+@media (prefers-color-scheme: dark) {
+  .crm-c2c-group { background: rgba(255, 255, 255, 0.06); border-color: rgba(255, 255, 255, 0.18); }
+  .crm-c2c-btn { color: rgba(255, 255, 255, 0.75); }
+  .crm-c2c-btn + .crm-c2c-btn { border-left-color: rgba(255, 255, 255, 0.14); }
+  .crm-c2c-btn--call        { color: #6ddc8b; }
+  .crm-c2c-btn--call:hover  { background: rgba(26, 107, 53, 0.28); }
+  .crm-c2c-btn--sms         { color: #79b8ff; }
+  .crm-c2c-btn--sms:hover   { background: rgba(26, 115, 232, 0.24); }
+  .crm-c2c-btn--email       { color: #c990ff; }
+  .crm-c2c-btn--email:hover { background: rgba(152, 84, 203, 0.26); }
 }
