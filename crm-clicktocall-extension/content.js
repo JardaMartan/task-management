@@ -105,14 +105,26 @@
     role = 'desktop';
     chrome.runtime.onMessage.addListener(function (msg) {
       if (!msg || msg.type !== 'INITIATE_CONTACT') return;
-      // Hand off to the widget's main-world listener. Same-origin postMessage.
-      window.postMessage({
+      var payload = {
         __crmC2C: true,
         type: 'INITIATE_CONTACT',
         channel: msg.channel,
         destination: msg.destination,
+        id: msg.id || (Date.now() + '-' + Math.random().toString(36).slice(2)),
         ts: Date.now(),
-      }, window.location.origin);
+      };
+      // 1) A widget bridge living in THIS frame (crmContactBridge, same window).
+      try { window.postMessage(payload, '*'); } catch (e) { /* ignore */ }
+      // 2) Forward down into any child iframes — covers widgets hosted in a
+      //    sandboxed / blob: frame where the content script cannot be injected,
+      //    so the shell frame relays the request into the widget frame.
+      try {
+        var frames = document.querySelectorAll('iframe');
+        for (var i = 0; i < frames.length; i++) {
+          try { if (frames[i].contentWindow) frames[i].contentWindow.postMessage(payload, '*'); } catch (e) { /* cross-origin */ }
+        }
+      } catch (e) { /* ignore */ }
+      console.log('[crm-c2c] bridge re-emitted', msg.channel, msg.destination, 'on', location.host);
     });
     console.log('[crm-c2c] desktop bridge active on', location.host);
   }
@@ -282,9 +294,12 @@
   /* ── bootstrap ───────────────────────────────────────────────────────── */
 
   function start() {
-    if (isDesktopContext()) {
-      initDesktopBridge();
-    } else {
+    // Every frame installs the bridge listener so a routed INITIATE_CONTACT is
+    // re-emitted into whichever frame actually hosts the widget (and forwarded
+    // to child frames). Scanning stays limited to non-Desktop pages so we never
+    // inject buttons into the Desktop UI itself.
+    initDesktopBridge();
+    if (!isDesktopContext()) {
       initCrmScanner();
     }
   }

@@ -71,11 +71,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     const cfg = await getConfig();
     if (!cfg.enabled) { sendResponse({ ok: false, reason: 'disabled' }); return; }
 
-    const tabs = await findDesktopTabs(cfg.desktopUrlPattern);
+    // Stable id so the widget can de-dupe the direct + forwarded delivery paths.
+    const id = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
+
+    let tabs = await findDesktopTabs(cfg.desktopUrlPattern);
+    let mode = 'pattern';
     if (tabs.length === 0) {
-      console.warn('[crm-c2c/bg] No Desktop tab found for pattern', cfg.desktopUrlPattern);
-      sendResponse({ ok: false, reason: 'no-desktop-tab' });
-      return;
+      // Pattern matched no tab — fall back to broadcasting to every tab. Frames
+      // without the bridge listener simply reject; only the widget frame acts.
+      console.warn('[crm-c2c/bg] no tab matched desktopUrlPattern', JSON.stringify(cfg.desktopUrlPattern), '— broadcasting to all tabs');
+      try { tabs = await chrome.tabs.query({}); } catch (e) { tabs = []; }
+      mode = 'broadcast';
     }
 
     let delivered = 0;
@@ -85,15 +91,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           type: 'INITIATE_CONTACT',
           channel: msg.channel,
           destination: msg.destination,
+          id,
         });
         delivered++;
       } catch (e) {
-        // The bridge content script may not be injected yet in that tab.
-        console.warn('[crm-c2c/bg] sendMessage to tab', t.id, 'failed:', e && e.message);
+        // The bridge content script may not be injected in that tab/frame.
       }
     }
-    console.log('[crm-c2c/bg] routed', msg.channel, msg.destination, '→', delivered, 'desktop tab(s)');
-    sendResponse({ ok: delivered > 0, delivered });
+    console.log('[crm-c2c/bg]', mode, 'routed', msg.channel, msg.destination, '→', delivered, 'tab(s)');
+    sendResponse({ ok: delivered > 0, delivered, mode });
   })();
 
   return true; // async sendResponse
