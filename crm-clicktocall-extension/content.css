@@ -1,14 +1,18 @@
-/* Injected click-to-contact buttons — compact icon-only pills using genuine
-   Momentum UI glyphs (handset / sms / email), coloured with the task-management
-   Customer 360 channel palette. No contact value is rendered. */
+/* Injected click-to-contact buttons — icon-only Momentum glyphs (handset / sms /
+   email) grouped into a single divided pill. A phone → Call | SMS segments; an
+   email → one segment. Colours follow the task-management Customer 360 palette. */
 
 .crm-c2c-group {
   display: inline-flex;
-  align-items: center;
-  gap: 6px;
+  align-items: stretch;
   margin: 0 6px;
   vertical-align: middle;
   white-space: nowrap;
+  border: 1px solid #d5d9e0;
+  border-radius: 999px;                 /* full pill */
+  background: #fff;
+  overflow: hidden;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.04);
 }
 
 .crm-c2c-btn {
@@ -17,36 +21,41 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  border: 1px solid transparent;
+  min-width: 30px;
+  padding: 4px 9px;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, opacity 0.15s;
+  color: #495057;
+  background: transparent;
+  transition: background 0.15s, color 0.15s;
   user-select: none;
 }
+
+/* Divider between grouped actions */
+.crm-c2c-btn + .crm-c2c-btn { border-left: 1px solid #e4e7ec; }
 
 .crm-c2c-ico { display: inline-flex; align-items: center; }
 .crm-c2c-ico svg { display: block; width: 15px; height: 15px; }
 
-/* Email — purple */
-.crm-c2c-btn--email        { background: #f0e8fb; color: #7c35b5; border-color: #d5aef5; }
-.crm-c2c-btn--email:hover  { background: #e3d0f8; border-color: #9c4dcc; }
+/* Channel accents — Customer 360 palette (icon colour + hover tint) */
+.crm-c2c-btn--call         { color: #1a6b35; }
+.crm-c2c-btn--call:hover   { background: #eaf7ee; }
+.crm-c2c-btn--sms          { color: #0d5fa0; }
+.crm-c2c-btn--sms:hover    { background: #e8f4fd; }
+.crm-c2c-btn--email        { color: #7c35b5; }
+.crm-c2c-btn--email:hover  { background: #f0e8fb; }
 
-/* Call — green */
-.crm-c2c-btn--call         { background: #eaf7ee; color: #1a6b35; border-color: #9ad4ad; }
-.crm-c2c-btn--call:hover   { background: #d4f0dc; border-color: #2e8b57; }
-
-/* SMS — blue */
-.crm-c2c-btn--sms          { background: #e8f4fd; color: #0d5fa0; border-color: #6ab4f5; }
-.crm-c2c-btn--sms:hover    { background: #cce6fc; border-color: #1a73e8; }
-
-.crm-c2c-btn:focus-visible { outline: 2px solid #1a73e8; outline-offset: 1px; }
-.crm-c2c-btn--sent         { filter: brightness(0.95); }
+.crm-c2c-btn:focus-visible { outline: 2px solid #1a73e8; outline-offset: -2px; }
+.crm-c2c-btn--sent         { background: #eaf7ee; }
 
 /* Adapt to dark CRM pages (mirrors the widget's md--dark accents) */
 @media (prefers-color-scheme: dark) {
-  .crm-c2c-btn--email { background: rgba(152, 84, 203, 0.18); color: #c990ff; border-color: rgba(152, 84, 203, 0.35); }
-  .crm-c2c-btn--call  { background: rgba(26, 107, 53, 0.2);  color: #6ddc8b; border-color: rgba(26, 107, 53, 0.4); }
-  .crm-c2c-btn--sms   { background: rgba(26, 115, 232, 0.15); color: #79b8ff; border-color: rgba(26, 115, 232, 0.4); }
+  .crm-c2c-group { background: rgba(255, 255, 255, 0.06); border-color: rgba(255, 255, 255, 0.18); }
+  .crm-c2c-btn { color: rgba(255, 255, 255, 0.75); }
+  .crm-c2c-btn + .crm-c2c-btn { border-left-color: rgba(255, 255, 255, 0.14); }
+  .crm-c2c-btn--call         { color: #6ddc8b; }
+  .crm-c2c-btn--call:hover   { background: rgba(26, 107, 53, 0.28); }
+  .crm-c2c-btn--sms          { color: #79b8ff; }
+  .crm-c2c-btn--sms:hover    { background: rgba(26, 115, 232, 0.24); }
+  .crm-c2c-btn--email        { color: #c990ff; }
+  .crm-c2c-btn--email:hover  { background: rgba(152, 84, 203, 0.26); }
 }
