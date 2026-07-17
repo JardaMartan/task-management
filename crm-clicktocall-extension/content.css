@@ -3,7 +3,7 @@
    email → one segment. Colours follow the task-management Customer 360 palette. */
 
 .crm-c2c-group {
-  display: inline-flex;
+  display: none;                        /* revealed on hover via --visible */
   align-items: stretch;
   margin: 0 6px;
   vertical-align: middle;
@@ -14,6 +14,8 @@
   overflow: hidden;
   box-shadow: 0 1px 1px rgba(0, 0, 0, 0.04);
 }
+
+.crm-c2c-group--visible { display: inline-flex; }
 
 .crm-c2c-btn {
   all: unset;

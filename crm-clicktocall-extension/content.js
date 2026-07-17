@@ -187,6 +187,28 @@
     setTimeout(function () { btn.classList.remove('crm-c2c-btn--sent'); }, 900);
   }
 
+  // Reveal a button group only while its contact host (or the group itself) is
+  // hovered. A short grace period lets the pointer travel from the text to the
+  // pill without it disappearing.
+  function attachHover(host, group) {
+    if (!host || !group) return;
+    var hideTimer = null;
+    function show() {
+      if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+      group.classList.add('crm-c2c-group--visible');
+    }
+    function hide() {
+      hideTimer = setTimeout(function () {
+        group.classList.remove('crm-c2c-group--visible');
+        hideTimer = null;
+      }, 200);
+    }
+    host.addEventListener('mouseenter', show);
+    host.addEventListener('mouseleave', hide);
+    group.addEventListener('mouseenter', show);
+    group.addEventListener('mouseleave', hide);
+  }
+
   function sendContact(channel, destination) {
     try {
       chrome.runtime.sendMessage({ type: 'INITIATE_CONTACT', channel: channel, destination: destination });
@@ -208,8 +230,13 @@
         ? { kind: 'email', value: decodeURIComponent(href.slice(7).split('?')[0]).trim() }
         : { kind: 'phone', value: SCAN.normalizePhone(decodeURIComponent(href.slice(4))) };
       if (!contact.value) continue;
+      // Phone links must still be a valid E.164 number (leading +).
+      if (contact.kind === 'phone' && !SCAN.isE164(contact.value)) continue;
       var group = makeButtonGroup(contact);
-      if (group && a.parentNode) a.insertAdjacentElement('afterend', group);
+      if (group && a.parentNode) {
+        a.insertAdjacentElement('afterend', group);
+        attachHover(a, group);
+      }
     }
   }
 
@@ -250,11 +277,12 @@
         var g = makeButtonGroup({ kind: 'phone', value: p.value });
         if (g) groups.push(g);
       });
-      // Append the button groups right after the text's host element.
+      // Insert each button group right after the text's host element and reveal
+      // it only while the contact (or the pill) is hovered.
       groups.forEach(function (g) {
-        if (host.parentNode) host.insertAdjacentElement
-          ? host.insertAdjacentElement('afterend', g)
-          : host.parentNode.appendChild(g);
+        if (host.insertAdjacentElement) host.insertAdjacentElement('afterend', g);
+        else if (host.parentNode) host.parentNode.appendChild(g);
+        attachHover(host, g);
       });
     });
   }

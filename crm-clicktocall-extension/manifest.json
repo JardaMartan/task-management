@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Webex CC — CRM Click-to-Contact",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "Scans third-party CRM pages for email/phone contacts and injects call, SMS and email buttons that drive the Webex CC Desktop widget.",
   "permissions": ["storage", "tabs", "scripting"],
   "host_permissions": ["<all_urls>"],
