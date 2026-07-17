@@ -6,7 +6,7 @@ import { setSearch, setOnlyChanged, setShowAllSkills, stageSkill } from '../stor
 import {
   effectiveValue, isChanged, agentsForTeams, filterAgents, relevantSkills,
 } from '../selectors';
-import { assignAgentState } from '../analytics';
+import { resolveAgentState } from '../analytics';
 import ViewModeToggle from './ViewModeToggle';
 import AgentFilterChip from './AgentFilterChip';
 
@@ -105,6 +105,7 @@ const SkillMatrix = () => {
   const showAllSkills = useSelector((s) => s.reskill.showAllSkills);
   const agentStateFilter = useSelector((s) => s.reskill.agentStateFilter);
   const draft = useSelector((s) => s.reskill.draft);
+  const liveStates = useSelector((s) => s.reskill.liveAnalytics?.agentStates || null);
 
   const names = React.useMemo(() => teamNameMap(teams), [teams]);
 
@@ -116,9 +117,9 @@ const SkillMatrix = () => {
   // Agent-state filter (from the analytics donut) applies only with teams selected.
   const stateScoped = React.useMemo(
     () => (agentStateFilter
-      ? scopedAgents.filter((a) => assignAgentState(a.id) === agentStateFilter)
+      ? scopedAgents.filter((a) => resolveAgentState(a.id, liveStates) === agentStateFilter)
       : scopedAgents),
-    [scopedAgents, agentStateFilter],
+    [scopedAgents, agentStateFilter, liveStates],
   );
 
   const visibleAgents = React.useMemo(

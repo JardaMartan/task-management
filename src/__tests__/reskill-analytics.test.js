@@ -32,6 +32,21 @@ describe('computeAnalytics — live override', () => {
     expect(a.kpis.occupancyPct).toBe(73);
     expect(a.volumeTrend.length).toBeGreaterThan(0); // still synthesized
   });
+
+  test('live agentStates drive the donut; absent agents count as logged-out', () => {
+    const agents = [
+      { id: 'a1', teamId: 'tm1', skills: {} },
+      { id: 'a2', teamId: 'tm1', skills: {} },
+      { id: 'a3', teamId: 'tm1', skills: {} }, // not in the live map → notReady
+    ];
+    const live = { source: 'live', agentStates: { a1: 'available', a2: 'engaged' } };
+    const a = computeAnalytics({ agents, skills: [], selectedTeamIds: [], draft: {}, trendDays: 7, live, t });
+    const byKey = Object.fromEntries(a.agentState.map((s) => [s.key, s.value]));
+    expect(byKey.available).toBe(1);
+    expect(byKey.engaged).toBe(1);
+    expect(byKey.notReady).toBe(1);
+    expect(a.agentCount).toBe(3);
+  });
 });
 
 describe('fetchLiveAnalytics — Search API parsing', () => {
@@ -69,6 +84,15 @@ describe('fetchLiveAnalytics — Search API parsing', () => {
           ] } },
         });
       }
+      // agentSession: agent-state snapshot vs occupancy aggregation
+      if (body.includes('currentState')) {
+        return jsonOk({
+          data: { agentSession: { agentSessions: [
+            { agentId: 'a1', channelInfo: [{ currentState: 'available' }, { currentState: 'idle' }] },
+            { agentId: 'a2', channelInfo: [{ currentState: 'connected' }] },
+          ] } },
+        });
+      }
       // occupancy (agentSession)
       return jsonOk({
         data: { agentSession: { agentSessions: [
@@ -86,6 +110,8 @@ describe('fetchLiveAnalytics — Search API parsing', () => {
     expect(res.kpis.abandonPct).toBe(5);
     expect(res.kpis.asaSec).toBe(24); // ms → seconds
     expect(res.kpis.occupancyPct).toBe(70); // 7000 / (7000+3000)
+    // agent states: a1's channels reduce to 'available' (beats idle), a2 'engaged'
+    expect(res.agentStates).toEqual({ a1: 'available', a2: 'engaged' });
   });
 
   test('falls back to null when all Search queries fail', async () => {

@@ -329,12 +329,51 @@ const kpiGql = (from, to, taskFilter) => `{
 const occupancyGql = (from, to, asrFilter) => `{
   agentSession(from: ${from}, to: ${to},${asrFilter}
     aggregations: [
-      { field: "connectedDuration", name: "conn", type: sum }
-      { field: "idleDuration", name: "idle", type: sum }
+      { field: "channelInfo.connectedDuration", name: "conn", type: sum }
+      { field: "channelInfo.idleDuration", name: "idle", type: sum }
     ]) {
     agentSessions { aggregation { name value } }
   }
 }`;
+
+// Current per-agent state → surfaced by the agent-state donut in LIVE mode.
+// agentSession(isActive:true) returns currently logged-in sessions; each agent
+// has one channelInfo entry per channel, each with a `currentState`. We reduce
+// an agent's channels to a single bucket by priority (busiest state wins).
+const agentStatesGql = (from, to) => `{
+  agentSession(from: ${from}, to: ${to}, filter: { isActive: { equals: true } }) {
+    agentSessions { agentId channelInfo { currentState } }
+  }
+}`;
+
+// Webex CC channel currentState → widget bucket.
+const STATE_BUCKET = {
+  connected: 'engaged', consulting: 'engaged', conferencing: 'engaged',
+  reserved: 'engaged', ringing: 'engaged', consult: 'engaged',
+  wrapup: 'wrapup', wrap_up: 'wrapup', wrapping_up: 'wrapup',
+  available: 'available',
+  idle: 'notReady', not_responding: 'notReady', notresponding: 'notReady',
+  rona: 'notReady', notready: 'notReady', not_ready: 'notReady',
+};
+// Priority for collapsing an agent's multiple channels into one bucket.
+const BUCKET_PRIORITY = { engaged: 5, wrapup: 4, available: 3, notReady: 2, idle: 1 };
+
+/** Reduce active sessions into a { [agentId]: bucket } map of current state. */
+function parseAgentStates(data) {
+  const sessions = data?.agentSession?.agentSessions || [];
+  const map = {};
+  sessions.forEach((s) => {
+    if (!s.agentId) return;
+    const channels = Array.isArray(s.channelInfo) ? s.channelInfo : (s.channelInfo ? [s.channelInfo] : []);
+    let best = null;
+    channels.forEach((c) => {
+      const bucket = STATE_BUCKET[String(c.currentState || '').toLowerCase()] || 'idle';
+      if (!best || (BUCKET_PRIORITY[bucket] || 0) > (BUCKET_PRIORITY[best] || 0)) best = bucket;
+    });
+    map[s.agentId] = best || 'notReady';
+  });
+  return map;
+}
 
 /** Build an `or` filter over a list, or '' when the list is empty. */
 function orFilter(values, toClause) {
@@ -385,6 +424,7 @@ export async function fetchLiveAnalytics(ctx = {}) {
   const now = Date.now();
   const trendFrom = now - Math.max(1, trendDays) * DAY_MS;
   const kpiFrom = now - DAY_MS; // rolling 24h window for real-time KPIs
+  const stateFrom = now - 2 * DAY_MS; // wider window to catch long-running logins
   // 24h window → hourly granularity; longer windows → one point per day.
   const interval = trendDays <= 1 ? 'HOURLY' : 'DAILY';
 
@@ -392,17 +432,21 @@ export async function fetchLiveAnalytics(ctx = {}) {
   const taskFilter = orFilter(teamNames, (n) => `{ lastTeam: { name: { equals: ${JSON.stringify(n)} } } }`);
   const asrFilter = orFilter(teamIds, (id) => `{ teamId: { equals: ${JSON.stringify(id)} } }`);
 
-  const [trends, kpi, occ] = await Promise.all([
+  const [trends, kpi, occ, states] = await Promise.all([
     runSearchGql(base, accessToken, trendsGql(trendFrom, now, interval, taskFilter)).then(parseTrends).catch(() => null),
     runSearchGql(base, accessToken, kpiGql(kpiFrom, now, taskFilter))
       .then((d) => flattenAggregations(d, 'taskDetails', 'tasks')).catch(() => null),
     runSearchGql(base, accessToken, occupancyGql(kpiFrom, now, asrFilter))
       .then((d) => flattenAggregations(d, 'agentSession', 'agentSessions')).catch(() => null),
+    runSearchGql(base, accessToken, agentStatesGql(stateFrom, now)).then(parseAgentStates).catch(() => null),
   ]);
 
-  if (!trends && !kpi && !occ) return null;
+  if (!trends && !kpi && !occ && !states) return null;
 
   const out = { source: 'live' };
+  // Real current agent state per agent (drives the live donut + state filter);
+  // an empty object still signals "live" so absent agents count as logged-out.
+  if (states) out.agentStates = states;
   if (trends) {
     out.volumeTrend = trends.volumeTrend;
     out.ahtTrend = trends.ahtTrend;

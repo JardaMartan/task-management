@@ -61,6 +61,16 @@ export function assignAgentState(agentId) {
 }
 
 /**
+ * Resolve an agent's state. In live mode `liveStates` is a { agentId: bucket }
+ * map from the Search API — agents absent from it are logged out (notReady).
+ * In demo mode (no map) fall back to the deterministic synthetic assignment.
+ */
+export function resolveAgentState(agentId, liveStates) {
+  if (liveStates) return liveStates[agentId] || 'notReady';
+  return assignAgentState(agentId);
+}
+
+/**
  * Compute the full analytics payload for the analytics bar.
  *
  * @param {object}   p
@@ -82,8 +92,9 @@ export function computeAnalytics({ agents, skills, selectedTeamIds, draft, trend
   const jt = (key) => hash01(`${key}|${tick}`);
 
   // ── Real-time agent-state mix (real per-agent counts → filterable donut) ────
+  const liveStates = live && live.agentStates ? live.agentStates : null;
   const stateCounts = { available: 0, engaged: 0, wrapup: 0, idle: 0, notReady: 0 };
-  scoped.forEach((agent) => { stateCounts[assignAgentState(agent.id)] += 1; });
+  scoped.forEach((agent) => { stateCounts[resolveAgentState(agent.id, liveStates)] += 1; });
   const agentState = STATE_ORDER.map((key) => ({
     key,
     label: t(`analytics.state.${key}`),

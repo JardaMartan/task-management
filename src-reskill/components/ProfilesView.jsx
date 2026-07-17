@@ -5,7 +5,7 @@ import { useI18n } from '../i18n/I18nContext';
 import { SKILL_TYPES } from '../mock/mockData';
 import { setSearch, stageProfile, stageProfileBulk } from '../store/slices/reskillSlice';
 import { agentsForTeams, filterAgents } from '../selectors';
-import { assignAgentState } from '../analytics';
+import { resolveAgentState } from '../analytics';
 import ViewModeToggle from './ViewModeToggle';
 import AgentFilterChip from './AgentFilterChip';
 
@@ -47,6 +47,7 @@ const ProfilesView = () => {
   const search = useSelector((s) => s.reskill.search);
   const profileDraft = useSelector((s) => s.reskill.profileDraft);
   const agentStateFilter = useSelector((s) => s.reskill.agentStateFilter);
+  const liveStates = useSelector((s) => s.reskill.liveAnalytics?.agentStates || null);
 
   const [bulkProfile, setBulkProfile] = React.useState('');
 
@@ -62,9 +63,9 @@ const ProfilesView = () => {
   );
   const stateScoped = React.useMemo(
     () => (agentStateFilter
-      ? scopedAgents.filter((a) => assignAgentState(a.id) === agentStateFilter)
+      ? scopedAgents.filter((a) => resolveAgentState(a.id, liveStates) === agentStateFilter)
       : scopedAgents),
-    [scopedAgents, agentStateFilter],
+    [scopedAgents, agentStateFilter, liveStates],
   );
   const visibleAgents = React.useMemo(
     () => filterAgents(stateScoped, { search, onlyChanged: false, draft: {} }),
