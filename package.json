@@ -14,6 +14,8 @@
         "build:reskill": "rollup -c rollup.reskill.config.js && node scripts/inline-fonts.js",
         "build:reskill:standalone": "BUILD_MODE=self-contained rollup -c rollup.reskill.config.js && node scripts/inline-fonts.js",
         "start:reskill": "webpack serve --config webpack.reskill.config.js --mode development",
+        "ext:serve": "npx http-server crm-clicktocall-extension -p 4200 -c-1 --cors",
+        "ext:package": "mkdir -p dist && rm -f dist/crm-clicktocall-extension.zip && cd crm-clicktocall-extension && zip -r -X ../dist/crm-clicktocall-extension.zip . -x 'demo/*' '*.tmp-placeholder' '.DS_Store' && cd ..",
         "test": "jest"
     },
     "jest": {
