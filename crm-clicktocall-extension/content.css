@@ -1,6 +1,6 @@
-/* Injected click-to-contact buttons — one pastel pill per action, matching the
-   task-management Customer 360 contact card exactly (same colours, radius, icon
-   + value label). Icons are inline SVG (Momentum handset / envelope + SMS badge). */
+/* Injected click-to-contact buttons — compact icon-only pills using genuine
+   Momentum UI glyphs (handset / sms / email), coloured with the task-management
+   Customer 360 channel palette. No contact value is rendered. */
 
 .crm-c2c-group {
   display: inline-flex;
@@ -9,7 +9,6 @@
   margin: 0 6px;
   vertical-align: middle;
   white-space: nowrap;
-  font-family: "CiscoSansTT", "Helvetica Neue", Helvetica, Arial, sans-serif;
 }
 
 .crm-c2c-btn {
@@ -17,30 +16,28 @@
   box-sizing: border-box;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 3px 10px 3px 8px;
-  border-radius: 14px;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
   border: 1px solid transparent;
-  font-size: 12px;
-  line-height: 1.4;
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s, opacity 0.15s;
   user-select: none;
 }
 
 .crm-c2c-ico { display: inline-flex; align-items: center; }
-.crm-c2c-ico svg { display: block; }
-.crm-c2c-label { white-space: nowrap; }
+.crm-c2c-ico svg { display: block; width: 15px; height: 15px; }
 
-/* Email pill — purple */
+/* Email — purple */
 .crm-c2c-btn--email        { background: #f0e8fb; color: #7c35b5; border-color: #d5aef5; }
 .crm-c2c-btn--email:hover  { background: #e3d0f8; border-color: #9c4dcc; }
 
-/* Call pill — green */
+/* Call — green */
 .crm-c2c-btn--call         { background: #eaf7ee; color: #1a6b35; border-color: #9ad4ad; }
 .crm-c2c-btn--call:hover   { background: #d4f0dc; border-color: #2e8b57; }
 
-/* SMS pill — blue */
+/* SMS — blue */
 .crm-c2c-btn--sms          { background: #e8f4fd; color: #0d5fa0; border-color: #6ab4f5; }
 .crm-c2c-btn--sms:hover    { background: #cce6fc; border-color: #1a73e8; }
 
