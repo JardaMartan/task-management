@@ -188,14 +188,34 @@
   }
 
   // Reveal a button group only while its contact host (or the group itself) is
-  // hovered. A short grace period lets the pointer travel from the text to the
-  // pill without it disappearing.
+  // hovered. The group is appended to <body> and floats over the page anchored
+  // to the contact, so it never shifts the CRM layout. A short grace period lets
+  // the pointer travel from the text to the pill without it disappearing.
+  function positionGroup(host, group) {
+    var r = host.getBoundingClientRect();
+    var gw = group.offsetWidth || 0;
+    var gh = group.offsetHeight || 0;
+    var docEl = document.documentElement;
+    // Float just above the contact; flip below if there is no room above.
+    var top = r.top - gh - 4;
+    top = (top < 2 ? r.bottom + 4 : top) + window.scrollY;
+    var left = r.left + window.scrollX;
+    var maxLeft = window.scrollX + docEl.clientWidth - gw - 4;
+    if (left > maxLeft) left = Math.max(window.scrollX + 4, maxLeft);
+    group.style.top = top + 'px';
+    group.style.left = left + 'px';
+  }
+
   function attachHover(host, group) {
     if (!host || !group) return;
     var hideTimer = null;
     function show() {
       if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+      // Reveal off-screen first so we can measure, then position, then show.
+      group.style.visibility = 'hidden';
       group.classList.add('crm-c2c-group--visible');
+      positionGroup(host, group);
+      group.style.visibility = '';
     }
     function hide() {
       hideTimer = setTimeout(function () {
@@ -234,7 +254,7 @@
       if (contact.kind === 'phone' && !SCAN.isE164(contact.value)) continue;
       var group = makeButtonGroup(contact);
       if (group && a.parentNode) {
-        a.insertAdjacentElement('afterend', group);
+        document.body.appendChild(group);
         attachHover(a, group);
       }
     }
@@ -277,11 +297,10 @@
         var g = makeButtonGroup({ kind: 'phone', value: p.value });
         if (g) groups.push(g);
       });
-      // Insert each button group right after the text's host element and reveal
-      // it only while the contact (or the pill) is hovered.
+      // Float each button group over the page, anchored to the contact host and
+      // revealed only while the contact (or the pill) is hovered.
       groups.forEach(function (g) {
-        if (host.insertAdjacentElement) host.insertAdjacentElement('afterend', g);
-        else if (host.parentNode) host.parentNode.appendChild(g);
+        document.body.appendChild(g);
         attachHover(host, g);
       });
     });

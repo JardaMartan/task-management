@@ -4,15 +4,17 @@
 
 .crm-c2c-group {
   display: none;                        /* revealed on hover via --visible */
+  position: absolute;                   /* floats over the page, no layout shift */
+  z-index: 2147483000;
+  top: 0;
+  left: 0;
   align-items: stretch;
-  margin: 0 6px;
-  vertical-align: middle;
   white-space: nowrap;
   border: 1px solid #d5d9e0;
   border-radius: 999px;                 /* full pill */
   background: #fff;
   overflow: hidden;
-  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
 }
 
 .crm-c2c-group--visible { display: inline-flex; }
