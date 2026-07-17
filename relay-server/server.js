@@ -10,14 +10,44 @@ const PORT = process.env.PORT || 3001;
 // ── Org-level access control ──────────────────────────────────────────────────
 // Comma-separated list of allowed Webex org IDs.
 // Empty / unset = allow all connections (suitable for local development).
+//
+// Accepts EITHER format for each entry:
+//   - raw UUID:            fc5af61b-06a3-4122-be5c-bb344cffffdc
+//   - Webex hydra base64:  Y2lzY29zcGFyazovL3VzL09SR0FOSVpBVElPTi9mYzVh...
+//   - unencoded URN:       ciscospark://us/ORGANIZATION/fc5af61b-...
+// The Webex /people/me API returns the base64 hydra form, so we normalize both
+// the allow-list and the token's orgId down to the bare UUID before comparing.
 const ALLOWED_ORG_IDS = (process.env.ALLOWED_ORG_IDS || '')
   .split(',')
   .map((s) => s.trim())
   .filter(Boolean);
 
-const orgAuthEnabled = ALLOWED_ORG_IDS.length > 0;
+/**
+ * Reduce any Webex org identifier to its bare lowercase UUID.
+ * Handles raw UUIDs, `ciscospark://us/ORGANIZATION/<uuid>` URNs, and the
+ * base64-encoded hydra IDs returned by the People API.
+ * @param {string} value
+ * @returns {string} bare UUID (lowercased) or '' when none can be extracted
+ */
+function extractOrgUuid(value) {
+  if (!value) return '';
+  let v = String(value).trim();
+  // Base64 hydra id (no scheme, no slash) → decode to the URN form.
+  if (!v.includes('://') && !v.includes('/')) {
+    try {
+      const decoded = Buffer.from(v, 'base64').toString('utf8');
+      if (decoded.includes('ORGANIZATION/') || decoded.includes('ciscospark://')) v = decoded;
+    } catch { /* not base64 — fall through */ }
+  }
+  const m = v.match(/ORGANIZATION\/([0-9a-f-]{36})/i) || v.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+  return m ? m[1].toLowerCase() : v.toLowerCase();
+}
+
+const ALLOWED_ORG_UUIDS = new Set(ALLOWED_ORG_IDS.map(extractOrgUuid).filter(Boolean));
+
+const orgAuthEnabled = ALLOWED_ORG_UUIDS.size > 0;
 if (orgAuthEnabled) {
-  console.log(`[relay] Org auth enabled. Allowed orgs: ${ALLOWED_ORG_IDS.join(', ')}`);
+  console.log(`[relay] Org auth enabled. Allowed org UUIDs: ${[...ALLOWED_ORG_UUIDS].join(', ')}`);
 } else {
   console.log('[relay] Org auth disabled (ALLOWED_ORG_IDS not set). All connections accepted.');
 }
@@ -49,10 +79,10 @@ async function verifyWebexToken(token) {
 
     if (!orgId) return { allowed: false };
 
-    const allowed = ALLOWED_ORG_IDS.includes(orgId);
+    const allowed = ALLOWED_ORG_UUIDS.has(extractOrgUuid(orgId));
     if (!allowed) {
-      // Log org ID for diagnostics but never log the token itself
-      console.warn(`[relay] Auth denied: orgId=${orgId} not in allowed list`);
+      // Log the normalized org UUID for diagnostics but never log the token itself
+      console.warn(`[relay] Auth denied: orgUuid=${extractOrgUuid(orgId)} not in allowed list`);
     }
     return { allowed, orgId, agentEmail };
   } catch (err) {
