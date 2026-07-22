@@ -48,6 +48,33 @@
   var _emailCache         = {};    // identity → resolved canonical email ('' if none / lookup failed)
   var _nameCache          = {};    // identity → resolved display name ('' if none)
 
+  /* ── Activity analytics emitter config ──────────────────────────────────── */
+  // Feeds src/activity-emitter.js (window.__wxActivity). Configured via the
+  // `activityurl`, `agentid` and `agentname` layout properties.
+  var _activityUrl  = null;
+  var _agentId      = null;
+  var _agentName    = null;
+  var _orgId        = null;   // captured from the `orgid` property for activity events
+
+  /** Push the current config into the shared emitter (no-op if not loaded). */
+  function _configureActivity() {
+    if (!window.__wxActivity) return;
+    window.__wxActivity.configure({
+      ingestUrl:   _activityUrl,
+      agentId:     _agentId || 'unknown',
+      agentName:   _agentName,
+      orgId:       _orgId || null,
+      sessionId:   _sessionId,
+      accessToken: _accessToken || '',
+    });
+  }
+
+  /** Emit an activity event (no-op if the emitter is not present). */
+  function _emitActivity(eventType, data) {
+    if (window.__wxActivity) window.__wxActivity.emit(eventType, data);
+  }
+
+
   // Per-tab session id — isolates this agent's relay traffic from other agents
   // sharing the same relay. The relay forwards messages only between a webexcc
   // and a crm client that share the SAME sessionId, so both our REGISTER and the
@@ -283,11 +310,25 @@
   function _sendInteractionEnded(interactionId, source) {
     if (_aqmEndedSent[interactionId]) return;
     _aqmEndedSent[interactionId] = true;
+    var _endedEntry = _activeInteractions[interactionId];
     delete _inWrapup[interactionId];
     delete _activeInteractions[interactionId];
     _stopWrapupWatcher(interactionId);
     console.log('[crm-sync-header] INTERACTION_ENDED via', source, 'for', interactionId);
     _relaySend({ type: 'INTERACTION_ENDED', interactionId: interactionId });
+    // Activity analytics: close out the interaction's swim-lane. Emit focus_lost
+    // first if the agent still had it focused, so time-on-task is bounded.
+    if (_lastSelectedInteractionId === interactionId) {
+      _emitActivity('focus_lost', {
+        interactionId: interactionId, channel: _endedEntry && _endedEntry.channel,
+        customerId: _endedEntry && _endedEntry.customerId,
+      });
+      _lastSelectedInteractionId = null;
+    }
+    _emitActivity('task_ended', {
+      interactionId: interactionId, channel: _endedEntry && _endedEntry.channel,
+      customerId: _endedEntry && _endedEntry.customerId,
+    });
     setTimeout(function () { delete _aqmEndedSent[interactionId]; }, 30000);
   }
 
@@ -506,13 +547,31 @@
     // This is independent of the ARRIVED dedup below — switching back to an
     // already-known connected task also needs to propagate.
     if (_state !== 'ended' && _lastSelectedInteractionId !== parsed.interactionId) {
+      var _prevSelected = _lastSelectedInteractionId;
       _lastSelectedInteractionId = parsed.interactionId;
       _relaySend({ type: 'INTERACTION_SELECTED', interactionId: parsed.interactionId });
       console.log('[crm-sync-header] INTERACTION_SELECTED for', parsed.interactionId);
+      // Activity analytics: the agent switched focus. focus_lost on the previously
+      // selected interaction (the interruption) + focus_gained on the new one.
+      // Together these yield true time-on-task and interruption counts.
+      if (_prevSelected) {
+        var _prevEntry = _activeInteractions[_prevSelected];
+        _emitActivity('focus_lost', {
+          interactionId: _prevSelected,
+          channel: _prevEntry && _prevEntry.channel,
+          customerId: _prevEntry && _prevEntry.customerId,
+        });
+      }
+      _emitActivity('focus_gained', {
+        interactionId: parsed.interactionId,
+        channel: _mediaType,
+        customerId: parsed.customerId || null,
+      });
     }
 
     // Dedup: skip if the interaction state hasn't changed from what we last sent.
     var _existing = _activeInteractions[parsed.interactionId];
+    var _prevState = _existing ? _existing.state : null;
     if (_existing && _existing.state === _state && _state === 'connected') {
       // Still connected — just update the title if it changed, no need to resend ARRIVED.
       if (title && title !== _existing.title) {
@@ -524,6 +583,18 @@
 
     console.log('[crm-sync-header] sending', _msgType, 'for', parsed.interactionId);
 
+    // Activity analytics: emit lifecycle transitions (state-change guarded so a
+    // repeated task prop for the same state does not double-count).
+    if (_state === 'connected' && _prevState !== 'connected') {
+      _emitActivity('task_accepted', {
+        interactionId: parsed.interactionId, channel: _mediaType, customerId: parsed.customerId || null,
+      });
+    } else if (_state === 'wrapup' && _prevState !== 'wrapup') {
+      _emitActivity('wrapup', {
+        interactionId: parsed.interactionId, channel: _mediaType, customerId: parsed.customerId || null,
+      });
+    }
+
     if (_state === 'ended') {
       delete _activeInteractions[parsed.interactionId];
       _sendInteractionEnded(parsed.interactionId, 'task-prop');
@@ -532,7 +603,7 @@
       // the dedup short-circuit above instead of triggering a second lookup/send.
       _activeInteractions[parsed.interactionId] = {
         ani: _ani, email: _email, customerId: parsed.customerId || null,
-        displayUrl: _displayUrl, title: title || null, state: _state,
+        displayUrl: _displayUrl, title: title || null, state: _state, channel: _mediaType,
       };
       // Resolve a unified customer email (preferred over phone) so voice and
       // email interactions for the same person share a single CRM tab. The
@@ -693,7 +764,7 @@
       }
       get wsurl() { return _relayWsUrl; }
 
-      set accesstoken(value) { this._accesstoken = value; _accessToken = value || ''; }
+      set accesstoken(value) { this._accesstoken = value; _accessToken = value || ''; _configureActivity(); }
       get accesstoken() { return this._accesstoken; }
 
       set autoopen(value) {
@@ -712,9 +783,23 @@
       }
       get darkmode() { return _darkMode; }
 
-      set orgid(value) { this._orgid = value; }
+      set orgid(value) { this._orgid = value; _orgId = value || null; _configureActivity(); }
       set datacenter(value) { this._datacenter = value; _jdsDataCenter = value || ''; }
       set workspaceid(value) { this._workspaceid = value; _jdsWorkspaceId = value || ''; }
+
+      /* ── Activity analytics properties ─────────────────────────────────── */
+      // Map in the Desktop layout, e.g.:
+      //   "activityurl": "https://<region>-<project>.cloudfunctions.net/activity",
+      //   "agentid":     "$STORE.agent.agentId",
+      //   "agentname":   "$STORE.agent.agentName"
+      set activityurl(value) { this._activityurl = value; _activityUrl = value || null; _configureActivity(); }
+      get activityurl() { return _activityUrl; }
+
+      set agentid(value) { this._agentid = value; _agentId = value || null; _configureActivity(); }
+      get agentid() { return _agentId; }
+
+      set agentname(value) { this._agentname = value; _agentName = value || null; _configureActivity(); }
+      get agentname() { return _agentName; }
     });
   }
 

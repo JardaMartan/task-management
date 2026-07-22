@@ -167,6 +167,16 @@
   }
 
   /**
+   * Emit an activity analytics event via the shared emitter (window.__wxActivity,
+   * from activity-emitter.js). No-op when the emitter is not loaded. This widget
+   * owns the EARLY lifecycle signals (offered / rona / declined) that the
+   * task-property stream in crm-sync-header.js cannot observe.
+   */
+  function _emitActivity(eventType, data) {
+    if (window.__wxActivity) window.__wxActivity.emit(eventType, data);
+  }
+
+  /**
    * Find WRAPPER_SELECTOR anywhere in the document, including inside shadow roots.
    */
   function findWrapper(root) {
@@ -985,7 +995,10 @@
         var interaction = msg && msg.data && msg.data.interaction;
         if (!interaction) return;
         var id = interaction.interactionId || interaction.id;
-        if (id) showOfferPanel(id, interaction);
+        if (id) {
+          showOfferPanel(id, interaction);
+          _emitActivity('task_offered', { interactionId: id, channel: detectMediaType(interaction) });
+        }
       } catch (e) {
         console.error('[panel-layout] offer-panel: error in eAgentOfferContact handler', e);
       }
@@ -997,7 +1010,10 @@
         try {
           var interaction = msg && msg.data && msg.data.interaction;
           var id = interaction && (interaction.interactionId || interaction.id);
-          if (id) hideOfferPanel(id);
+          if (id) {
+            hideOfferPanel(id);
+            _emitActivity('rona', { interactionId: id, channel: interaction ? detectMediaType(interaction) : null });
+          }
         } catch (e) {}
       });
     }
@@ -1006,9 +1022,13 @@
     if (aqmContact.eAgentContactAssignFailed && typeof aqmContact.eAgentContactAssignFailed.listen === 'function') {
       aqmContact.eAgentContactAssignFailed.listen(function (msg) {
         try {
+          var interaction = msg && msg.data && msg.data.interaction;
           var id = (msg && msg.data && msg.data.interactionId)
-            || (msg && msg.data && msg.data.interaction && (msg.data.interaction.interactionId || msg.data.interaction.id));
-          if (id) hideOfferPanel(id);
+            || (interaction && (interaction.interactionId || interaction.id));
+          if (id) {
+            hideOfferPanel(id);
+            _emitActivity('declined', { interactionId: id, channel: interaction ? detectMediaType(interaction) : null });
+          }
         } catch (e) {}
       });
     }

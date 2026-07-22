@@ -1,0 +1,117 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
+import { Badge } from '@momentum-ui/react';
+import { useI18n } from '../i18n/I18nContext';
+import { buildTimeline } from '../timeline';
+import { buildTeamTimeline } from '../team';
+import { computeOverview } from '../analytics';
+import { rangeWindowMs, teardown } from '../store/slices/activitySlice';
+import AgentPicker from './AgentPicker';
+import TeamPicker from './TeamPicker';
+import ScopeToggle from './ScopeToggle';
+import ModeToggle from './ModeToggle';
+import ActivityOverviewBar from './ActivityOverviewBar';
+import AgentStatePanel from './AgentStatePanel';
+import ActivityTimeline from './ActivityTimeline';
+import TeamTimeline from './TeamTimeline';
+
+export default function ActivityReport() {
+  const { t } = useI18n();
+  const dispatch = useDispatch();
+
+  const status = useSelector((s) => s.activity.status);
+  const isDemo = useSelector((s) => s.activity.isDemo);
+  const loading = useSelector((s) => s.activity.loading);
+  const events = useSelector((s) => s.activity.events);
+  const mode = useSelector((s) => s.activity.mode);
+  const scope = useSelector((s) => s.activity.scope);
+  const rangeKey = useSelector((s) => s.activity.rangeKey);
+  const customFrom = useSelector((s) => s.activity.customFrom);
+  const customTo = useSelector((s) => s.activity.customTo);
+  const selectedAgentId = useSelector((s) => s.activity.selectedAgentId);
+  const agents = useSelector((s) => s.activity.agents);
+  const darkMode = useSelector((s) => s.activity.darkMode);
+  const agentState = useSelector((s) => s.activity.agentState);
+  const teamState = useSelector((s) => s.activity.teamState);
+
+  // Stop any live subscription on unmount.
+  useEffect(() => () => { dispatch(teardown()); }, [dispatch]);
+
+  // Live "now" tick — advances every second so open interaction bars and the
+  // now-marker grow smoothly between the (slower) data polls.
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  useEffect(() => {
+    if (mode !== 'live') return undefined;
+    const id = setInterval(() => setNowTick(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [mode]);
+
+  const openEndMs = mode === 'live' ? nowTick : null;
+
+  const timeline = useMemo(() => buildTimeline(events, { openEndMs }), [events, openEndMs]);
+  const teamTimeline = useMemo(
+    () => (scope === 'team' ? buildTeamTimeline(events, { openEndMs }) : null),
+    [scope, events, openEndMs],
+  );
+  const overview = useMemo(
+    () => computeOverview({
+      byInteraction: timeline.byInteraction,
+      bounds: timeline.bounds,
+      windowMs: rangeWindowMs(rangeKey, customFrom, customTo),
+    }),
+    [timeline, rangeKey, customFrom, customTo],
+  );
+
+  const isTeam = scope === 'team';
+  // Team view is roster-driven: it lists every member of the selected team with
+  // their login/logout/state timeline, even when they handled no interactions.
+  const hasData = isTeam ? agents.length > 0 : timeline.groups.length > 0;
+  const ready = isTeam || !!selectedAgentId;
+
+  return (
+    <div className={`activity-report ${darkMode ? 'is-dark' : ''}`}>
+      <header className="activity-report__header">
+        <div className="activity-report__titles">
+          <h1 className="activity-report__title">{t('app.title')}</h1>
+          <p className="activity-report__subtitle">{t('app.subtitle')}</p>
+        </div>
+        <span className={`data-badge ${isDemo ? 'is-demo' : 'is-live'}`}>
+          <Badge color={isDemo ? 'yellow' : 'green'} rounded>
+            {isDemo ? t('app.demoBadge') : t('app.liveBadge')}
+          </Badge>
+        </span>
+      </header>
+
+      <div className="activity-report__controls">
+        <ScopeToggle />
+        <TeamPicker />
+        {!isTeam && <AgentPicker />}
+        <ModeToggle />
+      </div>
+
+      {status === 'error' && (
+        <div className="activity-report__state activity-report__state--error">{t('app.error')}</div>
+      )}
+
+      {!ready && status !== 'loading' && (
+        <div className="activity-report__state">{t('app.noAgent')}</div>
+      )}
+
+      {ready && (
+        <>
+          <ActivityOverviewBar overview={overview} />
+          {!isTeam && <AgentStatePanel overview={overview} agentState={agentState} live={mode === 'live'} />}
+          {loading && !hasData ? (
+            <div className="activity-report__state">{t('app.loading')}</div>
+          ) : hasData ? (
+            isTeam
+              ? <TeamTimeline agents={agents} team={teamTimeline} teamState={teamState} mode={mode} windowMs={rangeWindowMs(rangeKey, customFrom, customTo)} />
+              : <ActivityTimeline timeline={timeline} mode={mode} />
+          ) : (
+            <div className="activity-report__state">{t('app.noData')}</div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}

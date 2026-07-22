@@ -8,11 +8,15 @@
   },
   "scripts": {
     "start": "functions-framework --target=inbound --port=8080",
+    "start:activity": "functions-framework --target=activity --port=8080",
     "deploy:inbound": "gcloud functions deploy email-inbound --gen2 --runtime=nodejs22 --region=us-central1 --source=. --entry-point=inbound --trigger-topic=${PUBSUB_TOPIC}",
     "deploy:auth": "gcloud functions deploy email-auth --gen2 --runtime=nodejs22 --region=us-central1 --source=. --entry-point=auth --trigger-http --allow-unauthenticated",
-    "deploy:watch": "gcloud functions deploy email-renew-watch --gen2 --runtime=nodejs22 --region=us-central1 --source=. --entry-point=renewWatch --trigger-http"
+    "deploy:watch": "gcloud functions deploy email-renew-watch --gen2 --runtime=nodejs22 --region=us-central1 --source=. --entry-point=renewWatch --trigger-http",
+    "deploy:activity": "gcloud functions deploy activity --gen2 --runtime=nodejs22 --region=us-central1 --source=. --entry-point=activity --trigger-http --allow-unauthenticated"
   },
   "dependencies": {
+    "@google-cloud/bigquery": "^7.9.0",
+    "@google-cloud/firestore": "^7.10.0",
     "@google-cloud/functions-framework": "^3.3.0",
     "google-auth-library": "^9.0.0",
     "googleapis": "^143.0.0"
