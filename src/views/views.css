@@ -2341,8 +2341,15 @@
 }
 
 /* ── Demo / Live toggle button in the tab bar ── */
-.unified-360__demo-toggle {
+.unified-360__tab-trailing {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.unified-360__demo-toggle {
   align-self: center;
   flex-shrink: 0;
   padding: 3px 10px;
@@ -2384,6 +2391,297 @@
   color: #4cd990;
   border-color: rgba(0, 220, 110, 0.35);
 }
+
+/* ── Settings gear button (tab bar) ── */
+.unified-360__gear-btn {
+  align-self: center;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--md-color-gray-70, #495057);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.unified-360__gear-btn:hover,
+.unified-360__gear-btn--active {
+  background: var(--md-color-gray-20, #e9edf0);
+  color: var(--md-color-gray-90, #23282c);
+}
+.md--dark .unified-360__gear-btn { color: #b0b8c0; }
+.md--dark .unified-360__gear-btn:hover,
+.md--dark .unified-360__gear-btn--active { background: rgba(255, 255, 255, 0.10); color: #fff; }
+
+/* ── Customer360 settings popover ── */
+.unified-360 { position: relative; }
+.c360-settings__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 49;
+  background: transparent;
+}
+.c360-settings {
+  position: absolute;
+  top: 46px;
+  right: 8px;
+  z-index: 50;
+  width: 380px;
+  max-width: calc(100% - 16px);
+  /* Match the Agent Activity (src-report) design system — layered on Momentum tokens. */
+  --c-panel: var(--md-color-white-100, #ffffff);
+  --c-border: var(--md-color-gray-20, #dbe3ec);
+  --c-text: var(--md-color-gray-90, #0a2236);
+  --c-text2: var(--md-color-gray-60, #5b6b7b);
+  --c-accent: var(--md-color-blue-50, #0e7fc1);
+  --c-bg: var(--md-color-gray-05, #f4f7fa);
+  --c-active: var(--md-color-blue-10, #cfe0ee);
+  background: var(--c-panel);
+  border: 1px solid var(--c-border);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.20);
+  padding: 14px 16px 16px;
+  font-family: var(--md-font-family, 'CiscoSansTT Regular', 'CiscoSansTT', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+  font-size: 13px;
+  color: var(--c-text);
+}
+.md--dark .c360-settings {
+  --c-panel: var(--md-color-gray-80, #17242f);
+  --c-border: rgba(255, 255, 255, 0.08);
+  --c-text: rgba(255, 255, 255, 0.88);
+  --c-text2: rgba(255, 255, 255, 0.5);
+  --c-bg: var(--md-color-gray-95, #0f1b26);
+  --c-active: rgba(45, 173, 206, 0.16);
+}
+.c360-settings__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.c360-settings__title { margin: 0; font-size: 16px; font-weight: 700; }
+.c360-settings__close {
+  border: none;
+  background: transparent;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--c-text2);
+  opacity: 0.8;
+  padding: 2px 4px;
+}
+.c360-settings__close:hover { opacity: 1; color: var(--c-text); }
+.c360-settings__section-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--c-text2);
+  margin-top: 2px;
+}
+.c360-settings__hint {
+  margin: 4px 0 12px;
+  font-size: 12px;
+  color: var(--c-text2);
+}
+.c360-settings__field { margin-bottom: 14px; }
+.c360-settings__label {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--c-text2);
+  margin-bottom: 6px;
+}
+
+/* Segmented pill toggle — mirrors src-report .pill-seg / .pill-seg__btn */
+.pill-seg {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  box-sizing: border-box;
+  padding: 3px;
+  gap: 3px;
+  background: var(--c-bg);
+  border: 1px solid var(--c-border);
+  border-radius: 18px;
+}
+.pill-seg__btn {
+  flex: 1 1 0;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 15px;
+  background: transparent;
+  color: var(--c-text2);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.pill-seg__btn:hover { color: var(--c-text); }
+.pill-seg__btn.is-active {
+  background: var(--c-panel);
+  color: var(--c-accent);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14);
+}
+.md--dark .pill-seg__btn.is-active { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4); }
+
+/* Countdown number field — pill input */
+.c360-settings__number {
+  width: 96px;
+  height: 32px;
+  box-sizing: border-box;
+  padding: 0 13px;
+  border: 1px solid var(--c-border);
+  border-radius: 16px;
+  background: var(--c-panel);
+  color: var(--c-text);
+  font-family: inherit;
+  font-size: 13px;
+}
+.c360-settings__number:focus {
+  outline: none;
+  border-color: var(--c-accent);
+  box-shadow: 0 0 0 3px rgba(14, 127, 193, 0.18);
+}
+
+/* ── SLA auto-requeue countdown toast ── */
+.sla-requeue-toast {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--md-color-gray-90, #23282c);
+  color: #fff;
+  font-size: 13px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+}
+.sla-requeue-toast__cancel {
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  background: transparent;
+  color: #fff;
+  border-radius: 15px;
+  padding: 5px 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.sla-requeue-toast__cancel:hover { background: rgba(255, 255, 255, 0.14); }
+
+/* ── Focus-mode banner (agent set Not Available for priority work) ── */
+.sla-focus-banner {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--c-accent);
+  color: #fff;
+  font-size: 13px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+}
+.sla-focus-banner__text { font-weight: 600; }
+.sla-focus-banner__resume {
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  background: transparent;
+  color: #fff;
+  border-radius: 15px;
+  padding: 5px 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.sla-focus-banner__resume:hover { background: rgba(255, 255, 255, 0.16); }
+
+/* ── SLA requeue offer dialog (src-report pill design) ── */
+.sla-requeue-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+}
+.sla-requeue-dialog {
+  width: 380px;
+  max-width: calc(100% - 32px);
+  --c-panel: var(--md-color-white-100, #ffffff);
+  --c-border: var(--md-color-gray-20, #dbe3ec);
+  --c-text: var(--md-color-gray-90, #0a2236);
+  --c-text2: var(--md-color-gray-60, #5b6b7b);
+  --c-accent: var(--md-color-blue-50, #0e7fc1);
+  --c-bg: var(--md-color-gray-05, #f4f7fa);
+  background: var(--c-panel);
+  color: var(--c-text);
+  border: 1px solid var(--c-border);
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+  padding: 20px 22px 18px;
+  font-family: var(--md-font-family, 'CiscoSansTT Regular', 'CiscoSansTT', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+}
+.md--dark .sla-requeue-dialog {
+  --c-panel: var(--md-color-gray-80, #17242f);
+  --c-border: rgba(255, 255, 255, 0.08);
+  --c-text: rgba(255, 255, 255, 0.88);
+  --c-text2: rgba(255, 255, 255, 0.5);
+  --c-bg: var(--md-color-gray-95, #0f1b26);
+}
+.sla-requeue-dialog__title { margin: 0 0 6px; font-size: 17px; font-weight: 700; }
+.sla-requeue-dialog__msg { margin: 0 0 14px; font-size: 13px; line-height: 1.5; color: var(--c-text2); }
+.sla-requeue-dialog__label {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--c-text2);
+  margin-bottom: 6px;
+}
+.sla-requeue-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+.sla-requeue-btn {
+  height: 34px;
+  padding: 0 18px;
+  border-radius: 17px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.sla-requeue-btn--ghost { background: transparent; border-color: var(--c-border); color: var(--c-text); }
+.sla-requeue-btn--ghost:hover { border-color: var(--c-text2); }
+.sla-requeue-btn--primary { background: var(--c-accent); border-color: var(--c-accent); color: #fff; }
+.sla-requeue-btn--primary:hover { filter: brightness(0.95); }
+.sla-requeue-btn--primary:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ── Customer context bar (between tab nav and content, live mode) ── */
 /* The bar is always rendered in the DOM when not in demo mode, but the     */

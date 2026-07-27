@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import PropTypes from 'prop-types';
 import { useDispatch, useSelector } from 'react-redux';
 import { Spinner, Alert } from '@momentum-ui/react';
-import { initEmailTask, resetEmail, resetEmailContent, setMockEmailData, checkGmailThreadUpdates } from '../store/slices/emailSlice';
+import { initEmailTask, resetEmail, resetEmailContent, setMockEmailData, checkGmailThreadUpdates, loadEmailSla } from '../store/slices/emailSlice';
 import { toggleAnalyticsOpen } from '../store/slices/widgetSlice';
 import { useI18n } from '../i18n/I18nContext';
 import EmailTaskHeader from './EmailTaskHeader';
@@ -68,6 +68,14 @@ const EmailWidget = ({ interactionId, callAssociatedDetails, darkMode, mockMode,
     }, 60_000);
     return () => clearInterval(interval);
   }, [dispatch, isDemoMode, interactionId, tokenBrokerUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // SLA expiry is delivered WITH the task as CAD (configurable variable name),
+  // unwrapped by UnifiedView360.buildEmailCallDetails as `slaExpiresRaw`.
+  const slaExpiresRaw = callAssociatedDetails?.slaExpiresRaw;
+  useEffect(() => {
+    if (isDemoMode) return;
+    dispatch(loadEmailSla(slaExpiresRaw));
+  }, [dispatch, isDemoMode, slaExpiresRaw]);
 
   const analyticsHeader = (
     <div className={`analytics-collapse${analyticsOpen ? ' analytics-collapse--open' : ' analytics-collapse--closed'}${darkMode ? ' analytics-collapse--dark' : ''}`}>

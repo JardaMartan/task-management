@@ -28,15 +28,19 @@ import HistoryView from './HistoryView';
 import CustomerContactCard from './CustomerContactCard';
 import VoiceWidget from '../voice/VoiceWidget';
 import EmailWidget from '../email/EmailWidget';
+import SlaCountdown from '../email/SlaCountdown';
 import ChatWidget from '../chat/ChatWidget';
 import TaskWidget from '../task/TaskWidget';
+import SlaRequeueController from '../email/SlaRequeueController';
+import { loadAgentSettings, provisionSlaCatalog, applyAgentState } from '../store/slices/settingsSlice';
+import { setEmailTouched } from '../store/slices/emailSlice';
 
 const TAB_IDS = ['cases', 'history', 'voice', 'email', 'chat', 'task'];
 const TAB_ICONS = { cases: 'tasks_16', history: 'recents_16', voice: 'handset_16', email: 'email_16', chat: 'chat_16', task: 'check-circle_16' };
 
 // Build callAssociatedDetails for EmailWidget from the raw task payload.
 // Mirrors the logic in TaskManagement.buildEmailCallDetails.
-const buildEmailCallDetails = (task) => {
+const buildEmailCallDetails = (task, slaVariable) => {
   if (!task) return null;
   const raw = task.callAssociatedDetails || {};
   const cadVal = (field) => {
@@ -61,7 +65,14 @@ const buildEmailCallDetails = (task) => {
   const subject = raw.subject || cadVal('subject') || task.mediaProperties?.emailSubject || null;
   const gmailThreadId = raw.gmailThreadId || cadVal('gmailThreadId') || null;
   const rfcMessageId = raw.rfcMessageId || cadVal('rfcMessageId') || null;
-  return { ...raw, customerEmail: fromAddress, fromAddress, gmailThreadId, rfcMessageId, subject };
+  // SLA expiry is delivered WITH the task as CAD; the variable name is configurable
+  // via the desktop layout (emailConfig.slaVariable). Look in callAssociatedData
+  // (cadVal unwraps {value:…}/string) then callAssociatedDetails, unwrapping either.
+  const unwrap = (v) => (v && typeof v === 'object' && 'value' in v ? v.value : v);
+  const slaExpiresRaw = slaVariable
+    ? (cadVal(slaVariable) ?? unwrap(raw[slaVariable]) ?? null)
+    : null;
+  return { ...raw, customerEmail: fromAddress, fromAddress, gmailThreadId, rfcMessageId, subject, slaExpiresRaw };
 };
 
 const UnifiedView360 = ({ darkMode, mockMode, task }) => {
@@ -84,6 +95,10 @@ const UnifiedView360 = ({ darkMode, mockMode, task }) => {
     if (typeof emails === 'string' && emails.includes('@')) return emails;
     return null;
   });
+  // Configurable CAD variable name that carries the email SLA expiry.
+  const slaVariable = useSelector((s) => s.widget?.emailConfig?.slaVariable);
+  // Agent id drives per-agent settings hydration + catalog provisioning.
+  const agentId = useSelector((s) => s.widget?.agent?.agentId || s.widget?.agent?.agentDbId);
   const [activeTab, setActiveTab] = useState(initialTab);
   const [navParams, setNavParams] = useState({});
   const [demoMode, setDemoMode] = useState(Boolean(mockMode));
@@ -178,6 +193,45 @@ const UnifiedView360 = ({ darkMode, mockMode, task }) => {
   const canBack    = histStack.length > 0;
   const canForward = fwdStack.length > 0;
 
+  // Hydrate per-agent settings (localStorage) once the agent id is known.
+  useEffect(() => {
+    dispatch(loadAgentSettings());
+    // Provision the idle-code / queue catalog for the central watcher + Tab Manager.
+    dispatch(provisionSlaCatalog());
+  }, [dispatch, agentId]);
+
+  // Re-hydrate requeue settings when they are changed centrally in the CRM Tab
+  // Manager (the watcher persists them, then broadcasts on the 'crm-sync' channel).
+  // Also execute focus-mode agent state changes the headless watcher delegates
+  // here (it can't reliably reach the routing service from the header widget).
+  useEffect(() => {
+    let ch;
+    try {
+      ch = new BroadcastChannel('crm-sync');
+      ch.onmessage = (e) => {
+        const d = e?.data;
+        if (!d) return;
+        if (d.type === 'SLA_SETTINGS_CHANGED') dispatch(loadAgentSettings());
+        if (d.type === 'FOCUS_STATE' && d.state) {
+          dispatch(applyAgentState({ state: d.state, auxCodeId: d.auxCodeId, channelType: d.channelType })).then((r) => {
+            try {
+              const bc = new BroadcastChannel('crm-sync');
+              bc.postMessage({ type: 'FOCUS_STATE_RESULT', state: d.state, ok: !!r?.ok, error: r?.error });
+              bc.close();
+            } catch { /* ignore */ }
+          });
+        }
+      };
+    } catch { /* BroadcastChannel unsupported */ }
+    return () => { try { ch?.close(); } catch { /* ignore */ } };
+  }, [dispatch]);
+
+  // Reset the email "touched" flag when a new task arrives. This view stays
+  // mounted across tab switches, so the effect only fires on a real task change.
+  useEffect(() => {
+    dispatch(setEmailTouched(false));
+  }, [dispatch, task?.interactionId]);
+
   return (
     <div className={`unified-360${darkMode ? ' md--dark' : ''}`}>
       {/* ── Customer context bar ── */}
@@ -228,15 +282,20 @@ const UnifiedView360 = ({ darkMode, mockMode, task }) => {
             <span className="unified-360__tab-label">{t(`tabs.${id}`) || id}</span>
           </button>
         ))}
-        {/* ── Demo / Live toggle ── */}
-        <button
-          type="button"
-          className={`unified-360__demo-toggle unified-360__demo-toggle--${demoMode ? 'demo' : 'live'}`}
-          onClick={() => setDemoMode((d) => !d)}
-          title={demoMode ? t('analytics.live') : t('analytics.demo')}
-        >
-          {demoMode ? t('analytics.demo') : t('analytics.live')}
-        </button>
+        {/* ── SLA countdown + demo indicator (right side of the tab bar) ── */}
+        <div className="unified-360__tab-trailing">
+          <SlaCountdown darkMode={darkMode} />
+          {demoMode && (
+            <button
+              type="button"
+              className="unified-360__demo-toggle unified-360__demo-toggle--demo"
+              onClick={() => setDemoMode((d) => !d)}
+              title={t('analytics.live')}
+            >
+              {t('analytics.demo')}
+            </button>
+          )}
+        </div>
       </nav>
 
       {/* ── Tab content ── */}
@@ -291,7 +350,7 @@ const UnifiedView360 = ({ darkMode, mockMode, task }) => {
               : <EmailWidget
                   key={navParams.composeMode ? `email-compose-${navParams.composeTo}` : (task?.interactionId || 'email-live')}
                   interactionId={task?.interactionId || task?.taskId || ''}
-                  callAssociatedDetails={buildEmailCallDetails(task)}
+                  callAssociatedDetails={buildEmailCallDetails(task, slaVariable)}
                   darkMode={darkMode}
                   onNavigate={navigate}
                   composeMode={Boolean(navParams.composeMode)}
@@ -312,6 +371,9 @@ const UnifiedView360 = ({ darkMode, mockMode, task }) => {
             : <TaskWidget task={task} darkMode={darkMode} onNavigate={navigate} />
         )}
       </div>
+      {isEmailTask && (
+        <SlaRequeueController darkMode={darkMode} interactionId={task?.interactionId} />
+      )}
     </div>
   );
 };

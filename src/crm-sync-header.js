@@ -489,6 +489,7 @@
     var title      = _extractTitle(parsed);
     var _rawAni    = parsed.ani || parsed.phoneNumber || null;
     var _mediaType = (parsed.mediaType || parsed.channelType || '').toLowerCase();
+    var _slaExpiresAt = _extractSlaExpiry(parsed);
     var _isOutbound = (parsed.contactDirection || '').toUpperCase() === 'OUTBOUND' ||
                       (parsed.outboundType || '').toUpperCase() === 'OUTDIAL';
 
@@ -573,6 +574,15 @@
     var _existing = _activeInteractions[parsed.interactionId];
     var _prevState = _existing ? _existing.state : null;
     if (_existing && _existing.state === _state && _state === 'connected') {
+      // Recompute the SLA expiry every time: the `slavariable` property may have
+      // been applied by the Desktop AFTER the first `task` prop, or the CAD may
+      // have been updated. Without this the dedup short-circuit would keep a stale
+      // (often null) slaExpiresAt and focus mode would never see a critical task.
+      if (_existing.slaExpiresAt !== _slaExpiresAt) {
+        _existing.slaExpiresAt = _slaExpiresAt;
+        console.log('[crm-sync-header] SLA (re)captured for', parsed.interactionId, '\u2192',
+          _slaExpiresAt ? new Date(_slaExpiresAt).toISOString() : '(none)');
+      }
       // Still connected — just update the title if it changed, no need to resend ARRIVED.
       if (title && title !== _existing.title) {
         _existing.title = title;
@@ -604,7 +614,14 @@
       _activeInteractions[parsed.interactionId] = {
         ani: _ani, email: _email, customerId: parsed.customerId || null,
         displayUrl: _displayUrl, title: title || null, state: _state, channel: _mediaType,
+        slaExpiresAt: _slaExpiresAt,
       };
+      if (_slaExpiresAt) {
+        console.log('[crm-sync-header] SLA captured for', parsed.interactionId, '\u2192',
+          new Date(_slaExpiresAt).toISOString());
+      } else if (_slaVariable) {
+        console.log('[crm-sync-header] no SLA value in CAD for', parsed.interactionId, '(var', _slaVariable + ')');
+      }
       // Resolve a unified customer email (preferred over phone) so voice and
       // email interactions for the same person share a single CRM tab. The
       // ARRIVED/WRAPUP message is sent only once resolution completes, to avoid
@@ -668,15 +685,775 @@
     }
     if (btn) {
       var winOpen = _crmTabManagerWindow && !_crmTabManagerWindow.closed;
-      var lblEl = btn.querySelector('.btn-label');
-      if (lblEl) lblEl.textContent = winOpen ? 'Focus CRM' : 'CRM Manager';
-      btn.title = winOpen ? 'Focus CRM Tab Manager' : 'Open CRM Tab Manager';
+      btn.title = winOpen ? _t('focusCrm') : _t('openCrm');
     }
+  }
+
+  // Apply the light/dark theme class to the header pill (called on darkmode change).
+  function _applyPillTheme() {
+    if (!_shadowRoot) return;
+    var pill = _shadowRoot.getElementById('pill');
+    if (!pill) return;
+    if (_darkMode) pill.classList.add('md--dark');
+    else pill.classList.remove('md--dark');
+  }
+
+  /* ── SLA focus-mode + end-of-shift controller ───────────────────────────── */
+  //
+  // Central, cross-task watcher. Evaluates every active interaction's SLA and,
+  // per the agent's focus settings (configured in the CRM Tab Manager, synced
+  // over the relay), moves the agent to Not Available while ANY task is
+  // SLA-critical so no NEW tasks route — returning to Available when the
+  // pressure clears. Also handles the manual "End shift" action: requeue every
+  // pending SLA-critical task. This supersedes the old per-task controller that
+  // lived inside the Customer360 widget.
+
+  var _slaVariable      = '';    // CAD var holding SLA epoch-ms (via `slavariable` prop)
+  var _slaThresholdMin  = 15;    // imminent window in minutes (via `slathresholdminutes` prop)
+  var _focusSettings    = null;  // { enabled, triggerOn, idleCode:{id,name} } — from Tab Manager / LS
+  var _slaAgentState    = null;  // last known { subStatus, auxCodeId } from eAgentStateChangeSuccess
+  var _focusEngaged     = false; // we moved the agent to Not Available
+  var _focusOverride    = false; // agent manually left our Not Available → stop managing
+  var _focusAuxId       = null;  // aux code id we set (to recognise our own change)
+  var _focusChannels    = null;  // channel types we set Not Available on (for release)
+  var _slaTickTimer     = null;
+  var _slaAgentListenerReady = false;
+  var _slaDbgTs         = 0;     // throttle for the focus-tick diagnostic log
+  var _focusEngageInFlight = false;
+  var _focusEngageFailedTs = 0;
+  var _focusFallbackTimer  = null;
+  var _syncListenBc        = null;
+
+  var FOCUS_LS_PREFIX    = 'wx_c360_focus_';
+  var SETTINGS_LS_PREFIX = 'wx_c360_settings_';
+  var CATALOG_LS_PREFIX  = 'wx_c360_catalog_';
+
+  function _lsRead(key) {
+    try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch (e) { return null; }
+  }
+  function _lsWrite(key, val) {
+    try { localStorage.setItem(key, JSON.stringify(val || {})); } catch (e) { /* quota/denied */ }
+  }
+  function _agentKey(prefix) { return prefix + (_agentId || 'anon'); }
+
+  // Focus settings: prefer the live relayed value, else the watcher-owned LS key.
+  function _getFocusSettings() {
+    if (_focusSettings) return _focusSettings;
+    return _lsRead(_agentKey(FOCUS_LS_PREFIX));
+  }
+
+  // The idle-code / queue catalog + requeue settings live in React-owned keys.
+  function _getCatalog()  { return _lsRead(_agentKey(CATALOG_LS_PREFIX))  || { idleCodes: [], queues: [] }; }
+  function _getRequeueQueue() {
+    var s = _lsRead(_agentKey(SETTINGS_LS_PREFIX));
+    return (s && s.sla && s.sla.queues && s.sla.queues.email) || null;
+  }
+
+  function _extractSlaExpiry(parsed) {
+    if (!_slaVariable) return null;
+    var cad  = parsed.callAssociatedData || {};
+    var cad2 = parsed.callAssociatedDetails || {};
+    var raw = (cad[_slaVariable] && cad[_slaVariable].value) || cad2[_slaVariable] || null;
+    if (raw == null || raw === '') return null;
+    var n = Number(raw);
+    if (isFinite(n) && n > 0) return n < 1e12 ? n * 1000 : n; // seconds → ms if needed
+    var d = Date.parse(raw);
+    return isNaN(d) ? null : d;
+  }
+
+  function _svc() {
+    var svc;
+    try { svc = (typeof AGENTX_SERVICE !== 'undefined') ? AGENTX_SERVICE : null; } catch (e) { svc = null; }
+    return svc || window.AGENTX_SERVICE || null;
+  }
+  function _aqmAgent()   { var s = _svc(); return (s && s.isInited && s.aqm && s.aqm.agent) ? s.aqm.agent : null; }
+  function _aqmContact() { var s = _svc(); return (s && s.isInited && s.aqm && s.aqm.contact) ? s.aqm.contact : null; }
+
+  function _statusIsNotAvailable(sub) {
+    var s = String(sub || '').toLowerCase();
+    return s.indexOf('idle') !== -1 || s.indexOf('notavail') !== -1 ||
+           s.indexOf('not_avail') !== -1 || s.indexOf('unavail') !== -1;
+  }
+
+  // Any active interaction SLA-critical for the given trigger?
+  function _hasCriticalTask(triggerOn) {
+    var now = Date.now();
+    var thMs = (_slaThresholdMin || 0) * 60000;
+    var ids = Object.keys(_activeInteractions);
+    for (var i = 0; i < ids.length; i++) {
+      var e = _activeInteractions[ids[i]];
+      if (!e || e.state === 'ended' || !e.slaExpiresAt) continue;
+      var triggerAt = triggerOn === 'expired' ? e.slaExpiresAt : (e.slaExpiresAt - thMs);
+      if (now >= triggerAt) return true;
+    }
+    return false;
+  }
+
+  // Ask the Customer360 widget (which has the fully-initialized Desktop SDK) to
+  // change the agent state. The header widget's raw AGENTX_SERVICE.aqm.agent
+  // call is unreliable from a third-party header context, so we delegate over the
+  // shared 'crm-sync' BroadcastChannel and fall back to the raw call if no reply.
+  function _postSync(msg) {
+    try { var bc = new BroadcastChannel('crm-sync'); bc.postMessage(msg); bc.close(); } catch (e) { /* ignore */ }
+  }
+  // Channel set for the state change. 'realtime' = interruptive channels only
+  // (voice, chat, custom messaging); 'all' = every routable channel.
+  function _channelsFor(mode) {
+    return (mode === 'realtime')
+      ? ['telephony', 'chat', 'customMessaging']
+      : ['telephony', 'chat', 'email', 'social', 'workItem', 'customMessaging'];
+  }
+  function _requestAgentState(state, auxId, name, channelType) {
+    _postSync({ type: 'FOCUS_STATE', state: state, auxCodeId: auxId, name: name || '', channelType: channelType || null });
+  }
+
+  // Listen for the Customer360 result so we know whether the change succeeded.
+  function _initFocusResultListener() {
+    if (_syncListenBc) return;
+    try {
+      _syncListenBc = new BroadcastChannel('crm-sync');
+      _syncListenBc.onmessage = function (e) {
+        var d = e && e.data;
+        if (!d || d.type !== 'FOCUS_STATE_RESULT') return;
+        clearTimeout(_focusFallbackTimer);
+        _focusEngageInFlight = false;
+        if (d.ok) {
+          if (d.state === 'Idle') { _focusEngaged = true; console.log('[crm-sync-header] focus: Not Available applied via Customer360'); }
+          else { console.log('[crm-sync-header] focus: Available applied via Customer360'); }
+        } else {
+          _focusEngageFailedTs = Date.now();
+          console.warn('[crm-sync-header] focus: Customer360 stateChange failed:', d.error);
+        }
+      };
+    } catch (e) { /* ignore */ }
+  }
+
+  function _focusEngage(idleCode) {
+    // Never override a Not Available the agent set themselves.
+    if (_slaAgentState && _statusIsNotAvailable(_slaAgentState.subStatus)) return;
+    if (_focusEngageInFlight) return;
+    if (Date.now() - _focusEngageFailedTs < 30000) return; // back off after a failure
+    // Resolve a VALID (non-system) idle code. A stale selection (e.g. a system
+    // code that no longer appears in the catalog) is self-healed to the default.
+    var codes = (_getCatalog().idleCodes) || [];
+    var chosen = null;
+    if (idleCode && idleCode.id) {
+      for (var i = 0; i < codes.length; i++) {
+        if (String(codes[i].id) === String(idleCode.id)) { chosen = codes[i]; break; }
+      }
+    }
+    if (!chosen) {
+      for (var j = 0; j < codes.length; j++) { if (codes[j].isDefault) { chosen = codes[j]; break; } }
+      if (!chosen) chosen = codes[0] || null;
+      if (chosen) {
+        console.warn('[crm-sync-header] focus: configured idle code invalid/stale — using',
+          chosen.name, '(' + chosen.id + ')');
+      }
+    }
+    if (!chosen) { console.warn('[crm-sync-header] focus: no valid idle code available — pick a Not Available reason in the SLA panel'); return; }
+    var auxId = String(chosen.id);
+    _focusAuxId = auxId;
+    _focusChannels = _channelsFor((_getFocusSettings() || {}).channels);
+    _focusEngageInFlight = true;
+    // Primary: delegate to Customer360. Fallback: raw aqm call if no reply in 6s.
+    _requestAgentState('Idle', auxId, chosen.name, _focusChannels);
+    clearTimeout(_focusFallbackTimer);
+    _focusFallbackTimer = setTimeout(function () { _stateChangeDirect('Idle', auxId, _focusChannels); }, 6000);
+  }
+
+  function _focusRelease() {
+    var wasEngaged = _focusEngaged;
+    _focusEngaged = false;
+    _focusAuxId = null;
+    if (!wasEngaged || _focusOverride) return; // agent already took control
+    var channels = _focusChannels || _channelsFor((_getFocusSettings() || {}).channels);
+    _requestAgentState('Available', '0', '', channels);
+    clearTimeout(_focusFallbackTimer);
+    _focusFallbackTimer = setTimeout(function () { _stateChangeDirect('Available', '0', channels); }, 6000);
+  }
+
+  // Fallback path: change state directly via the raw routing service (prefer the
+  // channel-based stateChangeV2 required by granular-state-control orgs).
+  function _stateChangeDirect(state, auxId, channelType) {
+    var agent = _aqmAgent();
+    if (!agent) {
+      _focusEngageInFlight = false;
+      if (state === 'Idle') _focusEngageFailedTs = Date.now();
+      console.warn('[crm-sync-header] focus: no Customer360 reply and aqm.agent unavailable for', state);
+      return;
+    }
+    var channels = (channelType && channelType.length) ? channelType : ['telephony', 'chat', 'email', 'social'];
+    console.log('[crm-sync-header] focus: no Customer360 reply — trying direct', state, channels.join('+'));
+    var call;
+    if (typeof agent.stateChangeV2 === 'function') {
+      call = agent.stateChangeV2({ data: { state: state, auxCodeId: auxId, channelType: channels } });
+    } else if (typeof agent.stateChange === 'function') {
+      call = agent.stateChange({ data: { state: state, auxCodeIdArray: auxId, lastStateChangeReason: 'SLA focus mode' } });
+    } else {
+      _focusEngageInFlight = false;
+      if (state === 'Idle') _focusEngageFailedTs = Date.now();
+      return;
+    }
+    Promise.resolve(call).then(function (res) {
+      _focusEngageInFlight = false;
+      if (state === 'Idle') _focusEngaged = true;
+      console.log('[crm-sync-header] focus: ' + state + ' applied (direct)', res);
+    }).catch(function (err) {
+      _focusEngageInFlight = false;
+      if (state === 'Idle') _focusEngageFailedTs = Date.now();
+      var detail; try { detail = JSON.stringify(err); } catch (e) { detail = String(err); }
+      console.warn('[crm-sync-header] focus: direct stateChange ' + state + ' failed | err=', err, '| detail=', detail);
+    });
+  }
+
+  function _slaTick() {
+    var focus = _getFocusSettings();
+    if (!focus || !focus.enabled) {
+      if (_focusEngaged) _focusRelease();
+      _focusOverride = false;
+      return;
+    }
+    var critical = _hasCriticalTask(focus.triggerOn || 'imminent');
+    var now = Date.now();
+    if (now - _slaDbgTs > 30000) {
+      _slaDbgTs = now;
+      console.log('[crm-sync-header] focus tick | enabled | trigger=', focus.triggerOn || 'imminent',
+        '| critical=', critical, '| engaged=', _focusEngaged, '| override=', _focusOverride,
+        '| tasks=', _slaDbgSummary());
+    }
+    if (critical && !_focusEngaged && !_focusOverride) {
+      _focusEngage(focus.idleCode || null);
+    } else if (!critical) {
+      if (_focusEngaged) _focusRelease();
+      _focusOverride = false; // pressure cleared → fresh slate for next time
+    }
+  }
+
+  function _slaDbgSummary() {
+    var ids = Object.keys(_activeInteractions);
+    if (!ids.length) return '(no active tasks)';
+    var out = [];
+    for (var i = 0; i < ids.length; i++) {
+      var e = _activeInteractions[ids[i]];
+      out.push(ids[i].slice(0, 8) + ':' + (e.slaExpiresAt ? new Date(e.slaExpiresAt).toISOString() : 'no-sla') + '/' + e.state);
+    }
+    return out.join(', ');
+  }
+
+  // End-of-shift: requeue every pending SLA-critical task to the configured queue.
+  function _endShiftRequeue() {
+    var queue = _getRequeueQueue();
+    var contact = _aqmContact();
+    if (!contact || typeof contact.vteamTransfer !== 'function') {
+      console.warn('[crm-sync-header] end-shift: aqm.contact.vteamTransfer unavailable');
+      _relaySend({ type: 'END_SHIFT_RESULT', requeued: 0, error: 'sdk_unavailable' });
+      return;
+    }
+    if (!queue || !queue.vteamId) {
+      console.warn('[crm-sync-header] end-shift: no requeue queue configured');
+      _relaySend({ type: 'END_SHIFT_RESULT', requeued: 0, error: 'no_queue' });
+      return;
+    }
+    var ids = Object.keys(_activeInteractions);
+    var count = 0;
+    ids.forEach(function (id) {
+      var e = _activeInteractions[id];
+      if (!e || e.state === 'ended' || !e.slaExpiresAt) return;
+      count++;
+      Promise.resolve(contact.vteamTransfer({ interactionId: id, data: {
+        vteamId: queue.vteamId, vteamType: queue.vteamType || 'inboundqueue',
+      } })).then(function () {
+        console.log('[crm-sync-header] end-shift: requeued', id, '→', queue.vteamId);
+      }).catch(function (err) {
+        console.warn('[crm-sync-header] end-shift: requeue failed for', id, err && err.message);
+      });
+    });
+    _relaySend({ type: 'END_SHIFT_RESULT', requeued: count });
+    console.log('[crm-sync-header] end-shift: requeued', count, 'pending SLA task(s)');
+  }
+
+  // Track live agent state so we (a) don't override a manual Not Available and
+  // (b) detect when the agent manually leaves our focus-mode Not Available.
+  function _initSlaAgentListener() {
+    if (_slaAgentListenerReady) return;
+    var agent = _aqmAgent();
+    if (!agent) { setTimeout(_initSlaAgentListener, 3000); return; }
+    if (agent.eAgentStateChangeSuccess && typeof agent.eAgentStateChangeSuccess.listen === 'function') {
+      agent.eAgentStateChangeSuccess.listen(function (msg) {
+        try {
+          var d = (msg && msg.data) || {};
+          _slaAgentState = { subStatus: d.subStatus, auxCodeId: d.auxCodeId };
+          if (_focusEngaged) {
+            var sub = String(d.subStatus || '').toLowerCase();
+            var differentAux = d.auxCodeId && _focusAuxId && String(d.auxCodeId) !== _focusAuxId;
+            if (sub === 'available' || differentAux) {
+              _focusOverride = true;
+              _focusEngaged = false;
+              console.log('[crm-sync-header] focus: manual state override detected — pausing auto-manage');
+            }
+          }
+        } catch (e) { /* ignore */ }
+      });
+      _slaAgentListenerReady = true;
+      console.log('[crm-sync-header] SLA agent-state listener registered');
+    } else {
+      setTimeout(_initSlaAgentListener, 3000);
+    }
+  }
+
+  function _startSlaController() {
+    if (_slaTickTimer) return;
+    _focusSettings = _getFocusSettings();
+    _initSlaAgentListener();
+    _initFocusResultListener();
+    _slaTickTimer = setInterval(_slaTick, 5000);
+    console.log('[crm-sync-header] SLA focus controller started | threshold',
+      _slaThresholdMin, 'min | var', _slaVariable || '(unset)');
+  }
+
+  // Notify the Customer360 widget (same origin, different context) that the
+  // centrally-edited requeue settings changed, so it re-hydrates from localStorage.
+  function _broadcastSettingsChanged() {
+    try {
+      var bc = new BroadcastChannel('crm-sync');
+      bc.postMessage({ type: 'SLA_SETTINGS_CHANGED' });
+      bc.close();
+    } catch (e) { /* BroadcastChannel unavailable */ }
+  }
+
+  /* ── In-header SLA / Focus settings UI + End-shift ───────────────────────── */
+  //
+  // The settings and the End-shift action live in THIS widget (the Desktop
+  // header), not in the CRM Tab Manager. A gear + End-shift button on the header
+  // pill open a floating panel / confirm dialog appended to document.body so they
+  // are not clipped by the header. Options come from the localStorage catalog the
+  // Customer360 widget provisions; focus + requeue settings are read/written to
+  // the same localStorage keys the watcher already uses.
+
+  var _slaPanelEl = null;
+  var _slaConfirmEl = null;
+  var _slaRefs = {};
+  var _slaSel = { focusEnabled: false, focusTrigger: 'imminent', rqAction: 'none', rqTrigger: 'imminent', channels: 'all' };
+  var _slaStylesInjected = false;
+
+  // Minimal i18n for panel strings the React bundle can't reach (this file is
+  // copied raw, not bundled). Mirrors the supported locales in src/i18n.
+  var _slaLocaleCache = null;
+  var _SLA_I18N = {
+    en: {
+      panelTitle: 'Focus / SLA',
+      focusMode: 'Focus mode — go Not Available while an SLA-critical task is open',
+      focusTrigger: 'Focus trigger',
+      withinThreshold: 'Within threshold',
+      afterExpiration: 'After expiration',
+      reason: 'Not Available reason',
+      channelsLabel: 'Apply to all channels',
+      channelsHint: '(off = voice, chat & messaging only)',
+      requeueTitle: 'SLA requeue',
+      whenReached: 'When SLA is reached',
+      actionNone: 'No action',
+      actionOffer: 'Offer',
+      actionAuto: 'Auto',
+      requeueTrigger: 'Requeue trigger',
+      requeueTo: 'Requeue to (email)',
+      wrapup: 'Wrap-up reason (auto-submitted)',
+      autoCountdown: 'Auto countdown (seconds)',
+      apply: 'Apply',
+      saved: 'Saved',
+      selectReason: 'Select a reason…',
+      selectQueue: 'Select a queue…',
+      selectWrapup: 'Select a wrap-up reason…',
+      endShiftTitle: 'End shift?',
+      endShiftMsg: 'This will requeue every open task that still has an SLA to the configured queue. Continue?',
+      cancel: 'Cancel',
+      endShiftConfirm: 'Requeue & end shift',
+      openCrm: 'Open CRM Tab Manager',
+      focusCrm: 'Focus CRM Tab Manager',
+      slaSettings: 'SLA / Focus settings',
+      endShiftTip: 'End shift — requeue pending SLA tasks',
+      endShiftLabel: 'End shift',
+      relayStatus: 'Relay status',
+    },
+    de: {
+      panelTitle: 'Fokus / SLA',
+      focusMode: 'Fokusmodus — Nicht verfügbar, solange eine SLA-kritische Aufgabe offen ist',
+      focusTrigger: 'Fokus-Auslöser',
+      withinThreshold: 'Innerhalb Schwelle',
+      afterExpiration: 'Nach Ablauf',
+      reason: 'Grund „Nicht verfügbar“',
+      channelsLabel: 'Auf alle Kanäle anwenden',
+      channelsHint: '(aus = nur Sprache, Chat & Messaging)',
+      requeueTitle: 'SLA-Rückstellung',
+      whenReached: 'Wenn SLA erreicht ist',
+      actionNone: 'Keine Aktion',
+      actionOffer: 'Anbieten',
+      actionAuto: 'Automatisch',
+      requeueTrigger: 'Rückstellungs-Auslöser',
+      requeueTo: 'Rückstellen an (E-Mail)',
+      wrapup: 'Nachbearbeitungsgrund (automatisch)',
+      autoCountdown: 'Auto-Countdown (Sekunden)',
+      apply: 'Anwenden',
+      saved: 'Gespeichert',
+      selectReason: 'Grund wählen…',
+      selectQueue: 'Warteschlange wählen…',
+      selectWrapup: 'Nachbearbeitungsgrund wählen…',
+      endShiftTitle: 'Schicht beenden?',
+      endShiftMsg: 'Dadurch wird jede offene Aufgabe mit SLA an die konfigurierte Warteschlange zurückgestellt. Fortfahren?',
+      cancel: 'Abbrechen',
+      endShiftConfirm: 'Rückstellen & Schicht beenden',
+      openCrm: 'CRM-Tab-Manager öffnen',
+      focusCrm: 'CRM-Tab-Manager fokussieren',
+      slaSettings: 'SLA-/Fokus-Einstellungen',
+      endShiftTip: 'Schicht beenden — ausstehende SLA-Aufgaben zurückstellen',
+      endShiftLabel: 'Schicht beenden',
+      relayStatus: 'Relay-Status',
+    },
+    cs: {
+      panelTitle: 'Soustředění / SLA',
+      focusMode: 'Režim soustředění — nastavit Nedostupný, dokud je otevřený úkol kritický pro SLA',
+      focusTrigger: 'Spouštěč soustředění',
+      withinThreshold: 'V rámci prahu',
+      afterExpiration: 'Po vypršení',
+      reason: 'Důvod „Nedostupný“',
+      channelsLabel: 'Použít na všechny kanály',
+      channelsHint: '(vypnuto = pouze hlas, chat a zprávy)',
+      requeueTitle: 'Přeřazení SLA',
+      whenReached: 'Když je dosaženo SLA',
+      actionNone: 'Žádná akce',
+      actionOffer: 'Nabídnout',
+      actionAuto: 'Automaticky',
+      requeueTrigger: 'Spouštěč přeřazení',
+      requeueTo: 'Přeřadit do (e-mail)',
+      wrapup: 'Důvod uzavření (automaticky)',
+      autoCountdown: 'Automatické odpočítávání (sekundy)',
+      apply: 'Použít',
+      saved: 'Uloženo',
+      selectReason: 'Vyberte důvod…',
+      selectQueue: 'Vyberte frontu…',
+      selectWrapup: 'Vyberte důvod uzavření…',
+      endShiftTitle: 'Ukončit směnu?',
+      endShiftMsg: 'Tímto se každý otevřený úkol, který má stále SLA, přeřadí do nakonfigurované fronty. Pokračovat?',
+      cancel: 'Zrušit',
+      endShiftConfirm: 'Přeřadit a ukončit směnu',
+      openCrm: 'Otevřít správce karet CRM',
+      focusCrm: 'Zaměřit správce karet CRM',
+      slaSettings: 'Nastavení SLA / soustředění',
+      endShiftTip: 'Ukončit směnu — přeřadit nevyřízené úkoly SLA',
+      endShiftLabel: 'Ukončit směnu',
+      relayStatus: 'Stav relay',
+    },
+  };
+  function _slaLocale() {
+    if (_slaLocaleCache) return _slaLocaleCache;
+    var lang = '';
+    try {
+      var host = document.querySelector('crm-sync-header');
+      if (host && host.getAttribute('locale')) lang = host.getAttribute('locale');
+      if (!lang) {
+        var tm = document.querySelector('task-management');
+        if (tm && tm.getAttribute('locale')) lang = tm.getAttribute('locale');
+      }
+      if (!lang) lang = navigator.language || navigator.userLanguage || 'en';
+    } catch (e) { lang = 'en'; }
+    var primary = String(lang).toLowerCase().split(/[-_]/)[0];
+    _slaLocaleCache = _SLA_I18N[primary] ? primary : 'en';
+    return _slaLocaleCache;
+  }
+  function _t(key) {
+    var d = _SLA_I18N[_slaLocale()] || _SLA_I18N.en;
+    return (d && d[key] != null) ? d[key] : (_SLA_I18N.en[key] != null ? _SLA_I18N.en[key] : key);
+  }
+
+  function _slaEsc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function _slaFind(list, id) {
+    for (var i = 0; i < (list || []).length; i++) {
+      if (String(list[i].id) === String(id)) return list[i];
+    }
+    return null;
+  }
+  function _slaFill(sel, placeholder, items, currentId) {
+    if (!sel) return;
+    var html = '<option value="">' + _slaEsc(placeholder) + '</option>';
+    (items || []).forEach(function (it) {
+      html += '<option value="' + _slaEsc(it.id) + '">' + _slaEsc(it.name) + '</option>';
+    });
+    sel.innerHTML = html;
+    if (currentId) sel.value = String(currentId);
+  }
+
+  function _injectSlaStyles() {
+    if (_slaStylesInjected) return;
+    _slaStylesInjected = true;
+    var css = [
+      '.wxsla-overlay{position:fixed;inset:0;z-index:100000;display:flex;align-items:flex-start;justify-content:flex-end;}',
+      '.wxsla-panel{position:fixed;top:52px;right:16px;z-index:100001;width:320px;max-height:80vh;overflow:auto;',
+      'background:#fff;color:#0a2236;border:1px solid #dbe3ec;border-radius:10px;padding:16px;',
+      'box-shadow:0 12px 40px rgba(0,0,0,.28);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:13px;}',
+      '.wxsla-panel.md--dark{background:#1a2733;color:#e6edf5;border-color:#31424f;}',
+      '.wxsla-h{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#5b6b7b;margin:0 0 10px;}',
+      '.wxsla-panel.md--dark .wxsla-h{color:#9db2c6;}',
+      '.wxsla-row{display:flex;align-items:flex-start;gap:8px;margin:0 0 12px;line-height:1.4;cursor:pointer;}',
+      '.wxsla-field{display:flex;flex-direction:column;gap:4px;margin:0 0 12px;}',
+      '.wxsla-field>span{font-size:11px;font-weight:600;color:#5b6b7b;}',
+      '.wxsla-panel.md--dark .wxsla-field>span{color:#9db2c6;}',
+      // Momentum-style toggle switch (focus mode)
+      '.wxsw-row{display:flex;align-items:center;gap:10px;margin:0 0 14px;line-height:1.4;}',
+      '.wxsw-label{font-size:12px;}',
+      '.wxsw{position:relative;flex:0 0 auto;width:34px;height:18px;border-radius:9px;border:none;padding:0;cursor:pointer;background:#c4cdd6;transition:background .15s;}',
+      '.wxsw .wxsw-k{position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.3);transition:left .15s;}',
+      '.wxsw.is-on{background:#0e7fc1;}',
+      '.wxsw.is-on .wxsw-k{left:18px;}',
+      '.wxsla-panel.md--dark .wxsw{background:#4a5a68;}',
+      '.wxsla-panel.md--dark .wxsw.is-on{background:#2b9be0;}',
+      // Segmented pill button-group (mirrors src-report .pill-seg)
+      '.wxseg{display:flex;width:100%;box-sizing:border-box;padding:3px;gap:3px;background:#f4f7fa;border:1px solid #dbe3ec;border-radius:18px;}',
+      '.wxseg button{flex:1 1 0;min-width:0;height:26px;padding:0 6px;border:none;border-radius:15px;background:transparent;color:#5b6b7b;font-family:inherit;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;transition:background .12s,color .12s;}',
+      '.wxseg button:hover{color:#0a2236;}',
+      '.wxseg button.is-active{background:#fff;color:#0e7fc1;box-shadow:0 1px 3px rgba(0,0,0,.14);}',
+      '.wxsla-panel.md--dark .wxseg{background:#22303c;border-color:#31424f;}',
+      '.wxsla-panel.md--dark .wxseg button{color:#9db2c6;}',
+      '.wxsla-panel.md--dark .wxseg button:hover{color:#e6edf5;}',
+      '.wxsla-panel.md--dark .wxseg button.is-active{background:#0f1c26;color:#4db2ee;}',
+      '.wxsla-field select,.wxsla-field input{height:30px;box-sizing:border-box;padding:0 8px;border:1px solid #dbe3ec;',
+      'border-radius:8px;background:#fff;color:inherit;font-family:inherit;font-size:13px;}',
+      '.wxsla-panel.md--dark .wxsla-field select,.wxsla-panel.md--dark .wxsla-field input{background:#22303c;border-color:#31424f;color:#e6edf5;}',
+      '.wxsla-sep{height:1px;background:#dbe3ec;margin:4px 0 12px;}',
+      '.wxsla-panel.md--dark .wxsla-sep{background:#31424f;}',
+      '.wxsla-actions{display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-top:4px;}',
+      '.wxsla-btn{height:30px;padding:0 14px;border-radius:15px;border:1px solid #dbe3ec;background:#fff;color:#0a2236;',
+      'font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;}',
+      '.wxsla-btn--primary{background:#0e7fc1;border-color:#0e7fc1;color:#fff;}',
+      '.wxsla-btn--danger{background:#d5493f;border-color:#d5493f;color:#fff;}',
+      '.wxsla-status{font-size:12px;color:#0e7fc1;}',
+      '.wxsla-dialog{position:fixed;top:52px;right:16px;width:320px;background:#fff;color:#0a2236;border:1px solid #dbe3ec;',
+      'border-radius:10px;padding:18px;box-shadow:0 12px 40px rgba(0,0,0,.28);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}',
+      '.wxsla-dialog.md--dark{background:#1a2733;color:#e6edf5;border-color:#31424f;}',
+      '.wxsla-dialog p{font-size:13px;line-height:1.5;margin:0 0 16px;}',
+    ].join('');
+    var style = document.createElement('style');
+    style.id = 'wxsla-styles';
+    style.textContent = css;
+    document.head.appendChild(style);
+  }
+
+  function _buildSlaPanel() {
+    if (_slaPanelEl) return;
+    _injectSlaStyles();
+    var el = document.createElement('div');
+    el.className = 'wxsla-panel' + (_darkMode ? ' md--dark' : '');
+    el.style.display = 'none';
+    el.innerHTML = [
+      '<div class="wxsla-h">' + _slaEsc(_t('panelTitle')) + '</div>',
+      '<div class="wxsw-row"><button class="wxsw" id="wxsla-focus-enabled" role="switch" aria-checked="false"><span class="wxsw-k"></span></button>',
+      '<span class="wxsw-label">' + _slaEsc(_t('focusMode')) + '</span></div>',
+      '<div id="wxsla-focus-when">',
+      '  <div class="wxsla-field"><span>' + _slaEsc(_t('focusTrigger')) + '</span><div class="wxseg" data-group="focusTrigger">',
+      '    <button data-val="imminent">' + _slaEsc(_t('withinThreshold')) + '</button><button data-val="expired">' + _slaEsc(_t('afterExpiration')) + '</button></div></div>',
+      '  <div class="wxsla-field"><span>' + _slaEsc(_t('reason')) + '</span><select id="wxsla-focus-idle"></select></div>',
+      '  <div class="wxsw-row"><button class="wxsw" id="wxsla-channels" role="switch" aria-checked="true"><span class="wxsw-k"></span></button>',
+      '  <span class="wxsw-label">' + _slaEsc(_t('channelsLabel')) + ' <small style="opacity:.7">' + _slaEsc(_t('channelsHint')) + '</small></span></div>',
+      '</div>',
+      '<div class="wxsla-sep"></div>',
+      '<div class="wxsla-h">' + _slaEsc(_t('requeueTitle')) + '</div>',
+      '<div class="wxsla-field"><span>' + _slaEsc(_t('whenReached')) + '</span><div class="wxseg" data-group="rqAction">',
+      '  <button data-val="none">' + _slaEsc(_t('actionNone')) + '</button><button data-val="offer">' + _slaEsc(_t('actionOffer')) + '</button><button data-val="auto">' + _slaEsc(_t('actionAuto')) + '</button></div></div>',
+      '<div id="wxsla-rq-when">',
+      '  <div class="wxsla-field"><span>' + _slaEsc(_t('requeueTrigger')) + '</span><div class="wxseg" data-group="rqTrigger">',
+      '    <button data-val="imminent">' + _slaEsc(_t('withinThreshold')) + '</button><button data-val="expired">' + _slaEsc(_t('afterExpiration')) + '</button></div></div>',
+      '  <div class="wxsla-field"><span>' + _slaEsc(_t('requeueTo')) + '</span><select id="wxsla-rq-queue"></select></div>',
+      '  <div class="wxsla-field"><span>' + _slaEsc(_t('wrapup')) + '</span><select id="wxsla-rq-wrapup"></select></div>',
+      '</div>',
+      '<div class="wxsla-field" id="wxsla-rq-countdown-field"><span>' + _slaEsc(_t('autoCountdown')) + '</span><input type="number" id="wxsla-rq-countdown" min="3" max="120" value="15"></div>',
+      '<div class="wxsla-actions"><span id="wxsla-status" class="wxsla-status"></span>',
+      '<button id="wxsla-apply" class="wxsla-btn wxsla-btn--primary">' + _slaEsc(_t('apply')) + '</button></div>',
+    ].join('');
+    document.body.appendChild(el);
+    _slaPanelEl = el;
+    _slaRefs = {
+      focusSwitch: el.querySelector('#wxsla-focus-enabled'),
+      focusWhen: el.querySelector('#wxsla-focus-when'),
+      focusIdle: el.querySelector('#wxsla-focus-idle'),
+      channelsSwitch: el.querySelector('#wxsla-channels'),
+      rqWhen: el.querySelector('#wxsla-rq-when'),
+      rqQueue: el.querySelector('#wxsla-rq-queue'),
+      rqWrapup: el.querySelector('#wxsla-rq-wrapup'),
+      rqCountdown: el.querySelector('#wxsla-rq-countdown'),
+      rqCountdownField: el.querySelector('#wxsla-rq-countdown-field'),
+      apply: el.querySelector('#wxsla-apply'),
+      status: el.querySelector('#wxsla-status'),
+    };
+    _slaRefs.apply.addEventListener('click', _slaApply);
+    _slaRefs.focusSwitch.addEventListener('click', function () { _slaSetSwitch(!_slaSel.focusEnabled); });
+    _slaRefs.channelsSwitch.addEventListener('click', function () { _slaSetChannelsSwitch(_slaSel.channels !== 'all'); });
+    // Segmented button-groups: one delegated listener per group.
+    var segs = el.querySelectorAll('.wxseg');
+    for (var s = 0; s < segs.length; s++) {
+      (function (seg) {
+        seg.addEventListener('click', function (e) {
+          var b = e.target.closest('button');
+          if (!b || !seg.contains(b)) return;
+          _slaSegClick(seg.getAttribute('data-group'), b.getAttribute('data-val'));
+        });
+      })(segs[s]);
+    }
+    // Close when clicking outside the panel.
+    document.addEventListener('mousedown', function (e) {
+      if (_slaPanelEl && _slaPanelEl.style.display !== 'none' &&
+          !_slaPanelEl.contains(e.target) && !_isHeaderControl(e.target)) {
+        _slaPanelEl.style.display = 'none';
+      }
+    });
+  }
+
+  // Segmented group + switch state helpers.
+  function _slaSyncSeg(group) {
+    if (!_slaPanelEl) return;
+    var wrap = _slaPanelEl.querySelector('.wxseg[data-group="' + group + '"]');
+    if (!wrap) return;
+    var btns = wrap.querySelectorAll('button');
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].className = (btns[i].getAttribute('data-val') === String(_slaSel[group])) ? 'is-active' : '';
+    }
+  }
+  function _slaSegClick(group, val) {
+    if (!group || val == null) return;
+    _slaSel[group] = val;
+    _slaSyncSeg(group);
+    _slaUpdateVisibility();
+  }
+  function _slaSetSwitch(on) {
+    _slaSel.focusEnabled = !!on;
+    var sw = _slaRefs.focusSwitch;
+    if (sw) {
+      sw.className = 'wxsw' + (on ? ' is-on' : '');
+      sw.setAttribute('aria-checked', on ? 'true' : 'false');
+    }
+    _slaUpdateVisibility();
+  }
+  function _slaSetChannelsSwitch(on) {
+    _slaSel.channels = on ? 'all' : 'realtime';
+    var sw = _slaRefs.channelsSwitch;
+    if (sw) {
+      sw.className = 'wxsw' + (on ? ' is-on' : '');
+      sw.setAttribute('aria-checked', on ? 'true' : 'false');
+    }
+  }
+  function _slaUpdateVisibility() {
+    var show = function (el, v) { if (el) el.style.display = v ? '' : 'none'; };
+    show(_slaRefs.focusWhen, _slaSel.focusEnabled);
+    show(_slaRefs.rqWhen, _slaSel.rqAction !== 'none');
+    show(_slaRefs.rqCountdownField, _slaSel.rqAction === 'auto');
+  }
+
+  function _isHeaderControl(node) {
+    // Clicks on our header buttons are handled separately; don't treat as outside.
+    try {
+      var root = _shadowRoot;
+      return !!(root && (root.getElementById('sla-btn') === node || root.getElementById('endshift-btn') === node));
+    } catch (e) { return false; }
+  }
+
+  function _slaPopulateForm() {
+    var cat = _getCatalog();
+    var focus = _getFocusSettings() || {};
+    var settings = _lsRead(_agentKey(SETTINGS_LS_PREFIX)) || {};
+    var rq = settings.sla || {};
+    _slaSel.focusEnabled = !!focus.enabled;
+    _slaSel.focusTrigger = focus.triggerOn || 'imminent';
+    _slaSel.channels = focus.channels === 'realtime' ? 'realtime' : 'all';
+    _slaSel.rqAction = rq.action || 'none';
+    _slaSel.rqTrigger = rq.triggerOn || 'imminent';
+    _slaSetSwitch(_slaSel.focusEnabled);
+    _slaSetChannelsSwitch(_slaSel.channels === 'all');
+    _slaSyncSeg('focusTrigger');
+    _slaSyncSeg('rqAction');
+    _slaSyncSeg('rqTrigger');
+    if (_slaRefs.rqCountdown) _slaRefs.rqCountdown.value = rq.autoCountdownSec || 15;
+    _slaFill(_slaRefs.focusIdle, _t('selectReason'), cat.idleCodes, focus.idleCode && focus.idleCode.id);
+    var q = rq.queues && rq.queues.email;
+    _slaFill(_slaRefs.rqQueue, _t('selectQueue'), cat.queues, q && q.vteamId);
+    _slaFill(_slaRefs.rqWrapup, _t('selectWrapup'), cat.wrapUpCodes, rq.wrapUp && rq.wrapUp.auxCodeId);
+    _slaUpdateVisibility();
+  }
+
+  function _slaApply() {
+    var cat = _getCatalog();
+    var idle = _slaFind(cat.idleCodes, _slaRefs.focusIdle ? _slaRefs.focusIdle.value : '');
+    _focusSettings = {
+      enabled: _slaSel.focusEnabled,
+      triggerOn: _slaSel.focusTrigger,
+      idleCode: idle ? { id: idle.id, name: idle.name } : null,
+      channels: _slaSel.channels,
+    };
+    _lsWrite(_agentKey(FOCUS_LS_PREFIX), _focusSettings);
+
+    var q = _slaFind(cat.queues, _slaRefs.rqQueue ? _slaRefs.rqQueue.value : '');
+    var wc = _slaFind(cat.wrapUpCodes, _slaRefs.rqWrapup ? _slaRefs.rqWrapup.value : '');
+    var sla = {
+      action: _slaSel.rqAction,
+      triggerOn: _slaSel.rqTrigger,
+      autoCountdownSec: _slaRefs.rqCountdown ? (parseInt(_slaRefs.rqCountdown.value, 10) || 15) : 15,
+      queues: { email: q ? { vteamId: q.id, vteamType: q.type || 'inboundqueue', name: q.name } : null },
+      wrapUp: wc ? { auxCodeId: wc.id, name: wc.name } : null,
+    };
+    var existing = _lsRead(_agentKey(SETTINGS_LS_PREFIX)) || {};
+    existing.sla = sla;
+    _lsWrite(_agentKey(SETTINGS_LS_PREFIX), existing);
+
+    console.log('[crm-sync-header] SLA settings applied (in-header)', _focusSettings, sla);
+    _slaTick();
+    _broadcastSettingsChanged();
+    if (_slaRefs.status) {
+      _slaRefs.status.textContent = _t('saved');
+      setTimeout(function () { if (_slaRefs.status) _slaRefs.status.textContent = ''; }, 2000);
+    }
+  }
+
+  function _toggleSlaPanel() {
+    _buildSlaPanel();
+    if (_slaConfirmEl) _slaConfirmEl.style.display = 'none';
+    var showing = _slaPanelEl.style.display !== 'none';
+    if (showing) { _slaPanelEl.style.display = 'none'; return; }
+    _slaPanelEl.className = 'wxsla-panel' + (_darkMode ? ' md--dark' : '');
+    _slaPopulateForm();
+    _slaPanelEl.style.display = 'block';
+  }
+
+  function _buildEndShiftConfirm() {
+    if (_slaConfirmEl) return;
+    _injectSlaStyles();
+    var el = document.createElement('div');
+    el.className = 'wxsla-dialog' + (_darkMode ? ' md--dark' : '');
+    el.style.display = 'none';
+    el.innerHTML = [
+      '<div class="wxsla-h">' + _slaEsc(_t('endShiftTitle')) + '</div>',
+      '<p>' + _slaEsc(_t('endShiftMsg')) + '</p>',
+      '<div class="wxsla-actions"><button id="wxsla-es-cancel" class="wxsla-btn">' + _slaEsc(_t('cancel')) + '</button>',
+      '<button id="wxsla-es-ok" class="wxsla-btn wxsla-btn--danger">' + _slaEsc(_t('endShiftConfirm')) + '</button></div>',
+    ].join('');
+    document.body.appendChild(el);
+    _slaConfirmEl = el;
+    el.querySelector('#wxsla-es-cancel').addEventListener('click', function () { el.style.display = 'none'; });
+    el.querySelector('#wxsla-es-ok').addEventListener('click', function () {
+      el.style.display = 'none';
+      _endShiftRequeue();
+    });
+  }
+
+  function _openEndShiftConfirm() {
+    _buildEndShiftConfirm();
+    if (_slaPanelEl) _slaPanelEl.style.display = 'none';
+    _slaConfirmEl.className = 'wxsla-dialog' + (_darkMode ? ' md--dark' : '');
+    _slaConfirmEl.style.display = 'block';
   }
 
   /* ── Start background listeners (relay connects once `wsurl` is set) ─────── */
 
   _initAqmEndListeners();
+  _startSlaController();
 
   /* ── Web Component ───────────────────────────────────────────────────────── */
 
@@ -692,38 +1469,57 @@
             '<style>',
             '  :host { display: inline-flex; align-items: center; height: 100%; }',
             '  .pill {',
-            '    display: inline-flex; align-items: center; gap: 6px;',
-            '    padding: 0 10px; height: 28px; border-radius: 14px;',
-            '    background: rgba(255,255,255,0.08);',
-            '    border: 1px solid rgba(255,255,255,0.15);',
+            '    display: inline-flex; align-items: center; gap: 5px;',
+            '    padding: 0 7px; height: 26px; border-radius: 13px;',
+            '    background: rgba(0,0,0,0.04); border: 1px solid rgba(0,0,0,0.12);',
             '    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;',
-            '    font-size: 12px; color: #d8ddf0; cursor: default; user-select: none;',
-            '    white-space: nowrap;',
+            '    font-size: 11px; color: #243240; user-select: none; white-space: nowrap;',
             '  }',
+            '  .pill.md--dark { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.15); color: #d8ddf0; }',
             '  .dot {',
             '    width: 7px; height: 7px; border-radius: 50%;',
-            '    background: #666; flex-shrink: 0; transition: background 0.3s;',
+            '    background: #999; flex-shrink: 0; transition: background 0.3s;',
             '  }',
-            '  .dot--connected    { background: #3ddc84; }',
+            '  .dot--connected    { background: #2bb673; }',
             '  .dot--disconnected { background: #e05c5c; }',
-            '  .label { font-weight: 500; letter-spacing: 0.02em; }',
-            '  .open-btn {',
+            '  .hbtn {',
             '    display: inline-flex; align-items: center; justify-content: center; gap: 4px;',
-            '    margin-left: 4px; padding: 0 8px; height: 20px; border-radius: 10px;',
-            '    background: rgba(74,143,232,0.25); border: 1px solid rgba(74,143,232,0.5);',
-            '    color: #7bb8f5; font-size: 11px; font-family: inherit; cursor: pointer;',
-            '    transition: background 0.2s;',
+            '    height: 20px; padding: 0 8px; border-radius: 10px; cursor: pointer;',
+            '    font-family: inherit; font-size: 11px; font-weight: 600; line-height: 1;',
+            '    background: rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.16); color: #2b3a48;',
+            '    transition: background 0.15s;',
             '  }',
-            '  .open-btn:hover { background: rgba(74,143,232,0.45); }',
+            '  .hbtn:hover { background: rgba(0,0,0,0.10); }',
+            '  .hbtn--icon { padding: 0 6px; }',
+            '  .hbtn--primary { background: rgba(14,127,193,0.14); border-color: rgba(14,127,193,0.55); color: #0a6aa8; }',
+            '  .hbtn--primary:hover { background: rgba(14,127,193,0.26); }',
+            '  .hbtn--end { background: rgba(197,73,63,0.14); border-color: rgba(197,73,63,0.55); color: #b0362c; }',
+            '  .hbtn--end:hover { background: rgba(197,73,63,0.26); }',
+            '  .pill.md--dark .hbtn { background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.22); color: #e6edf5; }',
+            '  .pill.md--dark .hbtn:hover { background: rgba(255,255,255,0.20); }',
+            '  .pill.md--dark .hbtn--primary { background: rgba(74,143,232,0.32); border-color: rgba(74,143,232,0.6); color: #cfe0ee; }',
+            '  .pill.md--dark .hbtn--primary:hover { background: rgba(74,143,232,0.46); }',
+            '  .pill.md--dark .hbtn--end { background: rgba(213,73,63,0.34); border-color: rgba(213,73,63,0.6); color: #f0b6b0; }',
+            '  .pill.md--dark .hbtn--end:hover { background: rgba(213,73,63,0.50); }',
             '</style>',
-            '<div class="pill">',
-            '  <span class="dot" id="dot"></span>',
-            '  <span class="label">CRM</span>',
-            '  <button class="open-btn" id="open-btn" title="Open CRM Tab Manager">',
-            '    <svg class="btn-icon" width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">',
+            '<div class="pill' + (_darkMode ? ' md--dark' : '') + '" id="pill">',
+            '  <span class="dot" id="dot" title="' + _slaEsc(_t('relayStatus')) + '"></span>',
+            '  <button class="hbtn hbtn--primary" id="open-btn" title="' + _slaEsc(_t('openCrm')) + '">',
+            '    <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">',
             '      <path d="M19 19H5V5h7V3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/>',
             '    </svg>',
-            '    <span class="btn-label">CRM Manager</span>',
+            '    <span class="btn-label">CRM</span>',
+            '  </button>',
+            '  <button class="hbtn hbtn--icon" id="sla-btn" title="' + _slaEsc(_t('slaSettings')) + '">',
+            '    <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">',
+            '      <path d="M19.14 12.94a7.6 7.6 0 000-1.88l2.03-1.58a.5.5 0 00.12-.64l-1.92-3.32a.5.5 0 00-.61-.22l-2.39.96a7 7 0 00-1.62-.94l-.36-2.54a.5.5 0 00-.5-.42h-3.84a.5.5 0 00-.5.42l-.36 2.54c-.58.24-1.12.56-1.62.94l-2.39-.96a.5.5 0 00-.61.22L2.68 8.84a.5.5 0 00.12.64l2.03 1.58a7.6 7.6 0 000 1.88l-2.03 1.58a.5.5 0 00-.12.64l1.92 3.32c.14.24.42.32.61.22l2.39-.96c.5.38 1.04.7 1.62.94l.36 2.54c.05.24.25.42.5.42h3.84c.25 0 .45-.18.5-.42l.36-2.54c.58-.24 1.12-.56 1.62-.94l2.39.96c.19.1.47.02.61-.22l1.92-3.32a.5.5 0 00-.12-.64l-2.03-1.58zM12 15.5A3.5 3.5 0 1112 8.5a3.5 3.5 0 010 7z"/>',
+            '    </svg>',
+            '  </button>',
+            '  <button class="hbtn hbtn--end" id="endshift-btn" title="' + _slaEsc(_t('endShiftTip')) + '">',
+            '    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">',
+            '      <path d="M16 17v-2H9v-2h7V9l4 4-4 4zM14 2a2 2 0 012 2v3h-2V4H5v16h9v-3h2v3a2 2 0 01-2 2H5a2 2 0 01-2-2V4a2 2 0 012-2h9z"/>',
+            '    </svg>',
+            '    <span>' + _slaEsc(_t('endShiftLabel')) + '</span>',
             '  </button>',
             '</div>',
           ].join('');
@@ -735,6 +1531,8 @@
               _openCrmTabManager();
             }
           });
+          shadow.getElementById('sla-btn').addEventListener('click', _toggleSlaPanel);
+          shadow.getElementById('endshift-btn').addEventListener('click', _openEndShiftConfirm);
         }
 
         _shadowRoot = shadow;
@@ -779,6 +1577,7 @@
         var isDark = (value === true || value === 'true' || value === '1');
         if (_darkMode === isDark) return; // no change
         _darkMode = isDark;
+        _applyPillTheme();
         _relaySend({ type: 'THEME_CHANGED', darkMode: _darkMode });
       }
       get darkmode() { return _darkMode; }
@@ -786,6 +1585,26 @@
       set orgid(value) { this._orgid = value; _orgId = value || null; _configureActivity(); }
       set datacenter(value) { this._datacenter = value; _jdsDataCenter = value || ''; }
       set workspaceid(value) { this._workspaceid = value; _jdsWorkspaceId = value || ''; }
+
+      /* ── SLA focus-mode properties ─────────────────────────────────────── */
+      // Map in the Desktop layout, e.g.:
+      //   "slavariable":         "Jmartan_SLAExpires",
+      //   "slathresholdminutes": "15"
+      set slavariable(value) {
+        this._slavariable = value;
+        _slaVariable = value || '';
+        // The Desktop may apply `slavariable` AFTER `task`; re-capture the current
+        // task's SLA now that the CAD variable name is known.
+        if (this._task) { try { handleTaskSync(this._task); } catch (e) { /* ignore */ } }
+      }
+      get slavariable() { return _slaVariable; }
+
+      set slathresholdminutes(value) {
+        this._slathresholdminutes = value;
+        var n = Number(value);
+        if (isFinite(n) && n > 0) _slaThresholdMin = n;
+      }
+      get slathresholdminutes() { return _slaThresholdMin; }
 
       /* ── Activity analytics properties ─────────────────────────────────── */
       // Map in the Desktop layout, e.g.:

@@ -296,6 +296,52 @@
   align-items: center;
 }
 
+/* SLA expiration countdown pill */
+.email-sla {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.6;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+.email-sla__icon {
+  font-size: 12px;
+}
+.email-sla__time {
+  font-variant-numeric: tabular-nums;
+}
+.email-sla--ok {
+  color: var(--md-color-green-70, #1a7d1a);
+  background: var(--md-color-green-10, #e8f5e4);
+  border-color: var(--md-color-green-40, #93d68a);
+}
+.email-sla--imminent {
+  color: var(--md-color-orange-70, #a85a00);
+  background: var(--md-color-orange-10, #fdeede);
+  border-color: var(--md-color-orange-40, #f7b26b);
+}
+.email-sla--expired {
+  color: #fff;
+  background: var(--md-color-red-50, #e84545);
+  border-color: var(--md-color-red-50, #e84545);
+}
+/* Dark-mode tints */
+.email-sla--ok.md--dark {
+  color: var(--md-color-green-40, #93d68a);
+  background: rgba(77, 179, 61, 0.16);
+  border-color: rgba(77, 179, 61, 0.4);
+}
+.email-sla--imminent.md--dark {
+  color: var(--md-color-orange-40, #f7b26b);
+  background: rgba(245, 130, 25, 0.16);
+  border-color: rgba(245, 130, 25, 0.4);
+}
+
 .email-header__meta {
   display: flex;
   flex-wrap: wrap;

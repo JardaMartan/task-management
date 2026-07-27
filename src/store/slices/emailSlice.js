@@ -160,6 +160,8 @@ const initialState = {
   sendResult: null,
   wrapUp: { submitted: false, reason: '', notes: '' },
   error: null,
+  slaExpiresAt: null,       // SLA expiry (epoch ms) for the active email task; null = unknown
+  emailTouched: false,      // agent has started working on this task (drafted a reply)
 };
 
 const emailSlice = createSlice({
@@ -221,6 +223,11 @@ const emailSlice = createSlice({
     },
     setAiReplyDraft: (state, action) => {
       state.aiReplyDraft = action.payload;
+      // Latch "touched" once the agent has actual reply text — drives the
+      // New/Draft indicator and suppresses SLA auto-requeue.
+      if (String(action.payload || '').replace(/<[^>]+>/g, '').trim()) {
+        state.emailTouched = true;
+      }
     },
     setTemplates: (state, action) => {
       state.templates = action.payload;
@@ -267,6 +274,12 @@ const emailSlice = createSlice({
     setError: (state, action) => {
       state.error = action.payload;
     },
+    setSlaExpiresAt: (state, action) => {
+      state.slaExpiresAt = action.payload;
+    },
+    setEmailTouched: (state, action) => {
+      state.emailTouched = Boolean(action.payload);
+    },
     resetEmail: () => ({ ...initialState }),
     resetEmailContent: (state) => ({
       // Preserves everything that was loaded for the current task so that
@@ -290,6 +303,10 @@ const emailSlice = createSlice({
       customerIdentities: state.customerIdentities,
       customerProfile: state.customerProfile,
       interactionSummaries: state.interactionSummaries,
+      // Preserve the SLA countdown across tab switches
+      slaExpiresAt: state.slaExpiresAt,
+      // Preserve the touched/Draft state across tab switches
+      emailTouched: state.emailTouched,
       // Persist config-level lists across tab switches
       templates: state.templates,
       signatures: state.signatures,
@@ -311,6 +328,9 @@ const emailSlice = createSlice({
       state.isFetchingEmail = false;
       state.error  = null;
       state.wrapUp = { submitted: false, reason: '', notes: '' };
+      // Demo SLA countdown: ~8.5 minutes out so the timer is visible in mock mode.
+      state.slaExpiresAt = Date.now() + Math.round(8.5 * 60 * 1000);
+      state.emailTouched = false;
       // Load templates, signatures, KB from mock data (locale-aware)
       if (m.emailComposer) {
         state.templates  = m.emailComposer.templates  || [];
@@ -352,6 +372,8 @@ export const {
   setIsFetchingAiDraft,
   setWrapUp,
   setError,
+  setSlaExpiresAt,
+  setEmailTouched,
   resetEmail,
   resetEmailContent,
   setMockEmailData,
@@ -361,6 +383,25 @@ export const {
 export default emailSlice.reducer;
 
 // ─── Thunks ─────────────────────────────────────────────────────────────────
+
+/**
+ * Set the SLA expiry for the active email task from its CAD value.
+ * The SLA is delivered WITH the task (Agent-Viewable variable in CAD); the
+ * variable name is configurable via widget.emailConfig.slaVariable and the CAD
+ * value is unwrapped by the caller (UnifiedView360.buildEmailCallDetails).
+ * Accepts epoch-ms (string/number) or ISO-8601. Sets email.slaExpiresAt or null.
+ */
+export const loadEmailSla = (rawSlaValue) => (dispatch) => {
+  if (rawSlaValue == null || rawSlaValue === '') {
+    console.log('[SLA] no CAD value for the configured SLA variable — countdown hidden');
+    dispatch(setSlaExpiresAt(null));
+    return;
+  }
+  let ms = Number(rawSlaValue);                          // epoch-ms as string/number
+  if (!Number.isFinite(ms)) ms = Date.parse(rawSlaValue); // ISO-8601 fallback
+  console.log('[SLA] raw=', rawSlaValue, '→ expiresAt(ms)=', ms);
+  dispatch(setSlaExpiresAt(Number.isFinite(ms) && ms > 0 ? ms : null));
+};
 
 export const fetchGmailToken = () => async (dispatch, getState) => {
   const { widget } = getState();

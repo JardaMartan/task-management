@@ -35,10 +35,13 @@ import emailReducer, {
   parseGmailMessage, decodeBase64Url, extractEmailFromTask,
 } from './store/slices/emailSlice';
 
+import settingsReducer from './store/slices/settingsSlice';
+
 const store = configureStore({
     reducer: {
         widget: widgetReducer,
         email: emailReducer,
+        settings: settingsReducer,
     },
 });
 

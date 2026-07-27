@@ -23,6 +23,7 @@ const EmailTaskHeader = ({ darkMode }) => {
   const activeEmail = useSelector((state) => state.email.activeEmail);
   const aiEnrichment = useSelector((state) => state.email.aiEnrichment);
   const thread = useSelector((state) => state.email.thread);
+  const emailTouched = useSelector((state) => state.email.emailTouched);
 
   if (!activeEmail) return null;
 
@@ -38,6 +39,9 @@ const EmailTaskHeader = ({ darkMode }) => {
         <div className="email-header__subject-row">
           <h2 className="md-h2 email-header__subject">{subject || t('email.subject')}</h2>
           <div className="email-header__badges">
+            <Badge color={emailTouched ? 'orange' : 'green'}>
+              {emailTouched ? t('email.state.draft') : t('email.state.new')}
+            </Badge>
             {messageCount > 1 && (
               <Badge color="default" title={`${messageCount} messages`}>{messageCount}</Badge>
             )}

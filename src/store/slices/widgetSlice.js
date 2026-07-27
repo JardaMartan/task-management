@@ -125,6 +125,10 @@ const widgetSlice = createSlice({
             signatures: [],
             defaultSignatureId: null,
             knowledgeBase: [],
+            // SLA countdown: reportable Global Variable name holding the email SLA
+            // expiry (epoch-ms string) + amber-warning threshold in minutes.
+            slaVariable: null,
+            slaThresholdMinutes: 15,
         },
         caseWorkflow: initialCaseState,
     },
@@ -526,6 +530,7 @@ export const hydrateWidgetContext = (props = {}) => (dispatch) => {
             tokenBrokerUrl, webexConnectOutboundWebhook,
             aiProvider, aiApiKey,
             templatesUrl, signaturesUrl, templates, signatures, defaultSignatureId, knowledgeBase,
+            slaVariable, slaThresholdMinutes,
         } = safeConfig;
         const emailCfg = {};
         if (tokenBrokerUrl) emailCfg.tokenBrokerUrl = tokenBrokerUrl;
@@ -541,6 +546,10 @@ export const hydrateWidgetContext = (props = {}) => (dispatch) => {
         if (Array.isArray(signatures) && signatures.length > 0) emailCfg.signatures = signatures;
         if (defaultSignatureId) emailCfg.defaultSignatureId = defaultSignatureId;
         if (Array.isArray(knowledgeBase) && knowledgeBase.length > 0) emailCfg.knowledgeBase = knowledgeBase;
+        if (slaVariable) emailCfg.slaVariable = slaVariable;
+        if (slaThresholdMinutes != null && !Number.isNaN(Number(slaThresholdMinutes))) {
+            emailCfg.slaThresholdMinutes = Number(slaThresholdMinutes);
+        }
         if (Object.keys(emailCfg).length > 0) {
             dispatch(setEmailConfig(emailCfg));
         }

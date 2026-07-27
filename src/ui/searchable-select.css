@@ -1,0 +1,111 @@
+/* Searchable dropdown — matches the Agent Activity (src-report) pill design
+   system, layered on Momentum tokens. Dark mode inherits from a .md--dark ancestor. */
+
+.ss-ctl {
+  position: relative;
+  width: 100%;
+  --ss-panel: var(--md-color-white-100, #ffffff);
+  --ss-border: var(--md-color-gray-20, #dbe3ec);
+  --ss-text: var(--md-color-gray-90, #0a2236);
+  --ss-text2: var(--md-color-gray-60, #5b6b7b);
+  --ss-accent: var(--md-color-blue-50, #0e7fc1);
+  --ss-bg: var(--md-color-gray-05, #f4f7fa);
+  --ss-active: var(--md-color-blue-10, #cfe0ee);
+  font-family: var(--md-font-family, 'CiscoSansTT Regular', 'CiscoSansTT', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+}
+.md--dark .ss-ctl {
+  --ss-panel: var(--md-color-gray-80, #17242f);
+  --ss-border: rgba(255, 255, 255, 0.08);
+  --ss-text: rgba(255, 255, 255, 0.88);
+  --ss-text2: rgba(255, 255, 255, 0.5);
+  --ss-bg: var(--md-color-gray-95, #0f1b26);
+  --ss-active: rgba(45, 173, 206, 0.16);
+}
+
+/* Pill trigger */
+.ss-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 32px;
+  box-sizing: border-box;
+  padding: 0 10px 0 13px;
+  border: 1px solid var(--ss-border);
+  border-radius: 16px;
+  background: var(--ss-panel);
+  color: var(--ss-text);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+.ss-trigger:hover { border-color: var(--ss-accent); }
+.ss-trigger.is-open { border-color: var(--ss-accent); box-shadow: 0 0 0 3px rgba(14, 127, 193, 0.18); }
+.ss-trigger:disabled { opacity: 0.6; cursor: not-allowed; }
+.ss-trigger__value { flex: 1; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ss-trigger.is-placeholder .ss-trigger__value { color: var(--ss-text2); }
+.ss-trigger__chevron { display: inline-flex; color: var(--ss-text2); flex-shrink: 0; }
+
+/* Popover */
+.ss-pop {
+  position: absolute;
+  z-index: 60;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  min-width: 100%;
+  background: var(--ss-panel);
+  border: 1px solid var(--ss-border);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.20);
+  overflow: hidden;
+}
+
+/* Search field (rounded box) */
+.ss-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  box-sizing: border-box;
+  margin: 8px;
+  padding: 0 12px;
+  border: 1px solid var(--ss-border);
+  border-radius: 15px;
+  background: var(--ss-bg);
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+.ss-search:focus-within { border-color: var(--ss-accent); box-shadow: 0 0 0 3px rgba(14, 127, 193, 0.15); }
+.ss-search__icon { display: inline-flex; color: var(--ss-text2); flex-shrink: 0; }
+.ss-search__input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--ss-text);
+  font-size: 13px;
+  font-family: inherit;
+}
+.ss-search__input::placeholder { color: var(--ss-text2); }
+
+/* Option list */
+.ss-list { list-style: none; margin: 0; padding: 5px; max-height: 260px; overflow-y: auto; }
+.ss-opt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 9px;
+  border-radius: 9px;
+  font-size: 13px;
+  color: var(--ss-text);
+  cursor: pointer;
+}
+.ss-opt:hover,
+.ss-opt.is-active { background: var(--ss-active); }
+.ss-opt.is-selected { font-weight: 600; }
+.ss-opt__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ss-opt__check { display: inline-flex; color: var(--ss-accent); flex-shrink: 0; }
+.ss-opt--empty { color: var(--ss-text2); cursor: default; justify-content: flex-start; }

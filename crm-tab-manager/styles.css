@@ -141,6 +141,100 @@ html.theme-light .badge--ended        { background: #e2e4ea; color: #4a4f60; }
 
 .config-body.collapsed { display: none; }
 
+/* ── Focus / SLA settings block ──────────────────────────────────────────── */
+
+.sla-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 14px;
+  margin-top: 2px;
+  border-top: 1px solid var(--border);
+}
+
+.sla-settings__title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.sla-settings__hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.sla-settings__status {
+  margin: 0;
+  min-height: 16px;
+  font-size: 12px;
+  color: var(--accent);
+}
+
+/* ── Always-visible SLA panel (normal mode) ──────────────────────────────── */
+
+.sla-panel {
+  margin: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.sla-panel__endshift {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.sla-panel__endshift .btn { align-self: flex-start; }
+.sla-panel .sla-settings {
+  border-top: none;
+  padding: 14px 16px 18px;
+  margin-top: 0;
+}
+
+/* End-shift button pinned in the embedded tabbar */
+.emb-endshift-btn {
+  padding: 5px 12px;
+  font-size: 12px;
+  white-space: nowrap;
+  align-self: center;
+}
+
+/* ── End-shift confirmation modal ────────────────────────────────────────── */
+
+.es-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+}
+.es-modal-overlay[hidden] { display: none; }
+
+.es-modal {
+  width: 340px;
+  max-width: calc(100vw - 32px);
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+}
+.es-modal__title { margin: 0 0 8px; font-size: 16px; font-weight: 700; }
+.es-modal__msg   { margin: 0 0 18px; font-size: 13px; line-height: 1.5; color: var(--text-muted); }
+.es-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 /* ── Form fields ─────────────────────────────────────────────────────────── */
 
 .field {

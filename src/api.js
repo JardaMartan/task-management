@@ -2387,3 +2387,77 @@ export const pollGmailThreadHistory = async (startHistoryId, threadId, gmailToke
   }
   return { newHistoryId, addedMessageIds, expired: false };
 };
+
+// ─── Webex CC Search API (GraphQL) — SLA Global Variable ─────────────────────
+//
+// The SLA expiry is written on the routing flow as a REPORTABLE Global Variable
+// (e.g. "Jmartan_SLAExpires", epoch-ms stored as a string). The Search API
+// exposes reportable Global Variables on the task record via
+// stringGlobalVariables, so the widget can read the SLA of the currently-handled
+// email task directly — the standard Desktop agent token is sufficient and the
+// /search endpoint is org-scoped (verified against wxcc-eu1).
+
+const WXCC_REGIONS = ['anz1', 'eu1', 'eu2', 'us1', 'us2', 'ca1', 'jp1', 'in1', 'sg1'];
+
+/**
+ * Map a datacenter identifier (e.g. "prodeu1", "eu1") to the Search API base URL.
+ * Falls back to us1 when nothing matches.
+ * @param {string} datacenter
+ * @returns {string} e.g. "https://api.wxcc-eu1.cisco.com"
+ */
+export const searchApiHostForDatacenter = (datacenter) => {
+  const raw = String(datacenter || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const region = WXCC_REGIONS.find((r) => raw.includes(r)) || 'us1';
+  return `https://api.wxcc-${region}.cisco.com`;
+};
+
+/**
+ * Fetch the SLA-expiry Global Variable for a single task from the Webex CC
+ * Search API. Returns the expiry as epoch milliseconds (number), or null when
+ * unavailable/unconfigured. NEVER throws — the thunk layer owns error state.
+ *
+ * @param {Object} p
+ * @param {string} p.accessToken   Webex CC (Desktop) bearer token
+ * @param {string} p.interactionId Task / interaction id (== taskDetails id)
+ * @param {string} p.datacenter    Datacenter id (region resolution)
+ * @param {string} p.slaVariable   Reportable Global Variable name holding the SLA
+ * @returns {Promise<number|null>} epoch-ms expiry, or null
+ */
+export const fetchTaskSlaExpiry = async ({ accessToken, interactionId, datacenter, slaVariable }) => {
+  if (!accessToken || !interactionId || !slaVariable) return null;
+  const host = searchApiHostForDatacenter(datacenter);
+  const now = Date.now();
+  // Active email tasks are recent; a 24h window comfortably covers queue + handling.
+  const from = now - 24 * 60 * 60 * 1000;
+  const to = now + 60 * 1000;
+  const query = `{ taskDetails(from: ${from}, to: ${to}, filter: { id: { equals: ${JSON.stringify(interactionId)} } }) { tasks { id sla: stringGlobalVariables(name: ${JSON.stringify(slaVariable)}) { value } } } }`;
+
+  try {
+    const res = await fetch(`${host}/search`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        TrackingId: generateGUID(),
+      },
+      body: JSON.stringify({ query }),
+    });
+    if (!res.ok) {
+      console.warn(`[SLA] Search API HTTP ${res.status}`);
+      return null;
+    }
+    const body = await res.json();
+    if (body?.error || body?.errors) {
+      console.warn('[SLA] Search API error:', JSON.stringify(body.error || body.errors).slice(0, 200));
+      return null;
+    }
+    const tasks = body?.data?.taskDetails?.tasks || [];
+    const raw = tasks[0]?.sla?.value;
+    if (raw == null || raw === '') return null;
+    const ms = Number(raw); // SLA stored as epoch-ms string → Number(), NOT Date.parse()
+    return Number.isFinite(ms) ? ms : null;
+  } catch (err) {
+    console.warn('[SLA] fetchTaskSlaExpiry failed:', err?.message);
+    return null;
+  }
+};

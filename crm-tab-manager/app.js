@@ -29,6 +29,35 @@ var _tabManagerI18n = {
     templateMissingTitle: '⚙ Template missing',
     templateMissingMsg:   'The CRM URL template is empty. Enter a template above (e.g. <code>https://crm.example.com/customers/{ani}</code>) and click <strong>Save &amp; Reconnect</strong>.',
     dismiss:              'Dismiss',
+    focusTitle:           'Focus / SLA',
+    focusEnable:          'Focus mode — go Not Available while an SLA-critical task is open',
+    focusTrigger:         'Trigger',
+    triggerImminent:      'Within threshold',
+    triggerExpired:       'After expiration',
+    focusReason:          'Not Available reason',
+    focusReasonNone:      'Select a reason…',
+    focusApply:           'Apply focus settings',
+    focusSaved:           'Focus settings saved',
+    endShiftTitle:        'End of shift',
+    endShiftBtn:          'End shift — requeue pending SLA tasks',
+    endShiftHint:         'Requeues every open task that still has an SLA to the configured queue.',
+    endShiftDone:         'Requeued {count} pending SLA task(s)',
+    endShiftNoQueue:      'No requeue queue configured (set it in Customer 360 settings).',
+    endShiftConfirmTitle: 'End shift?',
+    endShiftConfirmMsg:   'This will requeue every open task that still has an SLA to the configured queue. Continue?',
+    endShiftConfirmYes:   'Requeue & end shift',
+    cancel:               'Cancel',
+    applySettings:        'Apply settings',
+    requeueTitle:         'SLA requeue',
+    requeueAction:        'When SLA is reached',
+    requeueActionNone:    'No action',
+    requeueActionOffer:   'Offer requeue',
+    requeueActionAuto:    'Auto requeue',
+    requeueQueue:         'Requeue to (email)',
+    requeueQueueNone:     'Select a queue…',
+    requeueWrapup:        'Wrap-up reason (auto-submitted)',
+    requeueWrapupNone:    'Select a wrap-up reason…',
+    requeueCountdown:     'Auto countdown (seconds)',
   },
   de: {
     pageTitle:            'CRM Tab-Manager — WebexCC Sync',
@@ -58,6 +87,35 @@ var _tabManagerI18n = {
     templateMissingTitle: '⚙ Vorlage fehlt',
     templateMissingMsg:   'Die CRM-URL-Vorlage ist leer. Geben Sie oben eine Vorlage ein (z.\u00a0B. <code>https://crm.example.com/customers/{ani}</code>) und klicken Sie auf <strong>Speichern &amp; Verbinden</strong>.',
     dismiss:              'Schließen',
+    focusTitle:           'Fokus / SLA',
+    focusEnable:          'Fokusmodus — auf Nicht verfügbar gehen, solange eine SLA-kritische Aufgabe offen ist',
+    focusTrigger:         'Auslöser',
+    triggerImminent:      'Innerhalb Schwelle',
+    triggerExpired:       'Nach Ablauf',
+    focusReason:          'Grund „Nicht verfügbar“',
+    focusReasonNone:      'Grund wählen…',
+    focusApply:           'Fokuseinstellungen übernehmen',
+    focusSaved:           'Fokuseinstellungen gespeichert',
+    endShiftTitle:        'Schichtende',
+    endShiftBtn:          'Schicht beenden — offene SLA-Aufgaben rückstellen',
+    endShiftHint:         'Stellt jede offene Aufgabe mit SLA in die konfigurierte Warteschlange zurück.',
+    endShiftDone:         '{count} offene SLA-Aufgabe(n) rückgestellt',
+    endShiftNoQueue:      'Keine Rückstell-Warteschlange konfiguriert (in Customer-360-Einstellungen festlegen).',
+    endShiftConfirmTitle: 'Schicht beenden?',
+    endShiftConfirmMsg:   'Dadurch wird jede offene Aufgabe mit SLA in die konfigurierte Warteschlange zurückgestellt. Fortfahren?',
+    endShiftConfirmYes:   'Rückstellen & beenden',
+    cancel:               'Abbrechen',
+    applySettings:        'Einstellungen übernehmen',
+    requeueTitle:         'SLA-Rückstellung',
+    requeueAction:        'Wenn SLA erreicht ist',
+    requeueActionNone:    'Keine Aktion',
+    requeueActionOffer:   'Rückstellung anbieten',
+    requeueActionAuto:    'Automatisch rückstellen',
+    requeueQueue:         'Rückstellen an (E-Mail)',
+    requeueQueueNone:     'Warteschlange wählen…',
+    requeueWrapup:        'Nachbearbeitungsgrund (automatisch)',
+    requeueWrapupNone:    'Nachbearbeitungsgrund wählen…',
+    requeueCountdown:     'Auto-Countdown (Sekunden)',
   },
   cs: {
     pageTitle:            'Správce karet CRM — WebexCC Sync',
@@ -87,6 +145,35 @@ var _tabManagerI18n = {
     templateMissingTitle: '⚙ Chybí šablona',
     templateMissingMsg:   'Šablona URL CRM je prázdná. Zadejte šablonu výše (např. <code>https://crm.example.com/customers/{ani}</code>) a klikněte na <strong>Uložit a připojit</strong>.',
     dismiss:              'Zavřít',
+    focusTitle:           'Fokus / SLA',
+    focusEnable:          'Režim soustředění — přejít na Nedostupný, dokud je otevřený úkol s SLA',
+    focusTrigger:         'Spouštěč',
+    triggerImminent:      'V rámci prahu',
+    triggerExpired:       'Po vypršení',
+    focusReason:          'Důvod „Nedostupný“',
+    focusReasonNone:      'Vyberte důvod…',
+    focusApply:           'Použít nastavení soustředění',
+    focusSaved:           'Nastavení soustředění uloženo',
+    endShiftTitle:        'Konec směny',
+    endShiftBtn:          'Ukončit směnu — přeřadit čekající úkoly SLA',
+    endShiftHint:         'Přeřadí každý otevřený úkol s SLA do nastavené fronty.',
+    endShiftDone:         'Přeřazeno {count} čekajících úkolů SLA',
+    endShiftNoQueue:      'Žádná fronta pro přeřazení (nastavte v Customer 360).',
+    endShiftConfirmTitle: 'Ukončit směnu?',
+    endShiftConfirmMsg:   'Tímto se každý otevřený úkol s SLA přeřadí do nastavené fronty. Pokračovat?',
+    endShiftConfirmYes:   'Přeřadit a ukončit',
+    cancel:               'Zrušit',
+    applySettings:        'Použít nastavení',
+    requeueTitle:         'Přeřazení SLA',
+    requeueAction:        'Když je dosaženo SLA',
+    requeueActionNone:    'Žádná akce',
+    requeueActionOffer:   'Nabídnout přeřazení',
+    requeueActionAuto:    'Automaticky přeřadit',
+    requeueQueue:         'Přeřadit do (e-mail)',
+    requeueQueueNone:     'Vyberte frontu…',
+    requeueWrapup:        'Důvod uzavření (automaticky)',
+    requeueWrapupNone:    'Vyberte důvod uzavření…',
+    requeueCountdown:     'Automatické odpočítávání (sekundy)',
   },
 };
 
@@ -152,8 +239,15 @@ let config = {
   crmUrlTemplate: '',
   autoCloseOnWrapup: false,
   crmTabPlacement: 'side',
+  sla: { focus: { enabled: false, triggerOn: 'imminent', idleCode: null } },
   ..._savedConfig,
 };
+
+// SLA settings runtime state: catalog relayed by the watcher + the current
+// focus/requeue values to reflect in the pickers once options arrive.
+var _slaCatalog = { idleCodes: [], queues: [], wrapUpCodes: [] };
+var _slaFocus = { enabled: false, triggerOn: 'imminent', idleCode: null };
+var _slaRequeue = { action: 'none', triggerOn: 'imminent', autoCountdownSec: 15, queues: { email: null }, wrapUp: null };
 
 // ── Display mode ───────────────────────────────────────────────────────────
 // Firefox honours script-driven activation of a background browser tab, so we
@@ -178,6 +272,19 @@ let autoCloseEl      = document.getElementById('auto-close-checkbox');
 let placementSelect  = document.getElementById('placement-select');
 let saveBtn          = document.getElementById('save-btn');
 let interactionsList = document.getElementById('interactions-list');
+// Focus / SLA + end-shift controls (reassigned to -emb variants in embedded mode)
+let focusEnabledEl   = document.getElementById('focus-enabled');
+let focusTriggerEl   = document.getElementById('focus-trigger');
+let focusIdleEl      = document.getElementById('focus-idle');
+let focusApplyEl     = document.getElementById('focus-apply');
+let focusStatusEl    = document.getElementById('focus-status');
+let endShiftBtnEl    = document.getElementById('end-shift-btn');
+let endShiftStatusEl = document.getElementById('end-shift-status');
+let rqActionEl       = document.getElementById('rq-action');
+let rqTriggerEl      = document.getElementById('rq-trigger');
+let rqQueueEl        = document.getElementById('rq-queue');
+let rqWrapupEl       = document.getElementById('rq-wrapup');
+let rqCountdownEl    = document.getElementById('rq-countdown');
 // Firefox mode elements (may be null in embedded mode)
 const configToggleEl   = document.getElementById('config-toggle');
 const configBodyEl     = document.getElementById('config-body');
@@ -193,6 +300,95 @@ function applyConfigToUI() {
   if (crmUrlInput)      crmUrlInput.value     = config.crmUrlTemplate;
   if (autoCloseEl)      autoCloseEl.checked   = config.autoCloseOnWrapup;
   if (placementSelect)  placementSelect.value = config.crmTabPlacement || 'top';
+}
+
+/* ── SLA settings form (focus + requeue) ─────────────────────────────── */
+
+function _fillSelect(sel, placeholderText, items, currentId) {
+  if (!sel) return;
+  var html = '<option value="">' + _escHtml(placeholderText) + '</option>';
+  (items || []).forEach(function (it) {
+    html += '<option value="' + _escHtml(it.id) + '">' + _escHtml(it.name) + '</option>';
+  });
+  sel.innerHTML = html;
+  if (currentId) sel.value = String(currentId);
+}
+
+function _findById(list, id) {
+  for (var i = 0; i < (list || []).length; i++) {
+    if (String(list[i].id) === String(id)) return list[i];
+  }
+  return null;
+}
+
+// Reflect the current focus + requeue state into the form controls, rebuilding
+// the idle-code / queue / wrap-up pickers from the relayed catalog.
+function _populateSlaForm() {
+  var f = _slaFocus || {};
+  if (focusEnabledEl) focusEnabledEl.checked = !!f.enabled;
+  if (focusTriggerEl) focusTriggerEl.value = f.triggerOn || 'imminent';
+  _fillSelect(focusIdleEl, _t.focusReasonNone, _slaCatalog.idleCodes, f.idleCode && f.idleCode.id);
+
+  var r = _slaRequeue || {};
+  if (rqActionEl)    rqActionEl.value = r.action || 'none';
+  if (rqTriggerEl)   rqTriggerEl.value = r.triggerOn || 'imminent';
+  if (rqCountdownEl) rqCountdownEl.value = r.autoCountdownSec || 15;
+  var q = r.queues && r.queues.email;
+  _fillSelect(rqQueueEl, _t.requeueQueueNone, _slaCatalog.queues, q && q.vteamId);
+  _fillSelect(rqWrapupEl, _t.requeueWrapupNone, _slaCatalog.wrapUpCodes, r.wrapUp && r.wrapUp.auxCodeId);
+}
+
+// Read the form, build focus + requeue payloads, persist and send SLA_SETTINGS.
+function _applySlaSettingsForm() {
+  var idle = _findById(_slaCatalog.idleCodes, focusIdleEl ? focusIdleEl.value : '');
+  var focus = {
+    enabled: focusEnabledEl ? focusEnabledEl.checked : false,
+    triggerOn: focusTriggerEl ? focusTriggerEl.value : 'imminent',
+    idleCode: idle ? { id: idle.id, name: idle.name } : null,
+  };
+
+  var q = _findById(_slaCatalog.queues, rqQueueEl ? rqQueueEl.value : '');
+  var wc = _findById(_slaCatalog.wrapUpCodes, rqWrapupEl ? rqWrapupEl.value : '');
+  var sla = {
+    action: rqActionEl ? rqActionEl.value : 'none',
+    triggerOn: rqTriggerEl ? rqTriggerEl.value : 'imminent',
+    autoCountdownSec: rqCountdownEl ? (parseInt(rqCountdownEl.value, 10) || 15) : 15,
+    queues: { email: q ? { vteamId: q.id, vteamType: q.type || 'inboundqueue', name: q.name } : null },
+    wrapUp: wc ? { auxCodeId: wc.id, name: wc.name } : null,
+  };
+
+  _slaFocus = focus;
+  _slaRequeue = sla;
+  config.sla = config.sla || {};
+  config.sla.focus = focus; // keep focus locally so it reflects before the echo
+  saveConfig(config);
+  sendWs({ type: 'SLA_SETTINGS', focus: focus, sla: sla });
+  if (focusStatusEl) focusStatusEl.textContent = _t.focusSaved;
+}
+
+function wireSlaControls() {
+  if (focusApplyEl) focusApplyEl.addEventListener('click', _applySlaSettingsForm);
+
+  // End shift → confirmation modal → END_SHIFT.
+  var modal   = document.getElementById('end-shift-modal');
+  var confirm = document.getElementById('es-modal-confirm');
+  var cancel  = document.getElementById('es-modal-cancel');
+  var closeModal = function () { if (modal) modal.hidden = true; };
+
+  if (endShiftBtnEl) {
+    endShiftBtnEl.addEventListener('click', function () {
+      if (modal) modal.hidden = false;
+      else if (window.confirm(_t.endShiftConfirmMsg)) _doEndShift(); // fallback
+    });
+  }
+  if (confirm) confirm.addEventListener('click', function () { closeModal(); _doEndShift(); });
+  if (cancel)  cancel.addEventListener('click', closeModal);
+  if (modal)   modal.addEventListener('click', function (e) { if (e.target === modal) closeModal(); });
+}
+
+function _doEndShift() {
+  sendWs({ type: 'END_SHIFT' });
+  if (endShiftStatusEl) endShiftStatusEl.textContent = '…';
 }
 
 /* ── Wire save button (called after refs are resolved) ───────────────────── */
@@ -336,6 +532,18 @@ if (USE_EMBEDDED) {
   placementSelect  = document.getElementById('placement-select-emb')    || placementSelect;
   saveBtn          = document.getElementById('save-btn-emb')             || saveBtn;
   interactionsList = document.getElementById('interactions-list-emb')   || interactionsList;
+  focusEnabledEl   = document.getElementById('focus-enabled-emb')        || focusEnabledEl;
+  focusTriggerEl   = document.getElementById('focus-trigger-emb')        || focusTriggerEl;
+  focusIdleEl      = document.getElementById('focus-idle-emb')           || focusIdleEl;
+  focusApplyEl     = document.getElementById('focus-apply-emb')          || focusApplyEl;
+  focusStatusEl    = document.getElementById('focus-status-emb')         || focusStatusEl;
+  endShiftBtnEl    = document.getElementById('end-shift-btn-emb')        || endShiftBtnEl;
+  endShiftStatusEl = document.getElementById('end-shift-status-emb')     || endShiftStatusEl;
+  rqActionEl       = document.getElementById('rq-action-emb')            || rqActionEl;
+  rqTriggerEl      = document.getElementById('rq-trigger-emb')           || rqTriggerEl;
+  rqQueueEl        = document.getElementById('rq-queue-emb')             || rqQueueEl;
+  rqWrapupEl       = document.getElementById('rq-wrapup-emb')            || rqWrapupEl;
+  rqCountdownEl    = document.getElementById('rq-countdown-emb')         || rqCountdownEl;
 
   // Settings tab button
   if (embSettingsBtnEl) {
@@ -740,6 +948,45 @@ function handleMessage(msg) {
       // relay versions, but the retried sends are no longer necessary.
       console.log('[tab-manager] registered — relay will request state flush from WebexCC');
       sendWs({ type: 'CRM_CLIENT_CONNECTED' });
+      break;
+    }
+
+    case 'SLA_OPTIONS': {
+      // Idle-code / queue / wrap-up catalog + current focus & requeue settings.
+      _slaCatalog = {
+        idleCodes: msg.idleCodes || [],
+        queues: msg.queues || [],
+        wrapUpCodes: msg.wrapUpCodes || [],
+      };
+      if (msg.focus) {
+        _slaFocus = {
+          enabled: !!msg.focus.enabled,
+          triggerOn: msg.focus.triggerOn || 'imminent',
+          idleCode: msg.focus.idleCode || null,
+        };
+      }
+      if (msg.sla) {
+        _slaRequeue = {
+          action: msg.sla.action || 'none',
+          triggerOn: msg.sla.triggerOn || 'imminent',
+          autoCountdownSec: msg.sla.autoCountdownSec || 15,
+          queues: (msg.sla.queues && typeof msg.sla.queues === 'object') ? msg.sla.queues : { email: null },
+          wrapUp: msg.sla.wrapUp || null,
+        };
+      }
+      config.sla = config.sla || {};
+      config.sla.focus = _slaFocus;
+      saveConfig(config);
+      _populateSlaForm();
+      break;
+    }
+
+    case 'END_SHIFT_RESULT': {
+      if (endShiftStatusEl) {
+        endShiftStatusEl.textContent = (msg.error === 'no_queue')
+          ? _t.endShiftNoQueue
+          : _t.endShiftDone.replace('{count}', msg.requeued || 0);
+      }
       break;
     }
 
