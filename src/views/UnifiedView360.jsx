@@ -212,6 +212,17 @@ const UnifiedView360 = ({ darkMode, mockMode, task }) => {
         const d = e?.data;
         if (!d) return;
         if (d.type === 'SLA_SETTINGS_CHANGED') dispatch(loadAgentSettings());
+        if (d.type === 'PROVISION_CATALOG') {
+          // The header opened its settings panel and wants a fresh idle-code /
+          // queue / wrap-up catalog. Re-fetch, persist, then notify it back.
+          Promise.resolve(dispatch(provisionSlaCatalog())).finally(() => {
+            try {
+              const bc = new BroadcastChannel('crm-sync');
+              bc.postMessage({ type: 'CATALOG_UPDATED' });
+              bc.close();
+            } catch { /* ignore */ }
+          });
+        }
         if (d.type === 'FOCUS_STATE' && d.state) {
           dispatch(applyAgentState({ state: d.state, auxCodeId: d.auxCodeId, channelType: d.channelType })).then((r) => {
             try {
@@ -231,6 +242,20 @@ const UnifiedView360 = ({ darkMode, mockMode, task }) => {
   useEffect(() => {
     dispatch(setEmailTouched(false));
   }, [dispatch, task?.interactionId]);
+
+  // Tell the headless watcher which email tasks the agent has started drafting,
+  // so its end-of-shift routine only requeues NEW (untouched) emails.
+  const emailTouched = useSelector((s) => s.email.emailTouched);
+  useEffect(() => {
+    if (!emailTouched) return;
+    const id = task?.interactionId;
+    if (!id) return;
+    try {
+      const bc = new BroadcastChannel('crm-sync');
+      bc.postMessage({ type: 'EMAIL_TOUCHED', interactionId: id });
+      bc.close();
+    } catch { /* BroadcastChannel unsupported */ }
+  }, [emailTouched, task?.interactionId]);
 
   return (
     <div className={`unified-360${darkMode ? ' md--dark' : ''}`}>

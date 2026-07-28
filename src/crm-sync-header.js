@@ -313,7 +313,13 @@
     var _endedEntry = _activeInteractions[interactionId];
     delete _inWrapup[interactionId];
     delete _activeInteractions[interactionId];
+    _clearEmailTouched(interactionId);
     _stopWrapupWatcher(interactionId);
+    // Event-driven SLA check: a completed email may clear the critical pressure,
+    // so re-evaluate focus immediately instead of waiting for the periodic tick.
+    if (_endedEntry && String(_endedEntry.channel || '').toLowerCase() === 'email') {
+      _slaCheckNow('email ended ' + interactionId);
+    }
     console.log('[crm-sync-header] INTERACTION_ENDED via', source, 'for', interactionId);
     _relaySend({ type: 'INTERACTION_ENDED', interactionId: interactionId });
     // Activity analytics: close out the interaction's swim-lane. Emit focus_lost
@@ -578,10 +584,16 @@
       // been applied by the Desktop AFTER the first `task` prop, or the CAD may
       // have been updated. Without this the dedup short-circuit would keep a stale
       // (often null) slaExpiresAt and focus mode would never see a critical task.
+      var _slaWasKnown = !!_existing.slaExpiresAt;
       if (_existing.slaExpiresAt !== _slaExpiresAt) {
         _existing.slaExpiresAt = _slaExpiresAt;
         console.log('[crm-sync-header] SLA (re)captured for', parsed.interactionId, '\u2192',
           _slaExpiresAt ? new Date(_slaExpiresAt).toISOString() : '(none)');
+      }
+      // Event-driven SLA check: engage focus immediately once the SLA becomes
+      // known (the slavariable prop can arrive after the task prop).
+      if (!_slaWasKnown && _existing.slaExpiresAt && _mediaType === 'email') {
+        _slaCheckNow('SLA captured ' + parsed.interactionId);
       }
       // Still connected — just update the title if it changed, no need to resend ARRIVED.
       if (title && title !== _existing.title) {
@@ -621,6 +633,11 @@
           new Date(_slaExpiresAt).toISOString());
       } else if (_slaVariable) {
         console.log('[crm-sync-header] no SLA value in CAD for', parsed.interactionId, '(var', _slaVariable + ')');
+      }
+      // Event-driven SLA check on an email lifecycle transition (accept / wrapup),
+      // so the agent state flips without waiting for the next periodic tick.
+      if (_mediaType === 'email' && _state !== _prevState) {
+        _slaCheckNow('email ' + _state + ' ' + parsed.interactionId);
       }
       // Resolve a unified customer email (preferred over phone) so voice and
       // email interactions for the same person share a single CRM tab. The
@@ -723,10 +740,13 @@
   var _focusEngageFailedTs = 0;
   var _focusFallbackTimer  = null;
   var _syncListenBc        = null;
+  var _endShiftActive      = false; // agent ended shift → suppress focus auto-manage
+  var _touchedEmailIds     = null;  // { [interactionId]: true } — emails the agent has drafted
 
   var FOCUS_LS_PREFIX    = 'wx_c360_focus_';
   var SETTINGS_LS_PREFIX = 'wx_c360_settings_';
   var CATALOG_LS_PREFIX  = 'wx_c360_catalog_';
+  var TOUCHED_LS_PREFIX  = 'wx_c360_email_touched_';
 
   function _lsRead(key) {
     try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch (e) { return null; }
@@ -747,6 +767,24 @@
   function _getRequeueQueue() {
     var s = _lsRead(_agentKey(SETTINGS_LS_PREFIX));
     return (s && s.sla && s.sla.queues && s.sla.queues.email) || null;
+  }
+
+  // "Touched" (draft) email tracking. The React email widget latches a task as
+  // touched once the agent drafts a reply and broadcasts EMAIL_TOUCHED on the
+  // 'crm-sync' channel; we persist the set so it survives a header reload.
+  function _getTouchedEmailIds() {
+    if (!_touchedEmailIds) _touchedEmailIds = _lsRead(_agentKey(TOUCHED_LS_PREFIX)) || {};
+    return _touchedEmailIds;
+  }
+  function _markEmailTouched(id) {
+    if (!id) return;
+    var m = _getTouchedEmailIds();
+    if (!m[id]) { m[id] = true; _lsWrite(_agentKey(TOUCHED_LS_PREFIX), m); }
+  }
+  function _clearEmailTouched(id) {
+    if (!id) return;
+    var m = _getTouchedEmailIds();
+    if (m[id]) { delete m[id]; _lsWrite(_agentKey(TOUCHED_LS_PREFIX), m); }
   }
 
   function _extractSlaExpiry(parsed) {
@@ -814,7 +852,23 @@
       _syncListenBc = new BroadcastChannel('crm-sync');
       _syncListenBc.onmessage = function (e) {
         var d = e && e.data;
-        if (!d || d.type !== 'FOCUS_STATE_RESULT') return;
+        if (!d) return;
+        if (d.type === 'EMAIL_TOUCHED' && d.interactionId) { _markEmailTouched(d.interactionId); return; }
+        if (d.type === 'CATALOG_UPDATED') {
+          // Fresh catalog written by React — refresh the open panel's queue list,
+          // preserving the current selection and any in-progress filter text.
+          if (_slaPanelEl && _slaPanelEl.style.display !== 'none') {
+            var cat = _getCatalog();
+            _slaFillQueue(_mergeQueues(cat.queues || [], _queueItems), _queueSelId);
+            _slaFill(_slaRefs.focusIdle, _t('selectReason'), cat.idleCodes,
+              _slaRefs.focusIdle ? _slaRefs.focusIdle.value : '');
+            _slaFill(_slaRefs.rqWrapup, _t('selectWrapup'), cat.wrapUpCodes,
+              _slaRefs.rqWrapup ? _slaRefs.rqWrapup.value : '');
+            if (_queueIsOpen()) { _queuePosition(); _queueRender(_queueFiltered(_slaRefs.rqQueueSearch ? _slaRefs.rqQueueSearch.value : '')); }
+          }
+          return;
+        }
+        if (d.type !== 'FOCUS_STATE_RESULT') return;
         clearTimeout(_focusFallbackTimer);
         _focusEngageInFlight = false;
         if (d.ok) {
@@ -858,7 +912,7 @@
     // Primary: delegate to Customer360. Fallback: raw aqm call if no reply in 6s.
     _requestAgentState('Idle', auxId, chosen.name, _focusChannels);
     clearTimeout(_focusFallbackTimer);
-    _focusFallbackTimer = setTimeout(function () { _stateChangeDirect('Idle', auxId, _focusChannels); }, 6000);
+    _focusFallbackTimer = setTimeout(function () { _stateChangeDirect('Idle', auxId, _focusChannels); }, 2500);
   }
 
   function _focusRelease() {
@@ -867,9 +921,12 @@
     _focusAuxId = null;
     if (!wasEngaged || _focusOverride) return; // agent already took control
     var channels = _focusChannels || _channelsFor((_getFocusSettings() || {}).channels);
+    console.log('[crm-sync-header] focus: releasing → Available (no more SLA-critical tasks)');
     _requestAgentState('Available', '0', '', channels);
     clearTimeout(_focusFallbackTimer);
-    _focusFallbackTimer = setTimeout(function () { _stateChangeDirect('Available', '0', channels); }, 6000);
+    // Short fallback: on release the task is gone and the Customer360 delegate is
+    // often already unmounted, so fall through to the direct state change quickly.
+    _focusFallbackTimer = setTimeout(function () { _stateChangeDirect('Available', '0', channels); }, 1500);
   }
 
   // Fallback path: change state directly via the raw routing service (prefer the
@@ -906,7 +963,17 @@
     });
   }
 
+  // Event-driven SLA re-check: run the focus tick immediately on an email task
+  // lifecycle change (accept / SLA-captured / complete) so the agent state flips
+  // with minimal delay. Cheap + idempotent (_slaTick self-guards focus enabled,
+  // end-shift, in-flight and cooldown).
+  function _slaCheckNow(reason) {
+    console.log('[crm-sync-header] SLA event-driven check —', reason);
+    try { _slaTick(); } catch (e) { /* ignore */ }
+  }
+
   function _slaTick() {
+    if (_endShiftActive) return; // end-shift latched Not Ready — leave the agent alone
     var focus = _getFocusSettings();
     if (!focus || !focus.enabled) {
       if (_focusEngaged) _focusRelease();
@@ -940,37 +1007,73 @@
     return out.join(', ');
   }
 
-  // End-of-shift: requeue every pending SLA-critical task to the configured queue.
+  // End-of-shift: requeue every NEW (untouched) email task to the configured
+  // email queue, then set the agent to the configured Not Ready state on ALL
+  // channels so no new interactions route while they finish their current work.
   function _endShiftRequeue() {
     var queue = _getRequeueQueue();
     var contact = _aqmContact();
-    if (!contact || typeof contact.vteamTransfer !== 'function') {
-      console.warn('[crm-sync-header] end-shift: aqm.contact.vteamTransfer unavailable');
-      _relaySend({ type: 'END_SHIFT_RESULT', requeued: 0, error: 'sdk_unavailable' });
-      return;
-    }
-    if (!queue || !queue.vteamId) {
-      console.warn('[crm-sync-header] end-shift: no requeue queue configured');
-      _relaySend({ type: 'END_SHIFT_RESULT', requeued: 0, error: 'no_queue' });
-      return;
-    }
+    var touched = _getTouchedEmailIds();
+    var canRequeue = !!(contact && typeof contact.vteamTransfer === 'function' && queue && queue.vteamId);
     var ids = Object.keys(_activeInteractions);
     var count = 0;
+    var skipped = 0;
     ids.forEach(function (id) {
       var e = _activeInteractions[id];
-      if (!e || e.state === 'ended' || !e.slaExpiresAt) return;
+      if (!e || e.state === 'ended') return;
+      if (String(e.channel || '').toLowerCase() !== 'email') return; // emails only
+      if (touched[id]) return;                                       // skip drafts (in-progress)
+      if (!canRequeue) { skipped++; return; }
       count++;
       Promise.resolve(contact.vteamTransfer({ interactionId: id, data: {
         vteamId: queue.vteamId, vteamType: queue.vteamType || 'inboundqueue',
       } })).then(function () {
-        console.log('[crm-sync-header] end-shift: requeued', id, '→', queue.vteamId);
+        console.log('[crm-sync-header] end-shift: requeued new email', id, '→', queue.vteamId);
       }).catch(function (err) {
         console.warn('[crm-sync-header] end-shift: requeue failed for', id, err && err.message);
       });
     });
+    if (skipped) {
+      console.warn('[crm-sync-header] end-shift:', skipped,
+        'new email(s) NOT requeued — no email queue configured or vteamTransfer unavailable');
+    }
+    // Block new interactions on every channel.
+    _endShiftGoNotReady();
     _relaySend({ type: 'END_SHIFT_RESULT', requeued: count });
-    console.log('[crm-sync-header] end-shift: requeued', count, 'pending SLA task(s)');
+    console.log('[crm-sync-header] end-shift: requeued', count,
+      'new email(s); setting Not Ready on all channels');
   }
+
+  // Put the agent into the configured Not Ready state on ALL channels. Unlike
+  // focus mode this is a deliberate, terminal action, so we latch _endShiftActive
+  // to stop the SLA tick from releasing the agent back to Available.
+  function _endShiftGoNotReady() {
+    var codes = (_getCatalog().idleCodes) || [];
+    var cfg = (_getFocusSettings() || {}).idleCode;
+    var chosen = null;
+    if (cfg && cfg.id) {
+      for (var i = 0; i < codes.length; i++) { if (String(codes[i].id) === String(cfg.id)) { chosen = codes[i]; break; } }
+    }
+    if (!chosen) {
+      for (var j = 0; j < codes.length; j++) { if (codes[j].isDefault) { chosen = codes[j]; break; } }
+      if (!chosen) chosen = codes[0] || null;
+    }
+    if (!chosen) {
+      console.warn('[crm-sync-header] end-shift: no valid idle code — cannot set Not Ready (pick a Not Available reason in the SLA panel)');
+      return;
+    }
+    var auxId = String(chosen.id);
+    var channels = _channelsFor('all');
+    _endShiftActive = true;
+    _focusOverride = false;
+    _focusAuxId = auxId;
+    _focusChannels = channels;
+    console.log('[crm-sync-header] end-shift: Not Ready on all channels →', chosen.name, '(' + auxId + ')');
+    _requestAgentState('Idle', auxId, chosen.name, channels);
+    clearTimeout(_focusFallbackTimer);
+    _focusFallbackTimer = setTimeout(function () { _stateChangeDirect('Idle', auxId, channels); }, 2500);
+  }
+
 
   // Track live agent state so we (a) don't override a manual Not Available and
   // (b) detect when the agent manually leaves our focus-mode Not Available.
@@ -983,6 +1086,12 @@
         try {
           var d = (msg && msg.data) || {};
           _slaAgentState = { subStatus: d.subStatus, auxCodeId: d.auxCodeId };
+          var subS = String(d.subStatus || '').toLowerCase();
+          // If the agent manually goes Available again, end-shift mode is over.
+          if (_endShiftActive && subS === 'available') {
+            _endShiftActive = false;
+            console.log('[crm-sync-header] end-shift: agent went Available — resuming normal auto-manage');
+          }
           if (_focusEngaged) {
             var sub = String(d.subStatus || '').toLowerCase();
             var differentAux = d.auxCodeId && _focusAuxId && String(d.auxCodeId) !== _focusAuxId;
@@ -992,6 +1101,9 @@
               console.log('[crm-sync-header] focus: manual state override detected — pausing auto-manage');
             }
           }
+          // Re-evaluate SLA on every agent-state change (e.g. returning from an
+          // auto-wrapup) so a release/engage isn't deferred to the periodic tick.
+          _slaCheckNow('agent-state ' + subS);
         } catch (e) { /* ignore */ }
       });
       _slaAgentListenerReady = true;
@@ -1033,6 +1145,9 @@
   var _slaPanelEl = null;
   var _slaConfirmEl = null;
   var _slaRefs = {};
+  var _queueItems = [];     // searchable requeue-queue list [{id,name,type}]
+  var _queueSelId = '';     // currently selected queue id
+  var _queueActiveIdx = -1; // keyboard-highlighted option index
   var _slaSel = { focusEnabled: false, focusTrigger: 'imminent', rqAction: 'none', rqTrigger: 'imminent', channels: 'all' };
   var _slaStylesInjected = false;
 
@@ -1063,8 +1178,9 @@
       selectReason: 'Select a reason…',
       selectQueue: 'Select a queue…',
       selectWrapup: 'Select a wrap-up reason…',
+      search: 'Type to search…',
       endShiftTitle: 'End shift?',
-      endShiftMsg: 'This will requeue every open task that still has an SLA to the configured queue. Continue?',
+      endShiftMsg: 'This will requeue every new (unedited) email to the configured queue and set you to Not Ready on all channels so you can finish your current work. Continue?',
       cancel: 'Cancel',
       endShiftConfirm: 'Requeue & end shift',
       openCrm: 'Open CRM Tab Manager',
@@ -1097,8 +1213,9 @@
       selectReason: 'Grund wählen…',
       selectQueue: 'Warteschlange wählen…',
       selectWrapup: 'Nachbearbeitungsgrund wählen…',
+      search: 'Zum Suchen tippen…',
       endShiftTitle: 'Schicht beenden?',
-      endShiftMsg: 'Dadurch wird jede offene Aufgabe mit SLA an die konfigurierte Warteschlange zurückgestellt. Fortfahren?',
+      endShiftMsg: 'Dadurch wird jede neue (unbearbeitete) E-Mail an die konfigurierte Warteschlange zurückgestellt und Sie werden auf allen Kanälen auf Nicht bereit gesetzt, damit Sie Ihre aktuelle Arbeit abschließen können. Fortfahren?',
       cancel: 'Abbrechen',
       endShiftConfirm: 'Rückstellen & Schicht beenden',
       openCrm: 'CRM-Tab-Manager öffnen',
@@ -1131,8 +1248,9 @@
       selectReason: 'Vyberte důvod…',
       selectQueue: 'Vyberte frontu…',
       selectWrapup: 'Vyberte důvod uzavření…',
+      search: 'Začněte psát pro vyhledávání…',
       endShiftTitle: 'Ukončit směnu?',
-      endShiftMsg: 'Tímto se každý otevřený úkol, který má stále SLA, přeřadí do nakonfigurované fronty. Pokračovat?',
+      endShiftMsg: 'Tímto se každý nový (neupravený) e-mail přeřadí do nakonfigurované fronty a na všech kanálech budete nastaveni na Nedostupný, abyste mohli dokončit svou aktuální práci. Pokračovat?',
       cancel: 'Zrušit',
       endShiftConfirm: 'Přeřadit a ukončit směnu',
       openCrm: 'Otevřít správce karet CRM',
@@ -1184,6 +1302,154 @@
     if (currentId) sel.value = String(currentId);
   }
 
+  // ---- Searchable requeue-queue dropdown (trigger + popup with search box) ----
+  var _SVG_CHEV = '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path fill="currentColor" d="M4.24 6.24a1 1 0 0 1 1.42 0L8 8.59l2.34-2.35a1 1 0 1 1 1.42 1.42l-3.05 3.05a1 1 0 0 1-1.42 0L4.24 7.66a1 1 0 0 1 0-1.42z"/></svg>';
+  var _SVG_CHECK = '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path fill="currentColor" d="M6.2 11.3L2.8 7.9l1.4-1.4 2 2 4.6-4.6 1.4 1.4z"/></svg>';
+  var _SVG_SEARCH = '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path fill="currentColor" d="M11.74 10.34l2.96 2.96a1 1 0 0 1-1.41 1.41l-2.96-2.96a5.5 5.5 0 1 1 1.41-1.41zM7 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"/></svg>';
+
+  function _queueSelectedName() {
+    for (var i = 0; i < _queueItems.length; i++) {
+      if (String(_queueItems[i].id) === String(_queueSelId)) return _queueItems[i].name || '';
+    }
+    return '';
+  }
+  function _queueSyncTrigger() {
+    var val = _slaRefs.rqQueueVal;
+    if (!val) return;
+    var name = _queueSelectedName();
+    val.textContent = name || _t('selectQueue');
+    val.className = 'wxss-trigger-val' + (name ? '' : ' is-placeholder');
+  }
+  // Set the queue list + current selection; called on populate and on refresh.
+  function _slaFillQueue(items, currentId) {
+    _queueItems = items || [];
+    _queueSelId = currentId ? String(currentId) : '';
+    _queueSyncTrigger();
+  }
+  function _queueFiltered(q) {
+    q = String(q || '').trim().toLowerCase();
+    if (!q) return _queueItems.slice();
+    return _queueItems.filter(function (it) {
+      return String(it.name || '').toLowerCase().indexOf(q) !== -1;
+    });
+  }
+  function _queuePosition() {
+    var pop = _slaRefs.rqQueuePop, trg = _slaRefs.rqQueueTrigger;
+    if (!pop || !trg) return;
+    var r = trg.getBoundingClientRect();
+    pop.style.left = r.left + 'px';
+    pop.style.top = (r.bottom + 4) + 'px';
+    pop.style.width = r.width + 'px';
+  }
+  function _queueRender(list) {
+    var menu = _slaRefs.rqQueueMenu;
+    if (!menu) return;
+    if (!list.length) { menu.innerHTML = '<div class="wxss-opt wxss-opt--empty">' + _slaEsc(_t('selectQueue')) + '</div>'; return; }
+    var html = '';
+    for (var i = 0; i < list.length; i++) {
+      var sel = String(list[i].id) === String(_queueSelId);
+      var active = (i === _queueActiveIdx) ? ' is-active' : '';
+      html += '<div class="wxss-opt' + (sel ? ' is-selected' : '') + active + '" data-id="' + _slaEsc(list[i].id) + '">'
+        + '<span class="wxss-opt-label">' + _slaEsc(list[i].name) + '</span>'
+        + (sel ? '<span class="wxss-opt-check">' + _SVG_CHECK + '</span>' : '') + '</div>';
+    }
+    menu.innerHTML = html;
+  }
+  function _queueIsOpen() {
+    return !!(_slaRefs.rqQueuePop && _slaRefs.rqQueuePop.className.indexOf('is-open') !== -1);
+  }
+  function _queueOpen() {
+    var pop = _slaRefs.rqQueuePop;
+    if (!pop) return;
+    pop.className = 'wxss-pop is-open' + (_darkMode ? ' md--dark' : '');
+    _queueActiveIdx = -1;
+    if (_slaRefs.rqQueueSearch) _slaRefs.rqQueueSearch.value = '';
+    _queuePosition();
+    _queueRender(_queueFiltered(''));
+    if (_slaRefs.rqQueueSearch) { try { _slaRefs.rqQueueSearch.focus(); } catch (e) { /* ignore */ } }
+  }
+  function _queueClose() {
+    var pop = _slaRefs.rqQueuePop;
+    if (pop) pop.className = 'wxss-pop' + (_darkMode ? ' md--dark' : '');
+    _queueActiveIdx = -1;
+  }
+  function _queuePick(id) {
+    _queueSelId = id ? String(id) : '';
+    _queueSyncTrigger();
+    _queueClose();
+  }
+  function _slaWireQueueSelect() {
+    var trg = _slaRefs.rqQueueTrigger, search = _slaRefs.rqQueueSearch, menu = _slaRefs.rqQueueMenu;
+    if (!trg || !menu) return;
+    trg.addEventListener('click', function (e) { e.preventDefault(); if (_queueIsOpen()) _queueClose(); else _queueOpen(); });
+    if (search) {
+      search.addEventListener('input', function () {
+        _queueActiveIdx = -1;
+        _queueRender(_queueFiltered(search.value));
+      });
+      search.addEventListener('keydown', function (e) {
+        var list = _queueFiltered(search.value);
+        if (e.key === 'ArrowDown') { e.preventDefault(); _queueActiveIdx = Math.min(_queueActiveIdx + 1, list.length - 1); _queueRender(list); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); _queueActiveIdx = Math.max(_queueActiveIdx - 1, 0); _queueRender(list); }
+        else if (e.key === 'Enter') { e.preventDefault(); if (_queueActiveIdx >= 0 && list[_queueActiveIdx]) _queuePick(list[_queueActiveIdx].id); }
+        else if (e.key === 'Escape') { e.preventDefault(); _queueClose(); }
+      });
+    }
+    menu.addEventListener('mousedown', function (e) {
+      var opt = e.target && e.target.closest ? e.target.closest('.wxss-opt') : null;
+      if (!opt || opt.className.indexOf('wxss-opt--empty') !== -1) return;
+      e.preventDefault();
+      _queuePick(opt.getAttribute('data-id'));
+    });
+  }
+
+  // Merge queue lists, de-duplicating by id (first wins), sorted by name.
+  function _mergeQueues(a, b) {
+    var seen = {}, out = [], all = (a || []).concat(b || []);
+    for (var i = 0; i < all.length; i++) {
+      var q = all[i];
+      if (!q || !q.id || seen[q.id]) continue;
+      seen[q.id] = true;
+      out.push(q);
+    }
+    out.sort(function (x, y) { return String(x.name || '').localeCompare(String(y.name || '')); });
+    return out;
+  }
+  function _configBase() {
+    var dc = String(_jdsDataCenter || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    var regions = ['anz1', 'eu1', 'eu2', 'us1', 'ca1', 'jp1', 'in1', 'sg1'];
+    var region = 'us1';
+    for (var i = 0; i < regions.length; i++) { if (dc.indexOf(regions[i]) !== -1) { region = regions[i]; break; } }
+    return 'https://api.wxcc-' + region + '.cisco.com';
+  }
+  // Fetch every email queue directly from the Config API (works regardless of
+  // whether the Customer360 widget is mounted). Includes transfer-only queues
+  // that agentContact.vteamList omits. Never throws; calls back with [] on error.
+  function _fetchQueuesFromConfig(cb) {
+    if (!_accessToken || !_orgId || typeof fetch !== 'function') { cb([]); return; }
+    var base = _configBase();
+    var url = base + '/organization/' + encodeURIComponent(_orgId) + '/contact-service-queue?page=0&pageSize=200';
+    fetch(url, { headers: { Authorization: 'Bearer ' + _accessToken, Accept: 'application/json' } })
+      .then(function (r) {
+        if (!r.ok) { console.warn('[crm-sync-header] contact-service-queue fetch failed', r.status, 'on', base, '(token scope / region?)'); return null; }
+        return r.json();
+      })
+      .then(function (json) {
+        if (!json) { cb([]); return; }
+        var list = (json && json.length !== undefined) ? json : (json && json.data && json.data.length !== undefined ? json.data : []);
+        var out = [], sample = list[0] || null;
+        for (var i = 0; i < list.length; i++) {
+          var q = list[i];
+          var ch = String(q.channelType || q.mediaType || '').toLowerCase();
+          if (ch.indexOf('email') !== -1) out.push({ id: q.id, name: q.name, type: 'inboundqueue' });
+        }
+        console.log('[crm-sync-header] config queues: fetched', list.length, 'CSQ(s),', out.length, 'email');
+        if (!out.length && sample) console.log('[crm-sync-header] config queues: sample keys', Object.keys(sample), '| channelType=', sample.channelType);
+        cb(out);
+      })
+      .catch(function (e) { console.warn('[crm-sync-header] contact-service-queue error', e && e.message); cb([]); });
+  }
+
   function _injectSlaStyles() {
     if (_slaStylesInjected) return;
     _slaStylesInjected = true;
@@ -1220,6 +1486,32 @@
       '.wxsla-field select,.wxsla-field input{height:30px;box-sizing:border-box;padding:0 8px;border:1px solid #dbe3ec;',
       'border-radius:8px;background:#fff;color:inherit;font-family:inherit;font-size:13px;}',
       '.wxsla-panel.md--dark .wxsla-field select,.wxsla-panel.md--dark .wxsla-field input{background:#22303c;border-color:#31424f;color:#e6edf5;}',
+      // Searchable dropdown (requeue queue): trigger button + popup with a search box.
+      // The popup is position:fixed so it escapes the panel's scroll clip; it stays a
+      // DOM child of the .wxss container so outside-click logic keeps the panel open.
+      '.wxss{position:relative;}',
+      '.wxss-trigger{display:flex;align-items:center;justify-content:space-between;gap:6px;width:100%;height:30px;box-sizing:border-box;padding:0 8px;border:1px solid #dbe3ec;border-radius:8px;background:#fff;color:inherit;font-family:inherit;font-size:13px;cursor:pointer;text-align:left;}',
+      '.wxss-trigger-val{overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}',
+      '.wxss-trigger-val.is-placeholder{color:#8a99a8;}',
+      '.wxss-trigger-chev{flex:0 0 auto;display:inline-flex;color:#8a99a8;}',
+      '.wxsla-panel.md--dark .wxss-trigger{background:#22303c;border-color:#31424f;color:#e6edf5;}',
+      '.wxss-pop{position:fixed;z-index:100002;background:#fff;border:1px solid #dbe3ec;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.22);display:none;overflow:hidden;}',
+      '.wxss-pop.is-open{display:block;}',
+      '.wxss-pop.md--dark{background:#1a2733;border-color:#31424f;color:#e6edf5;}',
+      '.wxss-search{display:flex;align-items:center;gap:6px;padding:6px 8px;border-bottom:1px solid #eef2f6;}',
+      '.wxss-pop.md--dark .wxss-search{border-bottom-color:#2a3742;}',
+      '.wxss-search-icon{display:inline-flex;color:#8a99a8;}',
+      '.wxss-search-input{flex:1 1 auto;min-width:0;height:24px;border:none;outline:none;background:transparent;color:inherit;font-family:inherit;font-size:13px;}',
+      '.wxss-list{max-height:180px;overflow:auto;padding:4px;}',
+      '.wxss-opt{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 8px;border-radius:6px;cursor:pointer;font-size:13px;}',
+      '.wxss-opt-label{overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}',
+      '.wxss-opt-check{flex:0 0 auto;display:inline-flex;color:#0e7fc1;}',
+      '.wxss-opt:hover,.wxss-opt.is-active{background:#eef4fb;}',
+      '.wxss-opt.is-selected{color:#0e7fc1;font-weight:600;}',
+      '.wxss-pop.md--dark .wxss-opt:hover,.wxss-pop.md--dark .wxss-opt.is-active{background:#0f1c26;}',
+      '.wxss-pop.md--dark .wxss-opt.is-selected{color:#4db2ee;}',
+      '.wxss-pop.md--dark .wxss-opt-check{color:#4db2ee;}',
+      '.wxss-opt--empty{color:#8a99a8;cursor:default;}',
       '.wxsla-sep{height:1px;background:#dbe3ec;margin:4px 0 12px;}',
       '.wxsla-panel.md--dark .wxsla-sep{background:#31424f;}',
       '.wxsla-actions{display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-top:4px;}',
@@ -1263,7 +1555,11 @@
       '<div id="wxsla-rq-when">',
       '  <div class="wxsla-field"><span>' + _slaEsc(_t('requeueTrigger')) + '</span><div class="wxseg" data-group="rqTrigger">',
       '    <button data-val="imminent">' + _slaEsc(_t('withinThreshold')) + '</button><button data-val="expired">' + _slaEsc(_t('afterExpiration')) + '</button></div></div>',
-      '  <div class="wxsla-field"><span>' + _slaEsc(_t('requeueTo')) + '</span><select id="wxsla-rq-queue"></select></div>',
+      '  <div class="wxsla-field"><span>' + _slaEsc(_t('requeueTo')) + '</span>',
+      '    <div class="wxss" id="wxsla-rq-queue">',
+      '      <button type="button" class="wxss-trigger" id="wxsla-rq-queue-trigger"><span class="wxss-trigger-val is-placeholder" id="wxsla-rq-queue-val">' + _slaEsc(_t('selectQueue')) + '</span><span class="wxss-trigger-chev">' + _SVG_CHEV + '</span></button>',
+      '      <div class="wxss-pop" id="wxsla-rq-queue-pop"><div class="wxss-search"><span class="wxss-search-icon">' + _SVG_SEARCH + '</span><input type="text" id="wxsla-rq-queue-search" class="wxss-search-input" autocomplete="off" spellcheck="false" placeholder="' + _slaEsc(_t('search')) + '"></div><div class="wxss-list" id="wxsla-rq-queue-menu"></div></div>',
+      '    </div></div>',
       '  <div class="wxsla-field"><span>' + _slaEsc(_t('wrapup')) + '</span><select id="wxsla-rq-wrapup"></select></div>',
       '</div>',
       '<div class="wxsla-field" id="wxsla-rq-countdown-field"><span>' + _slaEsc(_t('autoCountdown')) + '</span><input type="number" id="wxsla-rq-countdown" min="3" max="120" value="15"></div>',
@@ -1279,6 +1575,11 @@
       channelsSwitch: el.querySelector('#wxsla-channels'),
       rqWhen: el.querySelector('#wxsla-rq-when'),
       rqQueue: el.querySelector('#wxsla-rq-queue'),
+      rqQueueTrigger: el.querySelector('#wxsla-rq-queue-trigger'),
+      rqQueueVal: el.querySelector('#wxsla-rq-queue-val'),
+      rqQueuePop: el.querySelector('#wxsla-rq-queue-pop'),
+      rqQueueSearch: el.querySelector('#wxsla-rq-queue-search'),
+      rqQueueMenu: el.querySelector('#wxsla-rq-queue-menu'),
       rqWrapup: el.querySelector('#wxsla-rq-wrapup'),
       rqCountdown: el.querySelector('#wxsla-rq-countdown'),
       rqCountdownField: el.querySelector('#wxsla-rq-countdown-field'),
@@ -1288,6 +1589,7 @@
     _slaRefs.apply.addEventListener('click', _slaApply);
     _slaRefs.focusSwitch.addEventListener('click', function () { _slaSetSwitch(!_slaSel.focusEnabled); });
     _slaRefs.channelsSwitch.addEventListener('click', function () { _slaSetChannelsSwitch(_slaSel.channels !== 'all'); });
+    _slaWireQueueSelect();
     // Segmented button-groups: one delegated listener per group.
     var segs = el.querySelectorAll('.wxseg');
     for (var s = 0; s < segs.length; s++) {
@@ -1301,8 +1603,10 @@
     }
     // Close when clicking outside the panel.
     document.addEventListener('mousedown', function (e) {
-      if (_slaPanelEl && _slaPanelEl.style.display !== 'none' &&
-          !_slaPanelEl.contains(e.target) && !_isHeaderControl(e.target)) {
+      if (!_slaPanelEl || _slaPanelEl.style.display === 'none') return;
+      // Close the searchable queue menu when the click is outside its container.
+      if (_slaRefs.rqQueue && !_slaRefs.rqQueue.contains(e.target)) _queueClose();
+      if (!_slaPanelEl.contains(e.target) && !_isHeaderControl(e.target)) {
         _slaPanelEl.style.display = 'none';
       }
     });
@@ -1374,7 +1678,7 @@
     if (_slaRefs.rqCountdown) _slaRefs.rqCountdown.value = rq.autoCountdownSec || 15;
     _slaFill(_slaRefs.focusIdle, _t('selectReason'), cat.idleCodes, focus.idleCode && focus.idleCode.id);
     var q = rq.queues && rq.queues.email;
-    _slaFill(_slaRefs.rqQueue, _t('selectQueue'), cat.queues, q && q.vteamId);
+    _slaFillQueue(cat.queues, q && q.vteamId);
     _slaFill(_slaRefs.rqWrapup, _t('selectWrapup'), cat.wrapUpCodes, rq.wrapUp && rq.wrapUp.auxCodeId);
     _slaUpdateVisibility();
   }
@@ -1390,7 +1694,7 @@
     };
     _lsWrite(_agentKey(FOCUS_LS_PREFIX), _focusSettings);
 
-    var q = _slaFind(cat.queues, _slaRefs.rqQueue ? _slaRefs.rqQueue.value : '');
+    var q = _slaFind(_queueItems, _queueSelId);
     var wc = _slaFind(cat.wrapUpCodes, _slaRefs.rqWrapup ? _slaRefs.rqWrapup.value : '');
     var sla = {
       action: _slaSel.rqAction,
@@ -1416,10 +1720,22 @@
     _buildSlaPanel();
     if (_slaConfirmEl) _slaConfirmEl.style.display = 'none';
     var showing = _slaPanelEl.style.display !== 'none';
-    if (showing) { _slaPanelEl.style.display = 'none'; return; }
+    if (showing) { _queueClose(); _slaPanelEl.style.display = 'none'; return; }
     _slaPanelEl.className = 'wxsla-panel' + (_darkMode ? ' md--dark' : '');
     _slaPopulateForm();
     _slaPanelEl.style.display = 'block';
+    // Refresh the catalog (queues especially) every time the panel opens. The
+    // React widget re-fetches and writes localStorage, then replies CATALOG_UPDATED.
+    _postSync({ type: 'PROVISION_CATALOG' });
+    // Also fetch ALL email queues directly from the Config API here — this works
+    // even when the Customer360 widget isn't mounted, and surfaces transfer-only
+    // queues that vteamList omits. Merge with the catalog + keep the selection.
+    _fetchQueuesFromConfig(function (cfg) {
+      if (!_slaPanelEl || _slaPanelEl.style.display === 'none') return;
+      var cat = _getCatalog();
+      _slaFillQueue(_mergeQueues(cfg, cat.queues || []), _queueSelId);
+      if (_queueIsOpen()) _queueRender(_queueFiltered(_slaRefs.rqQueueSearch ? _slaRefs.rqQueueSearch.value : ''));
+    });
   }
 
   function _buildEndShiftConfirm() {

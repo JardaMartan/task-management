@@ -17,6 +17,69 @@ const writeLs = (agentId, data) => {
   try { localStorage.setItem(lsKey(agentId), JSON.stringify(data)); } catch { /* quota/denied — ignore */ }
 };
 
+// ── Webex CC Configuration API: list ALL queues (contact-service-queue) ───────
+// The routing-service call (agentContact.vteamList) only returns queues the
+// agent may transfer to AND that are wired to an entry point / flow. A queue
+// created purely as a transfer target (not referenced by a flow) is excluded.
+// The Config API lists every queue of a channel regardless, so we merge it in.
+const DC_REGIONS = ['anz1', 'eu1', 'eu2', 'us1', 'ca1', 'jp1', 'in1', 'sg1'];
+const configBaseForDatacenter = (datacenter) => {
+  const raw = String(datacenter || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const region = DC_REGIONS.find((r) => raw.includes(r)) || 'us1';
+  return `https://api.wxcc-${region}.cisco.com`;
+};
+
+// Fetch every queue of a channel from the Config API. Returns [{id,name,type}]
+// or [] on any failure (missing token/scope, wrong region, network). Never throws.
+async function fetchConfigQueues(channelType, { accessToken, orgId, datacenter } = {}) {
+  if (!accessToken || !orgId) return [];
+  const base = configBaseForDatacenter(datacenter);
+  const org = encodeURIComponent(orgId);
+  const reqHeaders = { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' };
+  const want = String(channelType || '').toLowerCase();
+  const out = [];
+  let sample = null;
+  try {
+    for (let page = 0; page < 50; page++) {
+      const url = `${base}/organization/${org}/contact-service-queue?page=${page}&pageSize=100`;
+      const res = await fetch(url, { headers: reqHeaders });
+      if (!res.ok) {
+        console.warn('[settings] contact-service-queue fetch failed:', res.status, 'on', base,
+          '(token may lack config-read scope, or wrong region)');
+        break;
+      }
+      const json = await res.json();
+      const list = Array.isArray(json) ? json : (Array.isArray(json?.data) ? json.data : []);
+      if (!sample && list.length) sample = list[0];
+      list.forEach((q) => {
+        const ch = String(q.channelType ?? q.channelTypes ?? q.mediaType ?? '').toLowerCase();
+        if (ch.includes(want)) out.push({ id: q.id, name: q.name, type: 'inboundqueue' });
+      });
+      const totalPages = json?.meta?.totalPages;
+      if (list.length < 100 || (totalPages && page + 1 >= totalPages)) break;
+    }
+    if (!out.length && sample) {
+      console.log('[settings] contact-service-queue: no', want, 'match. Sample keys=',
+        Object.keys(sample), '| channelType=', sample.channelType);
+    }
+  } catch (e) {
+    console.warn('[settings] contact-service-queue error:', e?.message);
+  }
+  return out;
+}
+
+// Merge queue lists, de-duplicating by id (first wins), sorted by name.
+function mergeQueues() {
+  const seen = new Set();
+  const out = [];
+  [].concat(...arguments).forEach((q) => {
+    if (!q || !q.id || seen.has(String(q.id))) return;
+    seen.add(String(q.id));
+    out.push(q);
+  });
+  return out.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+}
+
 // Default SLA-expiry requeue settings (EMAIL only for now; other channels can
 // be added later — real-time channels may need faster/stricter defaults).
 const defaultSla = {
@@ -160,12 +223,18 @@ export const fetchChannelQueues = (channelType) => async (dispatch, getState) =>
       || res?.data?.vteamList
       || res?.vteamList
       || [];
-    const list = raw.map((v) => ({
+    let list = raw.map((v) => ({
       id: v.id,
       name: v.name,
       type: v.type || 'inboundqueue',
       channelType: v.channelType,
     }));
+    // Also include ALL config queues of this channel (transfer-only queues that
+    // vteamList omits), merged + de-duplicated by id.
+    const cfgQueues = await fetchConfigQueues(channelType, {
+      accessToken: w.accesstoken, orgId: w.orgid, datacenter: w.datacenter,
+    });
+    list = mergeQueues(cfgQueues, list);
     if (!list.length) {
       console.warn('[settings] vteamList returned no queues. req=', JSON.stringify(data),
         'raw=', JSON.stringify(res)?.slice(0, 500));
@@ -291,9 +360,24 @@ export const provisionSlaCatalog = () => async (dispatch, getState) => {
       const res = await Desktop.agentContact.vteamList({ data });
       const raw = res?.data?.data?.vteamList || res?.data?.vteamList || res?.vteamList || [];
       queues = raw.map((v) => ({ id: v.id, name: v.name, type: v.type || 'inboundqueue' }));
+      // Diagnostic: the list is exactly what vteamList returns for this agent.
+      // If an existing same-channel queue is missing here, it was excluded
+      // server-side (agent-profile transfer scope / queue mapping), not by us.
+      console.log('[settings] provisionSlaCatalog: vteamList returned', raw.length,
+        'email queue(s):', raw.map((v) => v.name).join(', ') || '(none)',
+        '| allowConsultToQueue=', res?.data?.data?.allowConsultToQueue);
     } catch (e) {
       console.warn('[settings] provisionSlaCatalog: queue fetch failed:', e?.message);
     }
+
+    // Merge in ALL email queues from the Config API so transfer-only queues
+    // (not wired to an entry point, hence absent from vteamList) still appear.
+    const cfgQueues = await fetchConfigQueues('email', {
+      accessToken: w.accesstoken, orgId: w.orgid, datacenter: w.datacenter,
+    });
+    queues = mergeQueues(cfgQueues, queues);
+    console.log('[settings] provisionSlaCatalog: config email queues', cfgQueues.length,
+      '→ merged total', queues.length);
 
     const agentId = w.agent?.agentId || w.agent?.agentDbId || 'default';
     try {
