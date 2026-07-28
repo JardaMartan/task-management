@@ -10,7 +10,7 @@ configurable time range.
 - **Standalone artifact:** `dist/agent-activity-standalone.js`
 - **Dev harness:** [dev-report.html](../dev-report.html)
 
-![the overview KPI cards + activity timeline](images/agent-activity-team.png)
+![the overview KPI cards + activity timeline](images/agent-activity-overview.png)
 ![the team timeline (multi‑agent lanes)](images/agent-activity-team.png)
 
 ---
