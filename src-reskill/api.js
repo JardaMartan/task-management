@@ -158,9 +158,17 @@ export function normalizeConfig({ skillsRaw, teamsRaw, usersRaw, profilesRaw }) 
     .filter((s) => s.active !== false)
     .map((s) => {
       const type = SKILL_TYPE[s.skillType] || String(s.type || s.skillType || 'proficiency').toLowerCase();
-      const out = { id: s.id, name: s.name, type };
+      // Webex CC skill definitions carry a `dynamicSkill` boolean: true = the
+      // skill can be assigned directly to agents (dynamic); false = it must be
+      // delivered through a Skill Profile. The grid edits dynamic skills only.
+      const out = { id: s.id, name: s.name, type, dynamic: s.dynamicSkill === true || s.dynamic === true };
       if (type === 'proficiency') out.maxLevel = s.maxValue ?? s.maxLevel ?? 10;
-      if (type === 'enum') out.values = (s.enumSkillValues || []).map((v) => v.name);
+      if (type === 'enum') {
+        out.values = (s.enumSkillValues || []).map((v) => v.name);
+        // Keep id↔name pairs so a staged enum value can be written back as its
+        // enumSkillValueId (dynamic-skill / profile PUT payloads use the id).
+        out.enumValues = (s.enumSkillValues || []).map((v) => ({ id: v.id, name: v.name }));
+      }
       if (type === 'text') out.maxLength = s.maxLength ?? 40;
       return out;
     });
@@ -187,13 +195,29 @@ export function normalizeConfig({ skillsRaw, teamsRaw, usersRaw, profilesRaw }) 
   const agents = arr(usersRaw)
     .filter((u) => u.contactCenterEnabled !== false)
     .filter((u) => Array.isArray(u.teamIds) && u.teamIds.length > 0)
-    .map((u) => ({
-      id: u.id,
-      name: `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email || u.id,
-      teamId: (u.teamIds || [])[0] || null,
-      skillProfileId: u.skillProfileId || null,
-      skills: { ...(profileById.get(u.skillProfileId) || {}) },
-    }));
+    .map((u) => {
+      // Dynamic skills are assigned directly on the user (u.dynamicSkills[]),
+      // using the same value fields as skill-profile activeSkills. These are the
+      // values the skill grid edits (profile skills come from the profile).
+      const dynamic = {};
+      (u.dynamicSkills || []).forEach((sv) => {
+        const sid = sv.skillId;
+        if (!sid) return;
+        const value = activeSkillValue(sv, enumNameById);
+        if (value !== undefined) dynamic[sid] = value;
+      });
+      return {
+        id: u.id,
+        name: `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email || u.id,
+        // Webex CC users can belong to multiple teams. Keep the full list for
+        // membership matching; teamId is the primary (first) team for labels.
+        teamId: (u.teamIds || [])[0] || null,
+        teamIds: (u.teamIds || []).filter(Boolean),
+        skillProfileId: u.skillProfileId || null,
+        // Profile-derived values + directly-assigned dynamic-skill values.
+        skills: { ...(profileById.get(u.skillProfileId) || {}), ...dynamic },
+      };
+    });
 
   return { skills, teams, agents, skillProfiles: profileMeta };
 }
@@ -202,19 +226,25 @@ export function normalizeConfig({ skillsRaw, teamsRaw, usersRaw, profilesRaw }) 
  * Apply staged reskilling changes.
  *
  * Demo mode / missing credentials → simulated success (no network), so the
- * widget can demo the full flow. Live PROFILE reassignments are persisted with a
- * safe read-modify-write per user (GET the full user, set skillProfileId, PUT it
- * back). Live per-skill GRID edits have no per-user write API in Webex CC (skills
- * are governed by skill profiles), so they are committed locally only and the
- * result is flagged `localOnly`.
+ * widget can demo the full flow. Live changes are persisted with a safe
+ * read-modify-write per user (GET the full user, mutate, PUT it back):
+ *   • PROFILE reassignments → set `skillProfileId`.
+ *   • GRID edits → upsert the agent's `dynamicSkills[]` entries (dynamic skills
+ *     are assigned directly on the user; each entry carries the value field
+ *     matching the skill type: proficiencyValue / booleanValue / textValue /
+ *     enumSkillValueId).
  *
  * @param {object} ctx     { isDemo, accessToken, orgId, datacenter }
- * @param {object} payload { mode:'grid'|'profiles', profileChanges:[{agentId,profileId}], skillChangeCount }
+ * @param {object} payload { mode:'grid'|'profiles', profileChanges:[{agentId,profileId}],
+ *                           skillChanges:[{agentId,skillId,proficiencyValue|booleanValue|textValue|enumSkillValueId}],
+ *                           skillChangeCount }
  * @returns {Promise<{applied:boolean, simulated:boolean, count:number, failed:number, localOnly?:boolean}>}
  */
 export async function applyReskillChanges(ctx = {}, payload = {}) {
   const { isDemo, accessToken, orgId, datacenter } = ctx;
-  const { mode, profileChanges = [], skillChangeCount = 0 } = payload;
+  const {
+    mode, profileChanges = [], skillChanges = [], skillChangeCount = 0,
+  } = payload;
 
   // Demo / no credentials → simulate (no network call).
   if (isDemo || !accessToken || !orgId) {
@@ -222,16 +252,57 @@ export async function applyReskillChanges(ctx = {}, payload = {}) {
     return { applied: count > 0, simulated: true, count, failed: 0 };
   }
 
-  // Live per-skill grid edits: Webex CC has no per-user skill write API, so these
-  // are applied to local state only (a faithful backend apply would require
-  // creating/editing skill profiles, which is out of scope here).
+  const base = await resolveConfigBase(orgId, accessToken, datacenter);
+  const org = encodeURIComponent(orgId);
+
+  // Live GRID edits → assign dynamic skills directly on each user via a safe
+  // read-modify-write of the user's dynamicSkills[] array.
   if (mode !== 'profiles') {
-    return { applied: skillChangeCount > 0, simulated: true, count: skillChangeCount, failed: 0, localOnly: true };
+    const byAgent = new Map();
+    skillChanges.forEach((c) => {
+      if (!c || !c.agentId || !c.skillId) return;
+      if (!byAgent.has(c.agentId)) byAgent.set(c.agentId, []);
+      byAgent.get(c.agentId).push(c);
+    });
+
+    let applied = 0;
+    let failed = 0;
+    for (const [agentId, changes] of byAgent) {
+      const userUrl = `${base}/organization/${org}/user/${encodeURIComponent(agentId)}`;
+      try {
+        const getRes = await fetch(userUrl, { headers: headers(accessToken) });
+        if (!getRes.ok) throw new Error(`GET user failed (${getRes.status})`);
+        const user = await getRes.json();
+
+        const dynMap = new Map((user.dynamicSkills || []).map((e) => [e.skillId, e]));
+        changes.forEach(({ agentId: _ignored, skillId, remove, ...valueFields }) => {
+          if (remove) {
+            // Remove the dynamic skill from the agent entirely.
+            dynMap.delete(skillId);
+          } else {
+            // Upsert the entry, preserving any existing fields (e.g. skillName).
+            dynMap.set(skillId, { ...(dynMap.get(skillId) || {}), skillId, ...valueFields });
+          }
+        });
+        user.dynamicSkills = [...dynMap.values()];
+
+        const putRes = await fetch(userUrl, {
+          method: 'PUT',
+          headers: { ...headers(accessToken), 'Content-Type': 'application/json' },
+          body: JSON.stringify(user),
+        });
+        if (!putRes.ok) throw new Error(`PUT user failed (${putRes.status})`);
+        applied += changes.length;
+      } catch (error) {
+        console.warn('[reskill] dynamic-skill apply failed for agent', agentId, '—', error?.message);
+        failed += changes.length;
+      }
+    }
+
+    return { applied: applied > 0, simulated: false, count: applied, failed };
   }
 
   // Live profile reassignments → safe read-modify-write per user.
-  const base = await resolveConfigBase(orgId, accessToken, datacenter);
-  const org = encodeURIComponent(orgId);
   let applied = 0;
   let failed = 0;
 
@@ -241,7 +312,8 @@ export async function applyReskillChanges(ctx = {}, payload = {}) {
       const getRes = await fetch(userUrl, { headers: headers(accessToken) });
       if (!getRes.ok) throw new Error(`GET user failed (${getRes.status})`);
       const user = await getRes.json();
-      user.skillProfileId = profileId;
+      // A null profileId unassigns the skill profile from the agent.
+      user.skillProfileId = profileId || null;
 
       const putRes = await fetch(userUrl, {
         method: 'PUT',

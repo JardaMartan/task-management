@@ -2,6 +2,10 @@
 // matrix, quick actions, and review dialog all compute values identically.
 
 import { SKILL_TYPES } from './mock/mockData';
+import { NO_PROFILE } from './constants';
+
+// Locale-aware, case-insensitive collator for stable A→Z skill ordering.
+const skillCollator = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
 
 /** Effective value for an agent's skill = staged override if present, else base. */
 export function effectiveValue(agent, skillId, draft) {
@@ -23,11 +27,18 @@ export function defaultOnValue(skill) {
   return skill.maxLevel || 10;
 }
 
+/** All team ids an agent belongs to (Webex CC users can be on multiple teams).
+ * Falls back to the single `teamId` for older/mock shapes. */
+export function agentTeamIds(agent) {
+  if (agent?.teamIds && agent.teamIds.length) return agent.teamIds;
+  return agent?.teamId ? [agent.teamId] : [];
+}
+
 /** Agents belonging to any of the selected teams. */
 export function agentsForTeams(agents, selectedTeamIds) {
   if (!selectedTeamIds || selectedTeamIds.length === 0) return [];
   const set = new Set(selectedTeamIds);
-  return agents.filter((a) => set.has(a.teamId));
+  return agents.filter((a) => agentTeamIds(a).some((id) => set.has(id)));
 }
 
 /** Apply the agent search + only-changed filters. */
@@ -83,6 +94,22 @@ export function stagedSummary(draft) {
   return { changes, agents: agents.length };
 }
 
+/** Dynamic skills — the ones the grid edits. A Webex CC skill is "dynamic" when
+ * its `dynamicSkill` attribute is true, meaning it can be assigned directly to
+ * agents; non-dynamic skills are delivered through Skill Profiles and are
+ * managed in the Profiles view. api.js maps `dynamicSkill` → `skill.dynamic`.
+ * Returned sorted A→Z by name.
+ *
+ * If no skill carries the boolean flag at all (unexpected/legacy config) we fall
+ * back to the full catalog so the grid is never unexpectedly empty.
+ */
+export function dynamicSkills(skills) {
+  if (!skills || skills.length === 0) return skills || [];
+  const flagDefined = skills.some((s) => typeof s.dynamic === 'boolean');
+  const out = flagDefined ? skills.filter((s) => s.dynamic) : skills;
+  return [...out].sort((a, b) => skillCollator.compare(a.name || '', b.name || ''));
+}
+
 /** Skills that are relevant to the scoped agents = at least one covers it
  * (effective value active), so the matrix can hide catalog skills no one uses. */
 export function relevantSkills(scopedAgents, skills, draft) {
@@ -127,11 +154,13 @@ export function stagedProfileRows(profileDraft, agents, skillProfiles) {
   Object.entries(profileDraft || {}).forEach(([agentId, toId]) => {
     const agent = agentById.get(agentId);
     if (!agent) return;
+    const removed = toId === NO_PROFILE;
     rows.push({
       agentId,
       agentName: agent.name,
       fromName: profById.get(agent.skillProfileId)?.name || agent.skillProfileId || null,
-      toName: profById.get(toId)?.name || toId,
+      toName: removed ? null : (profById.get(toId)?.name || toId),
+      removed,
     });
   });
   return rows;

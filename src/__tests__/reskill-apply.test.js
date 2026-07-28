@@ -2,6 +2,7 @@ import reducer, {
   setConfig, stageProfile, stageSkill, setViewMode, commitDraft,
 } from '../../src-reskill/store/slices/reskillSlice';
 import { applyReskillChanges } from '../../src-reskill/api';
+import { REMOVE_SKILL, NO_PROFILE } from '../../src-reskill/constants';
 
 const init = () => reducer(undefined, { type: '@@INIT' });
 
@@ -45,6 +46,26 @@ describe('commitDraft — fold staged changes into the local baseline', () => {
     expect(s.agents.find((a) => a.id === 'a1').skills.sk).toBe(9);
     expect(s.draft).toEqual({});
   });
+
+  test('grid mode: REMOVE_SKILL removes the skill from the agent baseline', () => {
+    let s = reducer(init(), configWith({ agents: [{ id: 'a1', skillProfileId: 'p1', skills: { sk: 4, keep: true } }] }));
+    s = reducer(s, stageSkill({ agentId: 'a1', skillId: 'sk', value: REMOVE_SKILL, baseValue: 4 }));
+    expect(s.draft.a1.sk).toBe(REMOVE_SKILL);
+    s = reducer(s, commitDraft('grid'));
+    expect(s.agents.find((a) => a.id === 'a1').skills).toEqual({ keep: true });
+    expect(s.draft).toEqual({});
+  });
+
+  test('profiles mode: NO_PROFILE unassigns the skill profile', () => {
+    let s = reducer(init(), configWith());
+    s = reducer(s, setViewMode('profiles'));
+    s = reducer(s, stageProfile({ agentId: 'a1', profileId: NO_PROFILE, baseProfileId: 'p1' }));
+    expect(s.profileDraft.a1).toBe(NO_PROFILE);
+    s = reducer(s, commitDraft('profiles'));
+    const agent = s.agents.find((a) => a.id === 'a1');
+    expect(agent.skillProfileId).toBeNull();
+    expect(agent.skills).toEqual({});
+  });
 });
 
 describe('applyReskillChanges — backend persistence', () => {
@@ -60,14 +81,79 @@ describe('applyReskillChanges — backend persistence', () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  test('live grid edits are flagged localOnly (no per-user skill write API)', async () => {
-    global.fetch = jest.fn();
+  test('live grid edits assign dynamic skills via GET→PUT of user.dynamicSkills', async () => {
+    const puts = [];
+    global.fetch = jest.fn((url, opts) => {
+      const u = String(url);
+      const method = opts?.method || 'GET';
+      if (u.includes('/team?')) return jsonOk([{ id: 't' }]); // region probe
+      if (u.includes('/user/') && method === 'GET') {
+        // Existing dynamic skill on the agent that must be preserved.
+        return jsonOk({
+          id: 'a1', firstName: 'X', teamIds: ['t'],
+          dynamicSkills: [{ skillId: 'other', skillName: 'Other', booleanValue: true }],
+        });
+      }
+      if (u.includes('/user/') && method === 'PUT') {
+        puts.push(JSON.parse(opts.body));
+        return jsonOk({});
+      }
+      return jsonOk({});
+    });
+
     const res = await applyReskillChanges(
-      { isDemo: false, accessToken: 't', orgId: 'o', datacenter: 'eu1' },
-      { mode: 'grid', skillChangeCount: 3 },
+      { isDemo: false, accessToken: 't', orgId: 'org-grid', datacenter: 'eu1' },
+      {
+        mode: 'grid',
+        skillChanges: [{ agentId: 'a1', skillId: 'sk', proficiencyValue: 9 }],
+        skillChangeCount: 1,
+      },
     );
-    expect(res).toMatchObject({ applied: true, simulated: true, localOnly: true, count: 3 });
-    expect(global.fetch).not.toHaveBeenCalled();
+    expect(res).toMatchObject({ applied: true, simulated: false, count: 1, failed: 0 });
+    expect(puts).toHaveLength(1);
+    // Existing entry preserved + new dynamic skill upserted.
+    expect(puts[0].dynamicSkills).toEqual(expect.arrayContaining([
+      { skillId: 'other', skillName: 'Other', booleanValue: true },
+      { skillId: 'sk', proficiencyValue: 9 },
+    ]));
+  });
+
+  test('live grid remove deletes the dynamic skill from user.dynamicSkills', async () => {
+    const puts = [];
+    global.fetch = jest.fn((url, opts) => {
+      const u = String(url);
+      const method = opts?.method || 'GET';
+      if (u.includes('/team?')) return jsonOk([{ id: 't' }]);
+      if (u.includes('/user/') && method === 'GET') {
+        return jsonOk({ id: 'a1', teamIds: ['t'], dynamicSkills: [{ skillId: 'sk', proficiencyValue: 5 }, { skillId: 'keep', booleanValue: true }] });
+      }
+      if (u.includes('/user/') && method === 'PUT') { puts.push(JSON.parse(opts.body)); return jsonOk({}); }
+      return jsonOk({});
+    });
+    const res = await applyReskillChanges(
+      { isDemo: false, accessToken: 't', orgId: 'org-rm', datacenter: 'eu1' },
+      { mode: 'grid', skillChanges: [{ agentId: 'a1', skillId: 'sk', remove: true }], skillChangeCount: 1 },
+    );
+    expect(res).toMatchObject({ applied: true, failed: 0, count: 1 });
+    expect(puts[0].dynamicSkills).toEqual([{ skillId: 'keep', booleanValue: true }]);
+  });
+
+  test('live profile unassign PUTs skillProfileId null', async () => {
+    const puts = [];
+    global.fetch = jest.fn((url, opts) => {
+      const u = String(url);
+      const method = opts?.method || 'GET';
+      if (u.includes('/team?')) return jsonOk([{ id: 't' }]);
+      if (u.includes('/user/') && method === 'GET') return jsonOk({ id: 'a1', skillProfileId: 'p1', teamIds: ['t'] });
+      if (u.includes('/user/') && method === 'PUT') { puts.push(JSON.parse(opts.body)); return jsonOk({}); }
+      return jsonOk({});
+    });
+    const res = await applyReskillChanges(
+      { isDemo: false, accessToken: 't', orgId: 'org-unassign', datacenter: 'eu1' },
+      { mode: 'profiles', profileChanges: [{ agentId: 'a1', profileId: null }] },
+    );
+    expect(res).toMatchObject({ applied: true, failed: 0, count: 1 });
+    expect(puts[0].skillProfileId).toBeNull();
   });
 
   test('live profile reassignment does a safe GET→PUT per user', async () => {

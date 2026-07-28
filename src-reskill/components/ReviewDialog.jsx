@@ -3,9 +3,11 @@ import { useSelector } from 'react-redux';
 import { Button } from '@momentum-ui/react';
 import { useI18n } from '../i18n/I18nContext';
 import { SKILL_TYPES } from '../mock/mockData';
+import { REMOVE_SKILL } from '../constants';
 import { stagedChangeRows, stagedProfileRows } from '../selectors';
 
 const fmtValue = (type, value, t) => {
+  if (value === REMOVE_SKILL) return t('review.removed');
   if (value === undefined || value === null || value === '') return t('review.none');
   if (type === SKILL_TYPES.BOOLEAN) return value ? t('review.on') : t('review.off');
   return String(value);
@@ -69,7 +71,7 @@ const ReviewDialog = ({ onClose }) => {
                         <td>{r.agentName}</td>
                         <td>{t('review.profileReassign')}</td>
                         <td className="reskill-val--from">{r.fromName || t('review.none')}</td>
-                        <td className="reskill-val--to">{r.toName}</td>
+                        <td className="reskill-val--to">{r.removed ? t('review.removed') : r.toName}</td>
                       </tr>
                     ))}
                   </tbody>

@@ -21,17 +21,21 @@ export const SKILL_TYPES = {
 const SUPPORT_TIERS = ['Bronze', 'Silver', 'Gold', 'Platinum'];
 
 // Org-defined skills — a realistic mix covering all four Webex CC skill types.
+// `dynamic` mirrors the Webex CC `dynamicSkill` attribute: true = the skill can
+// be assigned directly to agents (shown/edited in the skill grid); false = it is
+// delivered through a Skill Profile and managed in the Profiles view.
 const SKILLS = [
-  { id: 'sk_billing',     name: 'Billing',          type: SKILL_TYPES.PROFICIENCY, maxLevel: 10 },
-  { id: 'sk_sales',       name: 'Sales',            type: SKILL_TYPES.PROFICIENCY, maxLevel: 10 },
-  { id: 'sk_tech',        name: 'Technical Support',type: SKILL_TYPES.PROFICIENCY, maxLevel: 10 },
-  { id: 'sk_collections', name: 'Collections',      type: SKILL_TYPES.PROFICIENCY, maxLevel: 10 },
-  { id: 'sk_spanish',     name: 'Spanish',          type: SKILL_TYPES.PROFICIENCY, maxLevel: 10 },
-  { id: 'sk_escalations', name: 'Escalations',      type: SKILL_TYPES.BOOLEAN },
-  { id: 'sk_vip',         name: 'VIP Desk',         type: SKILL_TYPES.BOOLEAN },
-  { id: 'sk_retention',   name: 'Retention',        type: SKILL_TYPES.BOOLEAN },
-  { id: 'sk_tier',        name: 'Support Tier',     type: SKILL_TYPES.ENUM, values: SUPPORT_TIERS },
-  { id: 'sk_langcode',    name: 'Language Code',    type: SKILL_TYPES.TEXT, maxLength: 40 },
+  { id: 'sk_billing',     name: 'Billing',          type: SKILL_TYPES.PROFICIENCY, maxLevel: 10, dynamic: true },
+  { id: 'sk_sales',       name: 'Sales',            type: SKILL_TYPES.PROFICIENCY, maxLevel: 10, dynamic: true },
+  { id: 'sk_tech',        name: 'Technical Support',type: SKILL_TYPES.PROFICIENCY, maxLevel: 10, dynamic: true },
+  { id: 'sk_collections', name: 'Collections',      type: SKILL_TYPES.PROFICIENCY, maxLevel: 10, dynamic: true },
+  { id: 'sk_spanish',     name: 'Spanish',          type: SKILL_TYPES.PROFICIENCY, maxLevel: 10, dynamic: true },
+  { id: 'sk_escalations', name: 'Escalations',      type: SKILL_TYPES.BOOLEAN, dynamic: true },
+  { id: 'sk_vip',         name: 'VIP Desk',         type: SKILL_TYPES.BOOLEAN, dynamic: true },
+  { id: 'sk_retention',   name: 'Retention',        type: SKILL_TYPES.BOOLEAN, dynamic: true },
+  // Non-dynamic (profile-managed) skills — surfaced through Skill Profiles.
+  { id: 'sk_tier',        name: 'Support Tier',     type: SKILL_TYPES.ENUM, values: SUPPORT_TIERS, dynamic: false },
+  { id: 'sk_langcode',    name: 'Language Code',    type: SKILL_TYPES.TEXT, maxLength: 40, dynamic: false },
 ];
 
 const TEAMS = [

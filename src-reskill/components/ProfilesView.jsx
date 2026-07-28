@@ -5,8 +5,10 @@ import { useI18n } from '../i18n/I18nContext';
 import { SKILL_TYPES } from '../mock/mockData';
 import { setSearch, stageProfile, stageProfileBulk } from '../store/slices/reskillSlice';
 import { agentsForTeams, filterAgents } from '../selectors';
+import { NO_PROFILE } from '../constants';
 import { resolveAgentState } from '../analytics';
 import ViewModeToggle from './ViewModeToggle';
+import SearchableSelect from './SearchableSelect';
 import AgentFilterChip from './AgentFilterChip';
 
 const teamNameMap = (teams) => {
@@ -74,6 +76,13 @@ const ProfilesView = () => {
 
   const effectiveProfile = (agent) => profileDraft[agent.id] ?? agent.skillProfileId;
 
+  // With multi-team agents, show the selected team the agent matches on.
+  const teamLabel = (agent) => {
+    const ids = agent.teamIds?.length ? agent.teamIds : [agent.teamId];
+    const match = ids.find((id) => selectedTeamIds.includes(id)) || agent.teamId;
+    return names.get(match) || '';
+  };
+
   const assignToAll = () => {
     if (!bulkProfile) return;
     dispatch(stageProfileBulk({
@@ -108,16 +117,15 @@ const ProfilesView = () => {
               {/* Bulk assignment strip */}
               <div className="reskill-bulk-assign">
                 <span className="reskill-bulk-assign__label">{t('profiles.bulkLabel')}</span>
-                <select
-                  className="reskill-select"
+                <SearchableSelect
                   value={bulkProfile}
-                  onChange={(e) => setBulkProfile(e.target.value)}
-                >
-                  <option value="">{t('profiles.selectProfile')}</option>
-                  {skillProfiles.map((p) => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
+                  options={skillProfiles}
+                  firstOption={{ id: NO_PROFILE, label: t('profiles.noProfileUnassign') }}
+                  placeholder={t('profiles.selectProfile')}
+                  searchPlaceholder={t('profiles.searchProfile')}
+                  ariaLabel={t('profiles.bulkLabel')}
+                  onChange={(id) => setBulkProfile(id)}
+                />
                 <Button color="blue" size={28} disabled={!bulkProfile} onClick={assignToAll}>
                   {t('profiles.assignAll', { count: visibleAgents.length })}
                 </Button>
@@ -140,22 +148,22 @@ const ProfilesView = () => {
                         <tr key={agent.id}>
                           <td className="reskill-td--agent">
                             <div className="reskill-agent__name">{agent.name}</div>
-                            <div className="reskill-agent__team">{names.get(agent.teamId) || ''}</div>
+                            <div className="reskill-agent__team">{teamLabel(agent)}</div>
                           </td>
                           <td className={`reskill-td--profile${changed ? ' reskill-cell--changed' : ''}`}>
-                            <select
-                              className={`reskill-select${changed ? ' reskill-level--changed' : ''}`}
-                              value={current || ''}
-                              onChange={(e) => dispatch(stageProfile({
+                            <SearchableSelect
+                              value={current == null ? NO_PROFILE : current}
+                              options={skillProfiles}
+                              firstOption={{ id: NO_PROFILE, label: t('profiles.noProfile') }}
+                              searchPlaceholder={t('profiles.searchProfile')}
+                              ariaLabel={t('profiles.currentProfile')}
+                              changed={changed}
+                              onChange={(id) => dispatch(stageProfile({
                                 agentId: agent.id,
-                                profileId: e.target.value,
+                                profileId: id,
                                 baseProfileId: agent.skillProfileId,
                               }))}
-                            >
-                              {skillProfiles.map((p) => (
-                                <option key={p.id} value={p.id}>{p.name}</option>
-                              ))}
-                            </select>
+                            />
                           </td>
                           <td className="reskill-td--summary">
                             <ProfileSummary profile={profById.get(current)} skills={skills} />

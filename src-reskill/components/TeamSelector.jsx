@@ -2,6 +2,7 @@ import React from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { useI18n } from '../i18n/I18nContext';
 import { setSelectedTeams, toggleTeam } from '../store/slices/reskillSlice';
+import { agentTeamIds } from '../selectors';
 
 /** Left column: list of supervised teams with multi-select checkboxes. */
 const TeamSelector = () => {
@@ -30,13 +31,15 @@ const TeamSelector = () => {
 
   const countByTeam = React.useMemo(() => {
     const m = new Map();
-    agents.forEach((a) => m.set(a.teamId, (m.get(a.teamId) || 0) + 1));
+    // Count each agent under every team they belong to (users can be on many).
+    agents.forEach((a) => agentTeamIds(a).forEach((id) => m.set(id, (m.get(id) || 0) + 1)));
     return m;
   }, [agents]);
 
   const selectedAgentCount = React.useMemo(() => {
     const set = new Set(selectedTeamIds);
-    return agents.filter((a) => set.has(a.teamId)).length;
+    // Distinct agents belonging to any selected team.
+    return agents.filter((a) => agentTeamIds(a).some((id) => set.has(id))).length;
   }, [agents, selectedTeamIds]);
 
   if (teams.length === 0) {

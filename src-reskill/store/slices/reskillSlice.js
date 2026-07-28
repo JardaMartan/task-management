@@ -1,6 +1,7 @@
 import { createSlice } from '@reduxjs/toolkit';
 import { fetchReskillConfig, fetchLiveAnalytics, applyReskillChanges } from '../../api';
-import { stagedSummary } from '../../selectors';
+import { stagedChangeRows, agentTeamIds } from '../../selectors';
+import { REMOVE_SKILL, NO_PROFILE } from '../../constants';
 import { SKILL_TEMPLATES } from '../../mock/mockData';
 
 // Module-level (non-serializable) handle to the Desktop SDK so the Redux state
@@ -144,7 +145,12 @@ const reskillSlice = createSlice({
         const profById = new Map(state.skillProfiles.map((p) => [p.id, p]));
         Object.entries(state.profileDraft).forEach(([agentId, profileId]) => {
           const agent = state.agents.find((a) => a.id === agentId);
-          if (agent) {
+          if (!agent) return;
+          if (profileId === NO_PROFILE) {
+            // Unassign the skill profile entirely.
+            agent.skillProfileId = null;
+            agent.skills = {};
+          } else {
             agent.skillProfileId = profileId;
             agent.skills = { ...(profById.get(profileId)?.skills || {}) };
           }
@@ -153,7 +159,13 @@ const reskillSlice = createSlice({
       } else {
         Object.entries(state.draft).forEach(([agentId, skillMap]) => {
           const agent = state.agents.find((a) => a.id === agentId);
-          if (agent) agent.skills = { ...agent.skills, ...skillMap };
+          if (!agent) return;
+          const next = { ...agent.skills };
+          Object.entries(skillMap).forEach(([skillId, value]) => {
+            if (value === REMOVE_SKILL) delete next[skillId];
+            else next[skillId] = value;
+          });
+          agent.skills = next;
         });
         state.draft = {};
       }
@@ -196,22 +208,32 @@ const reskillSlice = createSlice({
       if (state.viewMode === 'profiles') state.profileDraft = {};
       else state.draft = {};
     },
-    // Stage (or clear) a skill-profile reassignment for one agent.
+    // Stage (or clear) a skill-profile reassignment for one agent. Selecting the
+    // NO_PROFILE sentinel stages an unassignment (skill profile removed).
     stageProfile(state, action) {
       const { agentId, profileId, baseProfileId } = action.payload;
       state.applyResult = null;
-      if (profileId === baseProfileId || !profileId) {
+      const base = baseProfileId || null;
+      if (profileId === NO_PROFILE) {
+        if (base === null) delete state.profileDraft[agentId]; // already has none
+        else state.profileDraft[agentId] = NO_PROFILE;
+      } else if (!profileId || profileId === base) {
         delete state.profileDraft[agentId];
       } else {
         state.profileDraft[agentId] = profileId;
       }
     },
     // Assign a profile to many agents at once. `entries` = [{agentId, baseProfileId}].
+    // profileId may be the NO_PROFILE sentinel to bulk-unassign.
     stageProfileBulk(state, action) {
       const { profileId, entries } = action.payload || {};
       state.applyResult = null;
       (entries || []).forEach(({ agentId, baseProfileId }) => {
-        if (profileId === baseProfileId || !profileId) {
+        const base = baseProfileId || null;
+        if (profileId === NO_PROFILE) {
+          if (base === null) delete state.profileDraft[agentId];
+          else state.profileDraft[agentId] = NO_PROFILE;
+        } else if (!profileId || profileId === base) {
           delete state.profileDraft[agentId];
         } else {
           state.profileDraft[agentId] = profileId;
@@ -315,7 +337,7 @@ export const loadConfig = () => async (dispatch, getState) => {
     if (Array.isArray(supervisorTeamIds) && supervisorTeamIds.length > 0) {
       const allowed = new Set(supervisorTeamIds);
       teams = teams.filter((t) => allowed.has(t.id));
-      agents = agents.filter((a) => allowed.has(a.teamId));
+      agents = agents.filter((a) => agentTeamIds(a).some((id) => allowed.has(id)));
     }
 
     dispatch(setConfig({ skills: config.skills, teams, agents, skillProfiles: config.skillProfiles || [] }));
@@ -366,9 +388,32 @@ export const applyChanges = () => async (dispatch, getState) => {
   const mode = s.viewMode;
 
   const profileChanges = mode === 'profiles'
-    ? Object.entries(s.profileDraft).map(([agentId, profileId]) => ({ agentId, profileId }))
+    ? Object.entries(s.profileDraft).map(([agentId, profileId]) => ({
+      agentId,
+      // NO_PROFILE sentinel → unassign (null) so the API PUTs skillProfileId=null.
+      profileId: profileId === NO_PROFILE ? null : profileId,
+    }))
     : [];
-  const skillChangeCount = mode === 'profiles' ? 0 : stagedSummary(s.draft).changes;
+
+  // Grid mode: turn the staged draft into per-agent dynamic-skill entries, each
+  // carrying the value field that matches the skill type (the shape a Webex CC
+  // user.dynamicSkills[] entry expects), or a remove flag to delete the entry.
+  const skillById = new Map(s.skills.map((sk) => [sk.id, sk]));
+  const skillChanges = mode === 'profiles'
+    ? []
+    : stagedChangeRows(s.draft, s.agents, s.skills).map((r) => {
+      if (r.to === REMOVE_SKILL) return { agentId: r.agentId, skillId: r.skillId, remove: true };
+      const sk = skillById.get(r.skillId);
+      const entry = { agentId: r.agentId, skillId: r.skillId };
+      if (sk?.type === 'boolean') entry.booleanValue = Boolean(r.to);
+      else if (sk?.type === 'text') entry.textValue = String(r.to ?? '');
+      else if (sk?.type === 'enum') {
+        const ev = (sk.enumValues || []).find((v) => v.name === r.to);
+        entry.enumSkillValueId = ev?.id;
+      } else entry.proficiencyValue = Number(r.to ?? 0);
+      return entry;
+    });
+  const skillChangeCount = skillChanges.length;
 
   if ((mode === 'profiles' ? profileChanges.length : skillChangeCount) === 0) return;
 
@@ -377,7 +422,7 @@ export const applyChanges = () => async (dispatch, getState) => {
   try {
     const result = await applyReskillChanges(
       { isDemo: s.isDemo, accessToken: s.accessToken, orgId: s.orgId, datacenter: s.datacenter },
-      { mode, profileChanges, skillChangeCount },
+      { mode, profileChanges, skillChanges, skillChangeCount },
     );
     if (result.applied) {
       dispatch(commitDraft(mode));

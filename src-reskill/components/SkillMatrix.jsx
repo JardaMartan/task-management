@@ -2,12 +2,12 @@ import React from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { useI18n } from '../i18n/I18nContext';
 import { SKILL_TYPES } from '../mock/mockData';
-import { setSearch, setOnlyChanged, setShowAllSkills, stageSkill } from '../store/slices/reskillSlice';
-import {
-  effectiveValue, isChanged, agentsForTeams, filterAgents, relevantSkills,
-} from '../selectors';
+import { setSearch, setOnlyChanged, stageSkill } from '../store/slices/reskillSlice';
+import { agentsForTeams, filterAgents, dynamicSkills } from '../selectors';
+import { REMOVE_SKILL } from '../constants';
 import { resolveAgentState } from '../analytics';
 import ViewModeToggle from './ViewModeToggle';
+import ToggleSwitch from './ToggleSwitch';
 import AgentFilterChip from './AgentFilterChip';
 
 const teamNameMap = (teams) => {
@@ -16,78 +16,121 @@ const teamNameMap = (teams) => {
   return m;
 };
 
-/** A single editable cell — level selector for proficiency, switch for boolean. */
+/** Starting value used when assigning a not-yet-assigned dynamic skill. */
+const assignValue = (skill) => {
+  if (skill.type === SKILL_TYPES.BOOLEAN) return true;
+  if (skill.type === SKILL_TYPES.ENUM) return skill.values?.[0] ?? '';
+  if (skill.type === SKILL_TYPES.TEXT) return '';
+  return 1;
+};
+
+/** A single dynamic-skill cell. Every grid skill is a dynamic skill assigned
+ * directly to the agent, so a cell has three states: assigned (value control +
+ * remove), staged-removed (undo), or unassigned (assign). */
 const SkillCell = ({ agent, skill }) => {
+  const { t } = useI18n();
   const dispatch = useDispatch();
-  const draft = useSelector((s) => s.reskill.draft);
-  const value = effectiveValue(agent, skill.id, draft);
-  const changed = isChanged(agent, skill.id, draft);
-  const baseValue = agent.skills?.[skill.id];
+  const override = useSelector((s) => s.reskill.draft?.[agent.id]?.[skill.id]);
+  const changed = override !== undefined;
+  const removed = override === REMOVE_SKILL;
+  const baseAssigned = Object.prototype.hasOwnProperty.call(agent.skills || {}, skill.id);
+  const assigned = removed ? false : (changed ? true : baseAssigned);
+  const rawBase = agent.skills?.[skill.id];
 
+  // Normalized base value → staging this exact value clears the override.
+  const normBase = skill.type === SKILL_TYPES.BOOLEAN
+    ? Boolean(rawBase)
+    : (skill.type === SKILL_TYPES.ENUM || skill.type === SKILL_TYPES.TEXT)
+      ? (rawBase ?? '')
+      : Number(rawBase ?? 0);
+
+  const value = removed ? undefined : (changed ? override : rawBase);
+  const stage = (val) => dispatch(stageSkill({
+    agentId: agent.id, skillId: skill.id, value: val, baseValue: normBase,
+  }));
+  const cellClass = changed ? 'reskill-cell--changed' : undefined;
+
+  if (!assigned) {
+    return (
+      <td className={cellClass}>
+        {removed ? (
+          <span className="reskill-removed">
+            <span className="reskill-removed__tag">{t('matrix.removed')}</span>
+            <button type="button" className="reskill-linkbtn" onClick={() => stage(normBase)}>
+              {t('matrix.undo')}
+            </button>
+          </span>
+        ) : (
+          <button type="button" className="reskill-assignbtn" onClick={() => stage(assignValue(skill))}>
+            + {t('matrix.assign')}
+          </button>
+        )}
+      </td>
+    );
+  }
+
+  let control;
   if (skill.type === SKILL_TYPES.BOOLEAN) {
-    return (
-      <td className={changed ? 'reskill-cell--changed' : undefined}>
-        <input
-          type="checkbox"
-          className="reskill-switch"
-          checked={Boolean(value)}
-          onChange={(e) => dispatch(stageSkill({
-            agentId: agent.id, skillId: skill.id, value: e.target.checked, baseValue: Boolean(baseValue),
-          }))}
-        />
-      </td>
+    control = (
+      <ToggleSwitch
+        tone="on"
+        checked={Boolean(value)}
+        ariaLabel={skill.name}
+        onChange={(c) => stage(c)}
+      />
     );
-  }
-
-  if (skill.type === SKILL_TYPES.ENUM) {
-    return (
-      <td className={changed ? 'reskill-cell--changed' : undefined}>
-        <select
-          className={`reskill-enum${changed ? ' reskill-level--changed' : ''}`}
-          value={value ?? ''}
-          onChange={(e) => dispatch(stageSkill({
-            agentId: agent.id, skillId: skill.id, value: e.target.value, baseValue: baseValue ?? '',
-          }))}
-        >
-          <option value="">—</option>
-          {(skill.values || []).map((v) => (
-            <option key={v} value={v}>{v}</option>
-          ))}
-        </select>
-      </td>
+  } else if (skill.type === SKILL_TYPES.ENUM) {
+    control = (
+      <select
+        className={`reskill-enum${changed ? ' reskill-level--changed' : ''}`}
+        value={value ?? ''}
+        onChange={(e) => stage(e.target.value)}
+      >
+        <option value="">—</option>
+        {(skill.values || []).map((v) => (
+          <option key={v} value={v}>{v}</option>
+        ))}
+      </select>
     );
-  }
-
-  if (skill.type === SKILL_TYPES.TEXT) {
-    return (
-      <td className={changed ? 'reskill-cell--changed' : undefined}>
-        <input
-          type="text"
-          className={`reskill-text${changed ? ' reskill-level--changed' : ''}`}
-          value={value ?? ''}
-          maxLength={skill.maxLength || 40}
-          onChange={(e) => dispatch(stageSkill({
-            agentId: agent.id, skillId: skill.id, value: e.target.value, baseValue: baseValue ?? '',
-          }))}
-        />
-      </td>
+  } else if (skill.type === SKILL_TYPES.TEXT) {
+    control = (
+      <input
+        type="text"
+        className={`reskill-text${changed ? ' reskill-level--changed' : ''}`}
+        value={value ?? ''}
+        maxLength={skill.maxLength || 40}
+        onChange={(e) => stage(e.target.value)}
+      />
     );
-  }
-
-  const max = skill.maxLevel || 10;
-  return (
-    <td className={changed ? 'reskill-cell--changed' : undefined}>
+  } else {
+    const max = skill.maxLevel || 10;
+    control = (
       <select
         className={`reskill-level${changed ? ' reskill-level--changed' : ''}`}
         value={Number(value ?? 0)}
-        onChange={(e) => dispatch(stageSkill({
-          agentId: agent.id, skillId: skill.id, value: Number(e.target.value), baseValue: Number(baseValue ?? 0),
-        }))}
+        onChange={(e) => stage(Number(e.target.value))}
       >
         {Array.from({ length: max + 1 }, (_, i) => (
           <option key={i} value={i}>{i}</option>
         ))}
       </select>
+    );
+  }
+
+  return (
+    <td className={cellClass}>
+      <div className="reskill-cellwrap">
+        {control}
+        <button
+          type="button"
+          className="reskill-cellremove"
+          title={t('matrix.remove')}
+          aria-label={t('matrix.remove')}
+          onClick={() => stage(REMOVE_SKILL)}
+        >
+          ✕
+        </button>
+      </div>
     </td>
   );
 };
@@ -102,7 +145,6 @@ const SkillMatrix = () => {
   const selectedTeamIds = useSelector((s) => s.reskill.selectedTeamIds);
   const search = useSelector((s) => s.reskill.search);
   const onlyChanged = useSelector((s) => s.reskill.onlyChanged);
-  const showAllSkills = useSelector((s) => s.reskill.showAllSkills);
   const agentStateFilter = useSelector((s) => s.reskill.agentStateFilter);
   const draft = useSelector((s) => s.reskill.draft);
   const liveStates = useSelector((s) => s.reskill.liveAnalytics?.agentStates || null);
@@ -127,15 +169,22 @@ const SkillMatrix = () => {
     [stateScoped, search, onlyChanged, draft],
   );
 
-  // Default to the skills the selected teams actually use; the toggle reveals
-  // the full org catalog (skills are global in Webex CC, so any can be added).
+  // The grid only edits DYNAMIC skills (assigned directly to agents). Skills
+  // that live in Skill Profiles are managed in the Profiles view, so editing
+  // them per-agent never forces ad-hoc profile creation.
   const visibleSkills = React.useMemo(
-    () => (showAllSkills ? skills : relevantSkills(scopedAgents, skills, draft)),
-    [showAllSkills, skills, scopedAgents, draft],
+    () => dynamicSkills(skills),
+    [skills],
   );
-  const hiddenCount = skills.length - visibleSkills.length;
 
   const skillTypeLabel = (type) => t(`matrix.skillType.${type}`) || type;
+
+  // With multi-team agents, show the selected team the agent matches on.
+  const teamLabel = (agent) => {
+    const ids = agent.teamIds?.length ? agent.teamIds : [agent.teamId];
+    const match = ids.find((id) => selectedTeamIds.includes(id)) || agent.teamId;
+    return names.get(match) || '';
+  };
 
   return (
     <div className="reskill-col reskill-col--matrix">
@@ -149,34 +198,18 @@ const SkillMatrix = () => {
           value={search}
           onChange={(e) => dispatch(setSearch(e.target.value))}
         />
-        {/* eslint-disable-next-line jsx-a11y/label-has-associated-control */}
-        <label className="reskill-toggle">
-          <input
-            type="checkbox"
-            className="reskill-checkbox"
-            checked={showAllSkills}
-            onChange={(e) => dispatch(setShowAllSkills(e.target.checked))}
-          />
-          {hiddenCount > 0 && !showAllSkills
-            ? t('matrix.showAllSkillsCount', { count: hiddenCount })
-            : t('matrix.showAllSkills')}
-        </label>
-        {/* eslint-disable-next-line jsx-a11y/label-has-associated-control */}
-        <label className="reskill-toggle">
-          <input
-            type="checkbox"
-            className="reskill-checkbox"
-            checked={onlyChanged}
-            onChange={(e) => dispatch(setOnlyChanged(e.target.checked))}
-          />
-          {t('matrix.showOnlyChanged')}
-        </label>
+        <ToggleSwitch
+          checked={onlyChanged}
+          onChange={(checked) => dispatch(setOnlyChanged(checked))}
+          label={t('matrix.showOnlyChanged')}
+        />
       </div>
 
       {selectedTeamIds.length === 0 ? (
         <div className="reskill-empty">{t('matrix.noTeams')}</div>
       ) : (
         <>
+          <div className="reskill-hint">{t('matrix.dynamicNote')}</div>
           <AgentFilterChip />
           {visibleAgents.length === 0 ? (
             <div className="reskill-empty">{t('matrix.noAgents')}</div>
@@ -199,7 +232,7 @@ const SkillMatrix = () => {
                     <tr key={agent.id}>
                       <td className="reskill-td--agent">
                         <div className="reskill-agent__name">{agent.name}</div>
-                        <div className="reskill-agent__team">{names.get(agent.teamId) || ''}</div>
+                        <div className="reskill-agent__team">{teamLabel(agent)}</div>
                       </td>
                       {visibleSkills.map((skill) => (
                         <SkillCell key={skill.id} agent={agent} skill={skill} />

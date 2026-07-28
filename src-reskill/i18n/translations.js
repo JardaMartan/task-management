@@ -35,6 +35,11 @@ const en = {
     showOnlyChanged: 'Only changed',
     showAllSkills: 'All skills',
     showAllSkillsCount: '+{{count}} more skills',
+    dynamicNote: 'Showing dynamic skills assigned directly to agents. Skills that belong to Skill Profiles are managed in the Profiles view.',
+    assign: 'Assign',
+    remove: 'Remove skill',
+    removed: 'Removed',
+    undo: 'Undo',
     stateFilter: 'Filtered by state:',
     legendChanged: 'Pending change',
     skillType: {
@@ -46,8 +51,8 @@ const en = {
   },
   view: {
     label: 'Editing mode',
-    grid: 'Skill grid',
-    profiles: 'Profiles',
+    grid: 'Dynamic skills',
+    profiles: 'Skill profiles',
   },
   profiles: {
     bulkLabel: 'Bulk assign:',
@@ -55,6 +60,9 @@ const en = {
     assignAll: 'Assign to {{count}} agents',
     currentProfile: 'Skill Profile',
     skills: 'Skills',
+    noProfile: 'No profile',
+    noProfileUnassign: 'No profile (unassign)',
+    searchProfile: 'Search profiles…',
   },
   profileActions: {
     subtitle: 'Assign skill profiles across the selected agents.',
@@ -125,6 +133,7 @@ const en = {
     none: '—',
     off: 'Off',
     on: 'On',
+    removed: 'Removed',
   },
   analytics: {
     title: 'Operational Analytics',
@@ -203,6 +212,11 @@ const de = {
     showOnlyChanged: 'Nur geänderte',
     showAllSkills: 'Alle Skills',
     showAllSkillsCount: '+{{count}} weitere Skills',
+    dynamicNote: 'Es werden dynamische Skills angezeigt, die Agenten direkt zugewiesen sind. Skills aus Skill-Profilen werden in der Profilansicht verwaltet.',
+    assign: 'Zuweisen',
+    remove: 'Skill entfernen',
+    removed: 'Entfernt',
+    undo: 'Rückgängig',
     stateFilter: 'Gefiltert nach Status:',
     legendChanged: 'Ausstehende Änderung',
     skillType: {
@@ -214,8 +228,8 @@ const de = {
   },
   view: {
     label: 'Bearbeitungsmodus',
-    grid: 'Skill-Raster',
-    profiles: 'Profile',
+    grid: 'Dynamische Skills',
+    profiles: 'Skill-Profile',
   },
   profiles: {
     bulkLabel: 'Massenzuweisung:',
@@ -223,6 +237,9 @@ const de = {
     assignAll: '{{count}} Agenten zuweisen',
     currentProfile: 'Skill-Profil',
     skills: 'Skills',
+    noProfile: 'Kein Profil',
+    noProfileUnassign: 'Kein Profil (entfernen)',
+    searchProfile: 'Profile suchen…',
   },
   profileActions: {
     subtitle: 'Skill-Profile auf die ausgewählten Agenten anwenden.',
@@ -293,6 +310,7 @@ const de = {
     none: '—',
     off: 'Aus',
     on: 'Ein',
+    removed: 'Entfernt',
   },
   analytics: {
     title: 'Betriebsanalyse',
@@ -371,6 +389,11 @@ const cs = {
     showOnlyChanged: 'Pouze změněné',
     showAllSkills: 'Všechny dovednosti',
     showAllSkillsCount: '+{{count}} dalších dovedností',
+    dynamicNote: 'Zobrazují se dynamické dovednosti přiřazené přímo agentům. Dovednosti z profilů dovedností spravujte v zobrazení Profily.',
+    assign: 'Přiřadit',
+    remove: 'Odebrat dovednost',
+    removed: 'Odebráno',
+    undo: 'Zpět',
     stateFilter: 'Filtrováno podle stavu:',
     legendChanged: 'Čekající změna',
     skillType: {
@@ -382,8 +405,8 @@ const cs = {
   },
   view: {
     label: 'Režim úprav',
-    grid: 'Mřížka dovedností',
-    profiles: 'Profily',
+    grid: 'Dynamické dovednosti',
+    profiles: 'Profily dovedností',
   },
   profiles: {
     bulkLabel: 'Hromadně přiřadit:',
@@ -391,6 +414,9 @@ const cs = {
     assignAll: 'Přiřadit {{count}} agentům',
     currentProfile: 'Profil dovedností',
     skills: 'Dovednosti',
+    noProfile: 'Bez profilu',
+    noProfileUnassign: 'Bez profilu (zrušit přiřazení)',
+    searchProfile: 'Hledat profily…',
   },
   profileActions: {
     subtitle: 'Přiřadit profily dovedností vybraným agentům.',
@@ -461,6 +487,7 @@ const cs = {
     none: '—',
     off: 'Vyp',
     on: 'Zap',
+    removed: 'Odebráno',
   },
   analytics: {
     title: 'Provozní analytika',

@@ -4,7 +4,8 @@ import { Badge, Button } from '@momentum-ui/react';
 import { useI18n } from '../i18n/I18nContext';
 import { SKILL_TYPES } from '../mock/mockData';
 import { stageBulk, SKILL_TEMPLATES } from '../store/slices/reskillSlice';
-import { agentsForTeams, effectiveValue } from '../selectors';
+import { agentsForTeams, effectiveValue, dynamicSkills } from '../selectors';
+import ToggleSwitch from './ToggleSwitch';
 
 /** Normalize an agent's stored value for a skill to the type's canonical form. */
 function baseValueFor(skill, raw) {
@@ -53,6 +54,9 @@ const QuickActions = () => {
   );
   const hasAgents = scopedAgents.length > 0;
   const skillById = React.useMemo(() => new Map(skills.map((s) => [s.id, s])), [skills]);
+  // Only dynamic skills can be edited per-agent in the grid; profile-managed
+  // skills are handled in the Profiles view.
+  const gridSkills = React.useMemo(() => dynamicSkills(skills), [skills]);
 
   // ── Percentage generator local state ──────────────────────────────────────
   const [skillId, setSkillId] = React.useState('');
@@ -220,7 +224,7 @@ const QuickActions = () => {
           onChange={(e) => onSelectSkill(e.target.value)}
         >
           <option value="">{t('quickActions.selectSkill')}</option>
-          {skills.map((s) => (
+          {gridSkills.map((s) => (
             <option key={s.id} value={s.id}>{s.name}</option>
           ))}
         </select>
@@ -229,16 +233,11 @@ const QuickActions = () => {
       {selectedSkill && (
         isBoolean ? (
           <div className="reskill-field">
-            {/* eslint-disable-next-line jsx-a11y/label-has-associated-control */}
-            <label className="reskill-toggle">
-              <input
-                type="checkbox"
-                className="reskill-checkbox"
-                checked={enabled}
-                onChange={(e) => setEnabled(e.target.checked)}
-              />
-              {t('quickActions.enabledLabel')}
-            </label>
+            <ToggleSwitch
+              checked={enabled}
+              onChange={setEnabled}
+              label={t('quickActions.enabledLabel')}
+            />
           </div>
         ) : isEnum ? (
           <div className="reskill-field">
