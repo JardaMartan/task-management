@@ -335,7 +335,60 @@
       interactionId: interactionId, channel: _endedEntry && _endedEntry.channel,
       customerId: _endedEntry && _endedEntry.customerId,
     });
+    _persistOpen();
     setTimeout(function () { delete _aqmEndedSent[interactionId]; }, 30000);
+  }
+
+  /* ── Reload reconciliation ───────────────────────────────────────────────
+   * The set of open (accepted, not-yet-ended) interactions is persisted to
+   * localStorage. When the widget reloads, in-memory tracking is lost, so any
+   * task that ended DURING the reload gap would never emit task_ended and would
+   * show as "still active" forever in the supervisor timeline. On load we
+   * reconcile the persisted set against the Desktop's actual state and close out
+   * the ones that are truly gone. */
+  var _OPEN_KEY = 'wx_activity_open';
+
+  function _persistOpen() {
+    try {
+      var map = {};
+      Object.keys(_activeInteractions).forEach(function (id) {
+        var e = _activeInteractions[id] || {};
+        map[id] = { channel: e.channel || null, customerId: e.customerId || null };
+      });
+      localStorage.setItem(_OPEN_KEY, JSON.stringify(map));
+    } catch (e) { /* quota / denied */ }
+  }
+
+  function _loadPersistedOpen() {
+    try { return JSON.parse(localStorage.getItem(_OPEN_KEY) || '{}') || {}; } catch (e) { return {}; }
+  }
+
+  function _reconcileOnReload() {
+    var persisted = _loadPersistedOpen();
+    var ids = Object.keys(persisted || {});
+    if (!ids.length) return;
+    console.log('[crm-sync-header] reload reconcile: checking', ids.length, 'persisted open interaction(s)');
+    // Give the Desktop time to re-apply the current task prop(s) and render the
+    // task list before deciding an interaction is gone.
+    setTimeout(function () {
+      ids.forEach(function (id) {
+        if (_activeInteractions[id]) return; // re-confirmed live by a fresh task prop
+        var present = findInteractionItem(document.body, id); // still in the desktop task list?
+        if (present) {
+          // Genuinely still open — seed tracking so its real end is captured later.
+          _activeInteractions[id] = {
+            channel: persisted[id].channel || null,
+            customerId: persisted[id].customerId || null,
+            state: 'connected',
+          };
+          return;
+        }
+        // Neither re-sent nor present in the DOM → it ended during the reload gap.
+        console.log('[crm-sync-header] reload reconcile: closing stale interaction', id);
+        _sendInteractionEnded(id, 'reload-reconcile');
+      });
+      _persistOpen();
+    }, 10000);
   }
 
   function _initAqmEndListeners() {
@@ -628,6 +681,7 @@
         displayUrl: _displayUrl, title: title || null, state: _state, channel: _mediaType,
         slaExpiresAt: _slaExpiresAt,
       };
+      _persistOpen();
       if (_slaExpiresAt) {
         console.log('[crm-sync-header] SLA captured for', parsed.interactionId, '\u2192',
           new Date(_slaExpiresAt).toISOString());
@@ -1778,6 +1832,7 @@
 
   _initAqmEndListeners();
   _startSlaController();
+  _reconcileOnReload();
 
   /* ── Web Component ───────────────────────────────────────────────────────── */
 

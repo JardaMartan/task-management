@@ -5,7 +5,7 @@ import { useI18n } from '../i18n/I18nContext';
 import { buildTimeline } from '../timeline';
 import { buildTeamTimeline } from '../team';
 import { computeOverview } from '../analytics';
-import { rangeWindowMs, teardown } from '../store/slices/activitySlice';
+import { rangeWindowMs, resolveRange, teardown } from '../store/slices/activitySlice';
 import AgentPicker from './AgentPicker';
 import TeamPicker from './TeamPicker';
 import ScopeToggle from './ScopeToggle';
@@ -46,7 +46,14 @@ export default function ActivityReport() {
     return () => clearInterval(id);
   }, [mode]);
 
-  const openEndMs = mode === 'live' ? nowTick : null;
+  // Still-open interactions (no task_ended) extend to the view end so a long
+  // one-task-all-day interaction shows its full span. Live: advancing "now".
+  // Historical: now clamped to the range end (captured at each data load).
+  const viewEndMs = useMemo(
+    () => Math.min(Date.now(), resolveRange(rangeKey, customFrom, customTo).toMs),
+    [rangeKey, customFrom, customTo, events],
+  );
+  const openEndMs = mode === 'live' ? nowTick : viewEndMs;
 
   const timeline = useMemo(() => buildTimeline(events, { openEndMs }), [events, openEndMs]);
   const teamTimeline = useMemo(
