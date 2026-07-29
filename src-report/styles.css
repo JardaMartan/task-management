@@ -89,6 +89,9 @@
 .pill-pop__search-icon { display: inline-flex; color: var(--ar-text2); flex-shrink: 0; }
 .pill-pop__input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; color: var(--ar-text); font-size: 13px; font-family: inherit; }
 .pill-pop__input::placeholder { color: var(--ar-text2); }
+/* Keep only the pill-shaped focus ring — suppress the rectangular UA/Momentum focus outline. */
+.pill-select:focus-visible { outline: none !important; border-color: var(--ar-accent); box-shadow: 0 0 0 3px rgba(14, 127, 193, 0.18); }
+.pill-pop__input:focus, .pill-pop__input:focus-visible { outline: none !important; box-shadow: none; }
 .pill-pop__list { list-style: none; margin: 0; padding: 5px; max-height: 260px; overflow-y: auto; }
 .pill-pop__opt {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;

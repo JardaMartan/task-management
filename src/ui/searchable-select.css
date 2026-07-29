@@ -89,6 +89,9 @@
   font-family: inherit;
 }
 .ss-search__input::placeholder { color: var(--ss-text2); }
+/* Keep only the pill-shaped focus ring — suppress the rectangular UA/Momentum focus outline. */
+.ss-trigger:focus-visible { outline: none !important; border-color: var(--ss-accent); box-shadow: 0 0 0 3px rgba(14, 127, 193, 0.18); }
+.ss-search__input:focus, .ss-search__input:focus-visible { outline: none !important; box-shadow: none; }
 
 /* Option list */
 .ss-list { list-style: none; margin: 0; padding: 5px; max-height: 260px; overflow-y: auto; }

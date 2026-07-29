@@ -338,6 +338,9 @@
   color: var(--rk-text); font-size: 13px; font-family: inherit;
 }
 .reskill-ss__input::placeholder { color: var(--rk-muted); }
+/* Keep only the pill-shaped focus ring — suppress the rectangular UA/Momentum focus outline. */
+.reskill-ss__trigger:focus-visible { outline: none !important; border-color: var(--rk-accent); box-shadow: 0 0 0 3px var(--rk-accent-soft); }
+.reskill-ss__input:focus, .reskill-ss__input:focus-visible { outline: none !important; box-shadow: none; }
 .reskill-ss__list { list-style: none; margin: 0; padding: 6px; max-height: 260px; overflow-y: auto; }
 .reskill-ss__opt {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
