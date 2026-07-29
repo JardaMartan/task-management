@@ -1485,9 +1485,9 @@
       '.wxsla-panel.md--dark .wxseg button{color:#9db2c6;}',
       '.wxsla-panel.md--dark .wxseg button:hover{color:#e6edf5;}',
       '.wxsla-panel.md--dark .wxseg button.is-active{background:#0f1c26;color:#4db2ee;}',
-      '.wxsla-field select,.wxsla-field input{height:30px;box-sizing:border-box;padding:0 8px;border:1px solid #dbe3ec;',
+      '.wxsla-field select,.wxsla-field input:not(.wxss-search-input){height:30px;box-sizing:border-box;padding:0 8px;border:1px solid #dbe3ec;',
       'border-radius:8px;background:#fff;color:inherit;font-family:inherit;font-size:13px;}',
-      '.wxsla-panel.md--dark .wxsla-field select,.wxsla-panel.md--dark .wxsla-field input{background:#22303c;border-color:#31424f;color:#e6edf5;}',
+      '.wxsla-panel.md--dark .wxsla-field select,.wxsla-panel.md--dark .wxsla-field input:not(.wxss-search-input){background:#22303c;border-color:#31424f;color:#e6edf5;}',
       // Searchable dropdown (requeue queue): trigger button + popup with a search box.
       // The popup is position:fixed so it escapes the panel's scroll clip; it stays a
       // DOM child of the .wxss container so outside-click logic keeps the panel open.
