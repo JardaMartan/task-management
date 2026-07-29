@@ -133,7 +133,7 @@ const ComposerToolbar = ({ editor, onAttachClick }) => {
           active={editor.isActive('italic')}
           title={t('email.composer.italic')}
         >
-          <em style={{ fontStyle: 'italic' }}>I</em>
+          <em>I</em>
         </ToolbarBtn>
 
         <ToolbarBtn

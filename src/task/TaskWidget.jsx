@@ -285,7 +285,7 @@ const TaskWidget = ({ task, darkMode, mockMode, onNavigate }) => {
 
         {completed && (
           <div className="task-widget__section">
-            <div style={{ padding: '12px', color: '#15803d', fontWeight: 600, fontSize: 13 }}>
+            <div className="task-widget__completed-msg">
               ✓ {t('task.completedMessage')}
             </div>
           </div>

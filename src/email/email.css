@@ -23,6 +23,10 @@
   overflow-y: auto;
 }
 
+/* Centered state text (loading / empty prompts) */
+.email-widget__state-text { color: var(--md-color-gray-60, #767676); }
+.email-widget__state-text--spaced { margin-top: 12px; }
+
 /* Two-column body (legacy) — .widget-body provides display:grid,
    gap, padding, flex:1, min-height:0, overflow:hidden */
 .email-widget__body {

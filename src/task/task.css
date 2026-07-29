@@ -193,6 +193,14 @@
   color: rgba(255,255,255,.4);
 }
 
+.task-widget__completed-msg {
+  padding: 12px;
+  color: var(--md-color-green-60, #15803d);
+  font-weight: 600;
+  font-size: 13px;
+}
+.md--dark .task-widget__completed-msg { color: #4ade80; }
+
 /* ── Field grid ── */
 .task-widget__fields {
   display: grid;

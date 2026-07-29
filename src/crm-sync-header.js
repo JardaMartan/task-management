@@ -1362,6 +1362,7 @@
     var pop = _slaRefs.rqQueuePop;
     if (!pop) return;
     pop.className = 'wxss-pop is-open' + (_darkMode ? ' md--dark' : '');
+    if (_slaRefs.rqQueueTrigger) _slaRefs.rqQueueTrigger.classList.add('is-open');
     _queueActiveIdx = -1;
     if (_slaRefs.rqQueueSearch) _slaRefs.rqQueueSearch.value = '';
     _queuePosition();
@@ -1371,6 +1372,7 @@
   function _queueClose() {
     var pop = _slaRefs.rqQueuePop;
     if (pop) pop.className = 'wxss-pop' + (_darkMode ? ' md--dark' : '');
+    if (_slaRefs.rqQueueTrigger) _slaRefs.rqQueueTrigger.classList.remove('is-open');
     _queueActiveIdx = -1;
   }
   function _queuePick(id) {
@@ -1490,20 +1492,26 @@
       // The popup is position:fixed so it escapes the panel's scroll clip; it stays a
       // DOM child of the .wxss container so outside-click logic keeps the panel open.
       '.wxss{position:relative;}',
-      '.wxss-trigger{display:flex;align-items:center;justify-content:space-between;gap:6px;width:100%;height:30px;box-sizing:border-box;padding:0 8px;border:1px solid #dbe3ec;border-radius:8px;background:#fff;color:inherit;font-family:inherit;font-size:13px;cursor:pointer;text-align:left;}',
+      '.wxss-trigger{display:flex;align-items:center;justify-content:space-between;gap:6px;width:100%;height:32px;box-sizing:border-box;padding:0 10px 0 13px;border:1px solid #dbe3ec;border-radius:16px;background:#fff;color:inherit;font-family:inherit;font-size:13px;cursor:pointer;text-align:left;transition:border-color .12s,box-shadow .12s;}',
+      '.wxss-trigger:hover{border-color:#0e7fc1;}',
+      '.wxss-trigger:focus-visible,.wxss-trigger.is-open{outline:none;border-color:#0e7fc1;box-shadow:0 0 0 3px rgba(14,127,193,.18);}',
       '.wxss-trigger-val{overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}',
       '.wxss-trigger-val.is-placeholder{color:#8a99a8;}',
       '.wxss-trigger-chev{flex:0 0 auto;display:inline-flex;color:#8a99a8;}',
       '.wxsla-panel.md--dark .wxss-trigger{background:#22303c;border-color:#31424f;color:#e6edf5;}',
-      '.wxss-pop{position:fixed;z-index:100002;background:#fff;border:1px solid #dbe3ec;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.22);display:none;overflow:hidden;}',
+      '.wxsla-panel.md--dark .wxss-trigger:hover{border-color:#4db2ee;}',
+      '.wxsla-panel.md--dark .wxss-trigger:focus-visible,.wxsla-panel.md--dark .wxss-trigger.is-open{border-color:#4db2ee;box-shadow:0 0 0 3px rgba(77,178,238,.25);}',
+      '.wxss-pop{position:fixed;z-index:100002;background:#fff;border:1px solid #dbe3ec;border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.22);display:none;overflow:hidden;}',
       '.wxss-pop.is-open{display:block;}',
       '.wxss-pop.md--dark{background:#1a2733;border-color:#31424f;color:#e6edf5;}',
-      '.wxss-search{display:flex;align-items:center;gap:6px;padding:6px 8px;border-bottom:1px solid #eef2f6;}',
-      '.wxss-pop.md--dark .wxss-search{border-bottom-color:#2a3742;}',
+      '.wxss-search{display:flex;align-items:center;gap:7px;margin:8px;padding:0 12px;height:30px;box-sizing:border-box;border:1px solid #dbe3ec;border-radius:15px;background:#f4f7fa;transition:border-color .12s,box-shadow .12s;}',
+      '.wxss-search:focus-within{border-color:#0e7fc1;box-shadow:0 0 0 3px rgba(14,127,193,.15);}',
+      '.wxss-pop.md--dark .wxss-search{background:#0f1c26;border-color:#31424f;}',
       '.wxss-search-icon{display:inline-flex;color:#8a99a8;}',
       '.wxss-search-input{flex:1 1 auto;min-width:0;height:24px;border:none;outline:none;background:transparent;color:inherit;font-family:inherit;font-size:13px;}',
-      '.wxss-list{max-height:180px;overflow:auto;padding:4px;}',
-      '.wxss-opt{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 8px;border-radius:6px;cursor:pointer;font-size:13px;}',
+      '.wxss-search-input:focus,.wxss-search-input:focus-visible{outline:none;box-shadow:none;}',
+      '.wxss-list{max-height:200px;overflow:auto;padding:6px;}',
+      '.wxss-opt{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 9px;border-radius:9px;cursor:pointer;font-size:13px;}',
       '.wxss-opt-label{overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}',
       '.wxss-opt-check{flex:0 0 auto;display:inline-flex;color:#0e7fc1;}',
       '.wxss-opt:hover,.wxss-opt.is-active{background:#eef4fb;}',

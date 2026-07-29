@@ -135,7 +135,7 @@ const EmailWidget = ({ interactionId, callAssociatedDetails, darkMode, mockMode,
         {analyticsHeader}
         <div className="email-widget__state-center">
           <Spinner />
-          <span className="md-h4" style={{ marginTop: 12, color: 'var(--md-color-gray-60)' }}>
+          <span className="md-h4 email-widget__state-text email-widget__state-text--spaced">
             {t('email.loading')}
           </span>
         </div>
@@ -182,7 +182,7 @@ const EmailWidget = ({ interactionId, callAssociatedDetails, darkMode, mockMode,
             </aside>
             <main className="email-widget__col email-widget__col--center widget-panel">
               <div className="email-widget__state-center">
-                <span className="md-h4" style={{ color: 'var(--md-color-gray-60)' }}>
+                <span className="md-h4 email-widget__state-text">
                   {t('email.selectThread') || 'Select a thread to view'}
                 </span>
               </div>
