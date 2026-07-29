@@ -67,10 +67,13 @@ const computeHistoryAnalytics = (rawEvents, t) => {
     const inter = interactions.get(taskId);
     inter.events.push(e);
 
-    // Channel — prefer data.channelType over top-level channel
+    // Channel — prefer explicit channel fields, then fall back to the event source
     if (!inter.channel) {
-      const ch = String(e.data?.channelType || e.channel || e.channelType || '').toLowerCase();
-      if (ch) inter.channel = ch;
+      const ch = String(
+        e.data?.channelType || e.data?.channel || e.channel || e.channelType || e.source || ''
+      ).toLowerCase();
+      const norm = normalizeChannel(ch);
+      if (norm && norm !== 'task') inter.channel = norm;
     }
 
     // Direction
@@ -422,9 +425,12 @@ const EVENT_TYPE_LABELS = {
 const normalizeEvent = (e, source) => {
   const d = e.data || {};
 
-  // Channel: explicit field first, then data.channelType, then derive from type prefix
+  // Channel: explicit fields first, then the event's own `source` (e.g. task:closed
+  // carries source:"email"), then the source param, and only as a last resort the
+  // type prefix (which always collapses to the generic "task" bucket).
   const rawChannel = String(
-    e.channel || d.channelType || d.channel || e.channelType || e.type || source || 'task'
+    e.channel || d.channelType || d.channel || e.channelType ||
+    e.source || source || e.type || 'task'
   ).toLowerCase();
   const channel = normalizeChannel(rawChannel);
 
@@ -657,10 +663,31 @@ const InteractionSummary = ({ summary }) => {
   );
 };
 
+/**
+ * Fill in a channel for events that resolved to the generic "task" bucket by
+ * borrowing a concrete channel from another event with the same taskId
+ * (e.g. task:closed has no channel, but its sibling agent:routed does).
+ */
+const backfillChannelByTaskId = (events) => {
+  const byTask = new Map();
+  events.forEach((ev) => {
+    if (ev.taskId && ev.channel && ev.channel !== 'task' && !byTask.has(ev.taskId)) {
+      byTask.set(ev.taskId, ev.channel);
+    }
+  });
+  events.forEach((ev) => {
+    if (ev.taskId && ev.channel === 'task' && byTask.has(ev.taskId)) {
+      ev.channel = byTask.get(ev.taskId);
+    }
+  });
+  return events;
+};
+
 const normalizeEvents = (caseEvents, emailEvents) => {
   const out = [];
   (caseEvents || []).forEach((e) => out.push(normalizeEvent(e, 'task')));
   (emailEvents || []).forEach((e) => out.push(normalizeEvent(e, 'email')));
+  backfillChannelByTaskId(out);
   out.sort((a, b) => new Date(b.ts || 0) - new Date(a.ts || 0));
   return out;
 };
