@@ -4,12 +4,13 @@ import { useI18n } from '../i18n/I18nContext';
 import { formatClock, formatDuration } from '../format';
 import { fallbackBreakdown, breakdownTotals } from '../stateModel';
 import StateDistribution from './StateDistribution';
-import StateTimeline from './StateTimeline';
 
 /**
- * Agent shift + state panel. Uses the authoritative Webex CC state breakdown
+ * Agent shift + state summary. Uses the authoritative Webex CC state breakdown
  * (engaged, wrap-up, available, idle-by-reason, ringing) when available; falls
- * back to engaged + wrap-up derived from our interaction events otherwise.
+ * back to engaged + wrap-up derived from our interaction events otherwise. The
+ * time-aligned state lane itself is rendered inside the activity timeline (so it
+ * shares the tasks' zoom); this panel shows the shift KPIs + distribution bar.
  */
 export default function AgentStatePanel({ overview, agentState, live }) {
   const { t } = useI18n();
@@ -20,7 +21,6 @@ export default function AgentStatePanel({ overview, agentState, live }) {
   const breakdown = hasState ? agentState.breakdown : fallbackBreakdown(occupiedMs, wrapupMs);
   const totals = breakdownTotals(breakdown);
   const login = agentState?.loginMs || null;
-  const segments = agentState?.segments || null;
 
   return (
     <section className="statepanel" aria-label={t('state.title')}>
@@ -34,10 +34,6 @@ export default function AgentStatePanel({ overview, agentState, live }) {
       </div>
 
       <StateDistribution breakdown={breakdown} />
-
-      {agentState && (agentState.loginMs || (segments && segments.length > 0)) && (
-        <StateTimeline segments={segments} loginMs={agentState.loginMs} logoutMs={agentState.logoutMs} live={live} />
-      )}
 
       {!hasState && <div className="statepanel__note">{t('state.sourceNote')}</div>}
     </section>

@@ -19,6 +19,10 @@
         "start:report": "webpack serve --config webpack.report.config.js --mode development",
         "ext:serve": "npx http-server crm-clicktocall-extension -p 4200 -c-1 --cors",
         "ext:package": "mkdir -p dist && rm -f dist/crm-clicktocall-extension.zip && cd crm-clicktocall-extension && zip -r -X ../dist/crm-clicktocall-extension.zip . -x 'demo/*' '*.tmp-placeholder' '.DS_Store' && cd ..",
+        "deploy": "bash scripts/deploy.sh frontend",
+        "deploy:sync": "bash scripts/deploy.sh sync",
+        "deploy:full": "bash scripts/deploy.sh full",
+        "deploy:setup": "bash scripts/deploy.sh setup",
         "test": "jest"
     },
     "jest": {

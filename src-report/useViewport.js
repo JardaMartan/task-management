@@ -36,7 +36,17 @@ export function useViewport(min, max, containerRef) {
 
   const zoomAt = (factor, anchor) => {
     const v = viewRef.current;
-    const a = anchor ?? (v.start + v.end) / 2;
+    const b = boundsRef.current;
+    let a;
+    if (anchor != null) {
+      a = anchor;
+    } else if (v.end >= b.max - (b.max - b.min) * 0.005) {
+      // The end (current time) is visible at the right edge — keep it pinned
+      // there while zooming so "now" stays on screen.
+      a = v.end;
+    } else {
+      a = (v.start + v.end) / 2;
+    }
     setWin(clamp({ start: a - (a - v.start) * factor, end: a + (v.end - a) * factor }));
   };
   const panBy = (dm) => {

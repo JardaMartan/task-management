@@ -9,7 +9,7 @@ const CHANNEL_COLORS = {
   unknown: '#97a4b1',
 };
 
-export default function ActivityOverviewBar({ overview }) {
+export default function ActivityOverviewBar({ overview, open = true, onToggle }) {
   const { t } = useI18n();
   if (!overview) return null;
 
@@ -27,7 +27,52 @@ export default function ActivityOverviewBar({ overview }) {
   const maxChannelMs = Math.max(1, ...overview.perChannel.map((c) => c.handleMs));
 
   return (
-    <section className="overview" aria-label={t('overview.title')}>
+    <section className={`overview ${open ? '' : 'overview--collapsed'}`} aria-label={t('overview.title')}>
+      <div className="overview__bar">
+        <button
+          type="button"
+          className="overview__toggle"
+          onClick={onToggle}
+          aria-expanded={open}
+          aria-label={open ? t('overview.collapse') : t('overview.expand')}
+          title={open ? t('overview.collapse') : t('overview.expand')}
+        >
+          <svg className={`overview__chevron ${open ? 'is-open' : ''}`} width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+            <path d="M3 4.5 L6 7.5 L9 4.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <span className="overview__bar-title">{t('overview.title')}</span>
+        </button>
+        {!open && (
+          <span className="overview__summary">
+            {cards.map((c) => (
+              <span className="overview__summary-item" key={c.key} title={c.label}>
+                <strong>{c.value}</strong> {c.label}
+              </span>
+            ))}
+            {overview.perChannel.length > 0 && (
+              <span className="overview__summary-chans">
+                {overview.perChannel.map((c) => {
+                  const color = CHANNEL_COLORS[c.channel] || CHANNEL_COLORS.unknown;
+                  return (
+                    <span
+                      className="overview__summary-chan"
+                      key={c.channel}
+                      title={`${t(`channel.${c.channel}`) || c.channel}: ${c.count} · ${t('overview.chanHandle')} ${formatDuration(c.handleMs)} · ${t('overview.chanFocus')} ${formatDuration(c.focusMs)}`}
+                    >
+                      <span className="chan-row__dot" style={{ background: color }} />
+                      {t(`channel.${c.channel}`) || c.channel}
+                      <strong>{c.count}</strong>
+                    </span>
+                  );
+                })}
+              </span>
+            )}
+          </span>
+        )}
+      </div>
+
+      {open && (
+      <div className="overview__body">
       <div className="overview__cards">
         {cards.map((c) => (
           <div className="kpi" key={c.key}>
@@ -80,10 +125,14 @@ export default function ActivityOverviewBar({ overview }) {
           </div>
         </div>
       )}
+      </div>
+      )}
     </section>
   );
 }
 
 ActivityOverviewBar.propTypes = {
   overview: PropTypes.object,
+  open: PropTypes.bool,
+  onToggle: PropTypes.func,
 };

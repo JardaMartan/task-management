@@ -45,6 +45,8 @@ const en = {
   },
   overview: {
     title: 'Overview',
+    collapse: 'Collapse overview',
+    expand: 'Expand overview',
     handled: 'Interactions handled',
     concurrencyAvg: 'Avg concurrency',
     concurrencyMax: 'Peak concurrency',
@@ -170,6 +172,8 @@ const de = {
   },
   overview: {
     title: 'Übersicht',
+    collapse: 'Übersicht einklappen',
+    expand: 'Übersicht ausklappen',
     handled: 'Bearbeitete Interaktionen',
     concurrencyAvg: 'Ø Parallelität',
     concurrencyMax: 'Spitzen-Parallelität',
@@ -295,6 +299,8 @@ const cs = {
   },
   overview: {
     title: 'Přehled',
+    collapse: 'Sbalit přehled',
+    expand: 'Rozbalit přehled',
     handled: 'Zpracované interakce',
     concurrencyAvg: 'Prům. souběžnost',
     concurrencyMax: 'Špičková souběžnost',

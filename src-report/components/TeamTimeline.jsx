@@ -2,6 +2,7 @@ import React, { useMemo, useRef } from 'react';
 import PropTypes from 'prop-types';
 import { useI18n } from '../i18n/I18nContext';
 import { formatClock, formatDuration } from '../format';
+import { buildTicks } from '../axis';
 import { fallbackBreakdown, stateColor, resolveStateTimeline, stateLabelKey } from '../stateModel';
 import { useViewport } from '../useViewport';
 import StateDistribution from './StateDistribution';
@@ -12,7 +13,7 @@ const CHANNEL_COLORS = {
   social: '#17a2b8', custom: '#e0559b', sms: '#f5a623', workitem: '#c1440e',
   unknown: '#97a4b1',
 };
-const HEAD = 24;    // axis height
+const HEAD = 0;     // rows start at the top of the (separately-pinned) scroll body
 const STATE_H = 7;  // per-agent state lane height (thin — interactions are primary)
 const SUB_H = 14;   // per interaction sub-lane height
 const GAP = 10;     // gap between agent blocks
@@ -25,7 +26,7 @@ const MIN_BLOCK = 46; // ensure the gutter label (name + chips + state bar) fits
  * roster — not by interaction events — every member of the selected team is
  * listed with their shift/state timeline even when they handled no interactions.
  */
-export default function TeamTimeline({ agents, team, teamState, mode, windowMs }) {
+export default function TeamTimeline({ agents, team, teamState, mode, windowMs, onScroll }) {
   const { t } = useI18n();
   const plotRef = useRef(null);
 
@@ -75,14 +76,12 @@ export default function TeamTimeline({ agents, team, teamState, mode, windowMs }
 
   const { nowMs, rows, totalHeight } = layout;
   const pct = vp.pct;
-  const ticks = [];
-  for (let i = 0; i <= 6; i++) {
-    const x = vp.start + (vp.span * i) / 6;
-    ticks.push({ leftPct: (i / 6) * 100, label: formatClock(x) });
-  }
+  const ticks = buildTicks(vp.start, vp.end)
+    .map((tk) => ({ ...tk, leftPct: pct(tk.ms) }))
+    .filter((tk) => tk.leftPct >= 0 && tk.leftPct <= 100);
 
   return (
-    <section className="timeline" aria-label={t('team.title')}>
+    <section className="timeline tt" aria-label={t('team.title')}>
       <div className="timeline__head">
         <h3 className="timeline__title">{t('team.title')}</h3>
         <div className="timeline__head-right">
@@ -91,10 +90,20 @@ export default function TeamTimeline({ agents, team, teamState, mode, windowMs }
         </div>
       </div>
 
-      <div className="timeline__grid team-grid">
+      {/* Fixed axis row — stays visible while the roster scrolls vertically. */}
+      <div className="tt__axisrow">
+        <div className="tt__axishead">{t('team.membersAxis')}</div>
+        <div className="tt__axisplot">
+          {ticks.map((tick, i) => (
+            <span className={tick.major ? 'timeline__daylabel' : 'timeline__tick'} key={i} style={{ left: `${tick.leftPct}%` }}>{tick.label}</span>
+          ))}
+        </div>
+      </div>
+
+      <div className="tt__scroll" onScroll={(e) => onScroll && onScroll(e.currentTarget.scrollTop)}>
+        <div className="timeline__grid team-grid">
         {/* gutter: agent name + shift + state distribution */}
         <div className="timeline__gutter" style={{ height: totalHeight }}>
-          <div className="timeline__gutter-head">{t('team.membersAxis')}</div>
           {rows.map(({ agent, st, pa, loginMs, shiftEnd, top, height }) => {
             const sum = pa ? pa.summary || {} : {};
             const breakdown = st && st.breakdown && st.breakdown.length
@@ -123,13 +132,8 @@ export default function TeamTimeline({ agents, team, teamState, mode, windowMs }
 
         {/* plot */}
         <div className="timeline__plot timeline__plot--interactive" ref={plotRef} style={{ height: totalHeight }}>
-          <div className="timeline__axis">
-            {ticks.map((tick, i) => (
-              <span className="timeline__tick" key={i} style={{ left: `${tick.leftPct}%` }}>{tick.label}</span>
-            ))}
-          </div>
           {ticks.map((tick, i) => (
-            <span className="timeline__gridline" key={`gl-${i}`} style={{ left: `${tick.leftPct}%` }} />
+            <span className={`timeline__gridline ${tick.major ? 'timeline__gridline--day' : ''}`} key={`gl-${i}`} style={{ left: `${tick.leftPct}%` }} />
           ))}
 
           {rows.map(({ agent, resolved, pa, loginMs, shiftEnd, top, height }) => {
@@ -171,6 +175,7 @@ export default function TeamTimeline({ agents, team, teamState, mode, windowMs }
               <span className="timeline__now-label">{t('timeline.now')}</span>
             </span>
           )}
+        </div>
         </div>
       </div>
     </section>
@@ -241,4 +246,5 @@ TeamTimeline.propTypes = {
   teamState: PropTypes.array,
   mode: PropTypes.string,
   windowMs: PropTypes.number,
+  onScroll: PropTypes.func,
 };

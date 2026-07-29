@@ -11,6 +11,10 @@
 substitutions:
   _SERVICE: webex-crm-relay
   _REGION: us-central1
+  # GCS bucket (name only, no gs://) whose objects are served as /dist. Mounted
+  # into the container at /srv/dist so JS-only changes deploy via object sync
+  # (scripts/deploy.sh) with no image rebuild. Run scripts/deploy.sh setup once.
+  _DIST_BUCKET: newagent-kxwo-relay-dist
   # Comma-separated Webex org IDs that are allowed to connect.
   # Leave empty to allow all (local / dev mode).
   _ALLOWED_ORGS: ''
@@ -43,7 +47,12 @@ steps:
       - --region=${_REGION}
       - --allow-unauthenticated
       - --timeout=3600
+      - --execution-environment=gen2
       - --set-env-vars=ALLOWED_ORG_IDS=${_ALLOWED_ORGS}
+      # Serve /dist from the GCS bucket instead of the baked-in image copy so
+      # frontend bundles can be updated without rebuilding this image.
+      - --add-volume=name=dist,type=cloud-storage,bucket=${_DIST_BUCKET}
+      - --add-volume-mount=volume=dist,mount-path=/srv/dist
 
 images:
   - gcr.io/$PROJECT_ID/${_SERVICE}
