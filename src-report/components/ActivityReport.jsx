@@ -6,6 +6,7 @@ import { buildTimeline } from '../timeline';
 import { buildTeamTimeline } from '../team';
 import { computeOverview } from '../analytics';
 import { rangeWindowMs, resolveRange, teardown } from '../store/slices/activitySlice';
+import { perfSync } from '../perf';
 import AgentPicker from './AgentPicker';
 import TeamPicker from './TeamPicker';
 import ScopeToggle from './ScopeToggle';
@@ -70,17 +71,22 @@ export default function ActivityReport() {
   );
   const openEndMs = mode === 'live' ? nowTick : viewEndMs;
 
-  const timeline = useMemo(() => buildTimeline(events, { openEndMs }), [events, openEndMs]);
+  const timeline = useMemo(
+    () => perfSync('buildTimeline', () => buildTimeline(events, { openEndMs }), { events: events.length }),
+    [events, openEndMs],
+  );
   const teamTimeline = useMemo(
-    () => (scope === 'team' ? buildTeamTimeline(events, { openEndMs }) : null),
+    () => (scope === 'team'
+      ? perfSync('buildTeamTimeline', () => buildTeamTimeline(events, { openEndMs }), { events: events.length })
+      : null),
     [scope, events, openEndMs],
   );
   const overview = useMemo(
-    () => computeOverview({
+    () => perfSync('computeOverview', () => computeOverview({
       byInteraction: timeline.byInteraction,
       bounds: timeline.bounds,
       windowMs: rangeWindowMs(rangeKey, customFrom, customTo),
-    }),
+    }), { interactions: Object.keys(timeline.byInteraction || {}).length }),
     [timeline, rangeKey, customFrom, customTo],
   );
 

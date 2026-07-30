@@ -64,13 +64,42 @@ export function buildTeamTimeline(events, options = {}) {
     }));
     const summary = occupancySummary(intervals);
 
+    // Per-agent cumulative totals (summed across the agent's interactions) so the
+    // team table can show — and sort by — handle / focus / wrap-up like the
+    // single-agent overview. maxConcurrency comes from the occupancy sweep.
+    let sumHandle = 0;
+    let sumFocus = 0;
+    let sumWrap = 0;
+    let sumIntr = 0;
+    for (const iv of ivs) {
+      sumHandle += iv.handleMs || 0;
+      sumFocus += iv.focusMs || 0;
+      sumWrap += iv.wrapupMs || 0;
+      sumIntr += iv.interruptions || 0;
+    }
+    const totals = {
+      handled: ivs.length,
+      handleMs: sumHandle,
+      focusMs: sumFocus,
+      wrapupMs: sumWrap,
+      interruptions: sumIntr,
+      maxConcurrency: summary.maxConcurrency,
+      // Canonical agent-performance KPIs derived from the same data:
+      //  • AHT (Average Handle Time) = total handle ÷ interactions handled
+      //  • Occupancy = busy time (handling + wrap-up) ÷ logged-in span
+      ahtMs: ivs.length ? sumHandle / ivs.length : 0,
+      occupancy: (tl.bounds.max - tl.bounds.min) > 0
+        ? Math.min(1, ((summary.occupiedMs || 0) + (summary.wrapupMs || 0)) / (tl.bounds.max - tl.bounds.min))
+        : 0,
+    };
+
     const shiftStart = tl.bounds.min;
     const shiftEnd = tl.bounds.max;
     min = Math.min(min, shiftStart);
     max = Math.max(max, shiftEnd);
 
     groups.push({ id: a.id, name: a.name, lanes });
-    perAgent[a.id] = { lanes, items: tl.items, byInteraction: tl.byInteraction, laneOf, summary, shiftStart, shiftEnd };
+    perAgent[a.id] = { lanes, items: tl.items, byInteraction: tl.byInteraction, laneOf, summary, totals, shiftStart, shiftEnd };
   }
 
   groups.sort((x, y) => (x.name || '').localeCompare(y.name || ''));

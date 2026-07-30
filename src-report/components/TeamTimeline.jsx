@@ -1,7 +1,7 @@
-import React, { useMemo, useRef } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import { useI18n } from '../i18n/I18nContext';
-import { formatClock, formatDuration } from '../format';
+import { formatClock, formatDuration, formatPercent } from '../format';
 import { buildTicks } from '../axis';
 import { fallbackBreakdown, stateColor, resolveStateTimeline, stateLabelKey } from '../stateModel';
 import { useViewport } from '../useViewport';
@@ -19,6 +19,16 @@ const SUB_H = 14;   // per interaction sub-lane height
 const GAP = 10;     // gap between agent blocks
 const MIN_BLOCK = 46; // ensure the gutter label (name + chips + state bar) fits
 
+// Sortable per-agent metric columns shown in the team gutter table. `get`
+// reads the agent's cumulative totals (from buildTeamTimeline).
+const METRICS = [
+  { key: 'tasks', labelKey: 'team.colTasks', get: (tot) => tot.handled, kind: 'num' },
+  { key: 'handle', labelKey: 'team.colHandle', get: (tot) => tot.handleMs, kind: 'dur' },
+  { key: 'focus', labelKey: 'team.colFocus', get: (tot) => tot.focusMs, kind: 'dur', cls: 'tt-val--focus' },
+  { key: 'wrap', labelKey: 'team.colWrap', get: (tot) => tot.wrapupMs, kind: 'dur', cls: 'tt-val--wrap' },
+  { key: 'peak', labelKey: 'team.colPeak', get: (tot) => tot.maxConcurrency, kind: 'peak' },
+];
+
 /**
  * Per-team view: one row per team member (from the roster), each showing the
  * agent's login/logout/state timeline (sourced from Webex CC) with any
@@ -29,6 +39,34 @@ const MIN_BLOCK = 46; // ensure the gutter label (name + chips + state bar) fits
 export default function TeamTimeline({ agents, team, teamState, mode, windowMs, onScroll }) {
   const { t } = useI18n();
   const plotRef = useRef(null);
+  const [sort, setSort] = useState({ key: 'name', dir: 'asc' });
+
+  const totalsOf = (id) => (team && team.perAgent && team.perAgent[id] && team.perAgent[id].totals) || null;
+
+  // Roster ordered by the selected metric (name = alphabetical). Numeric metrics
+  // default to descending (busiest first) when first picked.
+  const sortedAgents = useMemo(() => {
+    const list = [...(agents || [])];
+    const dir = sort.dir === 'asc' ? 1 : -1;
+    const metric = METRICS.find((m) => m.key === sort.key);
+    list.sort((a, b) => {
+      if (!metric) {
+        return dir * String(a.name || a.id || '').localeCompare(String(b.name || b.id || ''));
+      }
+      const ta = totalsOf(a.id);
+      const tb = totalsOf(b.id);
+      const va = ta ? metric.get(ta) || 0 : 0;
+      const vb = tb ? metric.get(tb) || 0 : 0;
+      return dir * (va - vb) || String(a.name || '').localeCompare(String(b.name || ''));
+    });
+    return list;
+  }, [agents, team, sort]);
+
+  const onSort = (key) => setSort((s) => (
+    s.key === key
+      ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' }
+      : { key, dir: key === 'name' ? 'asc' : 'desc' }
+  ));
 
   const stateByAgent = useMemo(() => {
     const m = {};
@@ -37,7 +75,7 @@ export default function TeamTimeline({ agents, team, teamState, mode, windowMs, 
   }, [teamState]);
 
   const layout = useMemo(() => {
-    const roster = agents || [];
+    const roster = sortedAgents || [];
     if (!roster.length) return null;
     const nowMs = Date.now();
     const win = windowMs || 8 * 3600 * 1000;
@@ -68,7 +106,7 @@ export default function TeamTimeline({ agents, team, teamState, mode, windowMs, 
     if (mode === 'live') maxEnd = Math.max(maxEnd, nowMs);
     const pad = Math.max((maxEnd - minStart) * 0.03, 30 * 1000);
     return { vMin: minStart - pad, vMax: maxEnd + pad, nowMs, rows, totalHeight: y };
-  }, [agents, team, stateByAgent, mode, windowMs]);
+  }, [sortedAgents, team, stateByAgent, mode, windowMs]);
 
   const vp = useViewport(layout ? layout.vMin : 0, layout ? layout.vMax : 1, plotRef);
 
@@ -92,7 +130,29 @@ export default function TeamTimeline({ agents, team, teamState, mode, windowMs, 
 
       {/* Fixed axis row — stays visible while the roster scrolls vertically. */}
       <div className="tt__axisrow">
-        <div className="tt__axishead">{t('team.membersAxis')}</div>
+        <div className="tt__axishead tt-cols">
+          <button
+            type="button"
+            className={`tt-col tt-col--name ${sort.key === 'name' ? 'is-sorted' : ''}`}
+            onClick={() => onSort('name')}
+            title={t('team.sortBy', { metric: t('team.colName') })}
+          >
+            {t('team.colName')}
+            {sort.key === 'name' && <span className="tt-col__arrow">{sort.dir === 'asc' ? '▲' : '▼'}</span>}
+          </button>
+          {METRICS.map((m) => (
+            <button
+              key={m.key}
+              type="button"
+              className={`tt-col tt-col--num ${sort.key === m.key ? 'is-sorted' : ''}`}
+              onClick={() => onSort(m.key)}
+              title={t('team.sortBy', { metric: t(m.labelKey) })}
+            >
+              {t(m.labelKey)}
+              {sort.key === m.key && <span className="tt-col__arrow">{sort.dir === 'asc' ? '▲' : '▼'}</span>}
+            </button>
+          ))}
+        </div>
         <div className="tt__axisplot">
           {ticks.map((tick, i) => (
             <span className={tick.major ? 'timeline__daylabel' : 'timeline__tick'} key={i} style={{ left: `${tick.leftPct}%` }}>{tick.label}</span>
@@ -102,29 +162,39 @@ export default function TeamTimeline({ agents, team, teamState, mode, windowMs, 
 
       <div className="tt__scroll" onScroll={(e) => onScroll && onScroll(e.currentTarget.scrollTop)}>
         <div className="timeline__grid team-grid">
-        {/* gutter: agent name + shift + state distribution */}
+        {/* gutter: agent name + shift + per-agent metric totals */}
         <div className="timeline__gutter" style={{ height: totalHeight }}>
           {rows.map(({ agent, st, pa, loginMs, shiftEnd, top, height }) => {
             const sum = pa ? pa.summary || {} : {};
+            const tot = (pa && pa.totals) || { handled: 0, handleMs: 0, focusMs: 0, wrapupMs: 0, maxConcurrency: 0 };
             const breakdown = st && st.breakdown && st.breakdown.length
               ? st.breakdown
               : (pa ? fallbackBreakdown(sum.occupiedMs, sum.wrapupMs) : []);
             return (
-              <div className="team-label" key={agent.id} style={{ position: 'absolute', top, height }} title={agent.id}>
-                <span className="team-label__name">{agent.name || agent.id}</span>
-                <span className="team-label__meta">
-                  {loginMs != null ? (
-                    <span className="meta-chip" title={t('state.shiftSince', { time: formatClock(loginMs) })}>
-                      {formatClock(loginMs)}–{formatClock(shiftEnd)}
-                    </span>
-                  ) : (
-                    <span className="meta-chip meta-chip--muted">{t('app.noData')}</span>
-                  )}
-                  {pa && sum.maxConcurrency > 0 && (
-                    <span className="meta-chip meta-chip--peak" title={t('team.peak')}>×{sum.maxConcurrency}</span>
-                  )}
-                </span>
-                {breakdown.length > 0 && <StateDistribution compact breakdown={breakdown} />}
+              <div className="team-label tt-cols" key={agent.id} style={{ position: 'absolute', top, height }} title={agent.id}>
+                <div className="team-label__namecell">
+                  <span className="team-label__name">{agent.name || agent.id}</span>
+                  <span className="team-label__meta">
+                    {tot.handled > 0 ? (
+                      <>
+                        <span className="meta-chip meta-chip--kpi" title={`${t('overview.ahtAvg')}: ${formatDuration(tot.ahtMs)}`}>
+                          {t('team.aht')} {formatDuration(tot.ahtMs)}
+                        </span>
+                        <span className="meta-chip meta-chip--kpi" title={`${t('overview.occupancy')}: ${formatPercent(tot.occupancy)}`}>
+                          {formatPercent(tot.occupancy)} {t('team.occ')}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="meta-chip meta-chip--muted">{t('app.noData')}</span>
+                    )}
+                  </span>
+                  {breakdown.length > 0 && <StateDistribution compact breakdown={breakdown} />}
+                </div>
+                <span className={`tt-val ${sort.key === 'tasks' ? 'is-sorted' : ''}`}>{tot.handled || '—'}</span>
+                <span className={`tt-val ${sort.key === 'handle' ? 'is-sorted' : ''}`}>{tot.handleMs > 0 ? formatDuration(tot.handleMs) : '—'}</span>
+                <span className={`tt-val tt-val--focus ${sort.key === 'focus' ? 'is-sorted' : ''}`}>{tot.focusMs > 0 ? formatDuration(tot.focusMs) : '—'}</span>
+                <span className={`tt-val tt-val--wrap ${sort.key === 'wrap' ? 'is-sorted' : ''}`}>{tot.wrapupMs > 0 ? formatDuration(tot.wrapupMs) : '—'}</span>
+                <span className={`tt-val ${sort.key === 'peak' ? 'is-sorted' : ''}`}>{tot.maxConcurrency > 0 ? `×${tot.maxConcurrency}` : '—'}</span>
               </div>
             );
           })}

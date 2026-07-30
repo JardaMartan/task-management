@@ -78,7 +78,6 @@ export function buildTimeline(events, options = {}) {
     g.events.sort((a, b) => ms(a.event_ts) - ms(b.event_ts));
     const offered  = firstOf(g.events, 'task_offered');
     const accepted = firstOf(g.events, 'task_accepted');
-    const wrapup   = firstOf(g.events, 'wrapup');
     const ended    = lastOf(g.events, 'task_ended');
 
     const startMs = ms(accepted?.event_ts || offered?.event_ts || g.events[0].event_ts);
@@ -101,15 +100,33 @@ export function buildTimeline(events, options = {}) {
       type: 'active', className: `lane-active channel-${g.channel}`,
     });
 
-    // Wrap-up tail.
+    // Wrap-up: sum every CONTIGUOUS wrap-up interval (wrapup → re-connect | end).
+    // The interaction can toggle wrap-up ⇄ connected (e.g. an email reply sent →
+    // wrap-up, then reopened → connected, then wrapped again). Measuring a single
+    // first-wrapup→end tail would swallow that reconnected active/focused time and
+    // wildly overcount wrap-up, so we close each interval at the next task_accepted
+    // (re-connect) and only carry the trailing interval to the interaction end.
     let wrapupMs = 0;
-    if (wrapup && ended) {
-      const wStart = ms(wrapup.event_ts);
-      items.push({
-        id: `${g.id}::wrapup`, group: g.id, start: wStart, end: endMs,
-        type: 'wrapup', className: 'lane-wrapup',
-      });
-      wrapupMs = Math.max(0, endMs - wStart);
+    {
+      let wStart = null;
+      let wIdx = 0;
+      for (const e of g.events) {
+        const ts = ms(e.event_ts);
+        if (!Number.isFinite(ts)) continue;
+        if (e.event_type === 'wrapup') {
+          if (wStart == null) wStart = ts;
+        } else if (e.event_type === 'task_accepted' || e.event_type === 'task_offered') {
+          if (wStart != null && ts > wStart) {
+            items.push({ id: `${g.id}::wrapup::${wIdx++}`, group: g.id, start: wStart, end: ts, type: 'wrapup', className: 'lane-wrapup' });
+            wrapupMs += ts - wStart;
+          }
+          wStart = null;
+        }
+      }
+      if (wStart != null && endMs > wStart) {
+        items.push({ id: `${g.id}::wrapup::${wIdx++}`, group: g.id, start: wStart, end: endMs, type: 'wrapup', className: 'lane-wrapup' });
+        wrapupMs += endMs - wStart;
+      }
     }
 
     // Focus segments + interruptions.

@@ -24,7 +24,8 @@ export default function ActivityOverviewBar({ overview, open = true, onToggle })
     { key: 'occupancy', label: t('overview.occupancy'), value: formatPercent(overview.occupancy) },
   ];
 
-  const maxChannelMs = Math.max(1, ...overview.perChannel.map((c) => c.handleMs));
+  const maxHandleAny = Math.max(1, ...overview.perChannel.map((c) => c.maxHandleMs || 0));
+  const clampPct = (ms) => Math.max(0, Math.min(100, (ms / maxHandleAny) * 100));
 
   return (
     <section className={`overview ${open ? '' : 'overview--collapsed'}`} aria-label={t('overview.title')}>
@@ -84,41 +85,46 @@ export default function ActivityOverviewBar({ overview, open = true, onToggle })
 
       {overview.perChannel.length > 0 && (
         <div className="overview__channels">
-          <div className="overview__channels-title">{t('overview.perChannel')}</div>
+          <div className="overview__channels-title">
+            {t('overview.perChannel')} <span className="overview__hint">· {t('overview.handleSpread')}</span>
+          </div>
           <div className="chan-table">
             <div className="chan-table__head">
+              <span />
               <span />
               <span className="chan-table__num">{t('overview.chanCount')}</span>
               <span className="chan-table__num">{t('overview.chanHandle')}</span>
               <span className="chan-table__num">{t('overview.chanFocus')}</span>
+              <span className="chan-table__num">{t('overview.chanWrapup')}</span>
               <span className="chan-table__num">{t('overview.chanAvgHandle')}</span>
               <span className="chan-table__num">{t('overview.chanAvgFocus')}</span>
             </div>
             {overview.perChannel.map((c) => {
               const color = CHANNEL_COLORS[c.channel] || CHANNEL_COLORS.unknown;
+              const minP = clampPct(c.minHandleMs);
+              const maxP = clampPct(c.maxHandleMs);
+              const avgP = clampPct(c.avgHandleMs);
               return (
                 <div className="chan-row" key={c.channel}>
-                  <div className="chan-row__grid">
-                    <span className="chan-row__ch">
-                      <span className="chan-row__dot" style={{ background: color }} />
-                      {t(`channel.${c.channel}`) || c.channel}
-                    </span>
-                    <span className="chan-table__num">{c.count}</span>
-                    <span className="chan-table__num"><strong>{formatDuration(c.handleMs)}</strong></span>
-                    <span className="chan-table__num chan-focus">{formatDuration(c.focusMs)}</span>
-                    <span className="chan-table__num">{formatDuration(c.avgHandleMs)}</span>
-                    <span className="chan-table__num chan-focus">{formatDuration(c.avgFocusMs)}</span>
-                  </div>
-                  <span className="chan-row__track" title={`${t('overview.chanHandle')} ${formatDuration(c.handleMs)} · ${t('overview.chanFocus')} ${formatDuration(c.focusMs)}`}>
-                    <span
-                      className="chan-row__handle"
-                      style={{ width: `${Math.max(2, (c.handleMs / maxChannelMs) * 100)}%`, background: color, opacity: 0.28 }}
-                    />
-                    <span
-                      className="chan-row__focus"
-                      style={{ width: `${Math.max(1, (c.focusMs / maxChannelMs) * 100)}%`, background: color }}
-                    />
+                  <span className="chan-row__ch">
+                    <span className="chan-row__dot" style={{ background: color }} />
+                    <span className="chan-row__chname">{t(`channel.${c.channel}`) || c.channel}</span>
                   </span>
+                  <span
+                    className="chan-row__track chan-row__track--range"
+                    title={`${t('overview.chanHandle')} — ${t('overview.rangeMin')} ${formatDuration(c.minHandleMs)} · ${t('overview.chanAvgHandle')} ${formatDuration(c.avgHandleMs)} · ${t('overview.rangeMax')} ${formatDuration(c.maxHandleMs)}`}
+                  >
+                    <span className="chan-range" style={{ left: `${minP}%`, width: `${Math.max(maxP - minP, 0.6)}%`, background: color }} />
+                    <span className="chan-cap" style={{ left: `${minP}%`, background: color }} />
+                    <span className="chan-cap" style={{ left: `${maxP}%`, background: color }} />
+                    <span className="chan-avg" style={{ left: `${avgP}%`, background: color }} />
+                  </span>
+                  <span className="chan-table__num">{c.count}</span>
+                  <span className="chan-table__num"><strong>{formatDuration(c.handleMs)}</strong></span>
+                  <span className="chan-table__num chan-focus">{formatDuration(c.focusMs)}</span>
+                  <span className="chan-table__num chan-wrap">{formatDuration(c.wrapupMs)}</span>
+                  <span className="chan-table__num">{formatDuration(c.avgHandleMs)}</span>
+                  <span className="chan-table__num chan-focus">{formatDuration(c.avgFocusMs)}</span>
                 </div>
               );
             })}

@@ -11,6 +11,7 @@
 import { AGENTS, generateEvents } from './mock/mockEvents';
 import { generateAgentState, generateTeamState } from './mock/mockState';
 import { TEAMS } from './mock/mockTeams';
+import { perfStart } from './perf';
 
 const LIVE_POLL_MS = 5000;
 
@@ -33,7 +34,7 @@ export async function fetchTeams({ activityUrl, accessToken, orgId, datacenter }
 }
 
 /** Return the selectable agents. Demo (no ingest URL) → mock roster; live → server only. */
-export async function fetchAgents({ activityUrl, accessToken, orgId, datacenter, teamId, fromMs, toMs } = {}) {
+export async function fetchAgents({ activityUrl, accessToken, orgId, datacenter, teamId, fromMs, toMs, signal } = {}) {
   if (!activityUrl) {
     return teamId ? AGENTS.filter((a) => (a.teamIds || []).includes(teamId)) : AGENTS;
   }
@@ -46,7 +47,7 @@ export async function fetchAgents({ activityUrl, accessToken, orgId, datacenter,
       + (orgId ? `&orgId=${encodeURIComponent(orgId)}` : '')
       + (datacenter ? `&datacenter=${encodeURIComponent(datacenter)}` : '')
       + (teamId ? `&teamId=${encodeURIComponent(teamId)}` : '');
-    const res = await fetch(url, { headers: authHeaders(accessToken) });
+    const res = await fetch(url, { headers: authHeaders(accessToken), signal });
     if (res.ok) {
       const body = await res.json();
       // In live mode return the server result verbatim — including an EMPTY list
@@ -64,7 +65,7 @@ export async function fetchAgents({ activityUrl, accessToken, orgId, datacenter,
  * Fetch an agent's events for [fromMs, toMs].
  * @returns {Promise<Array<object>>}
  */
-export async function fetchAgentEvents({ activityUrl, accessToken, orgId, datacenter, agentId, fromMs, toMs }) {
+export async function fetchAgentEvents({ activityUrl, accessToken, orgId, datacenter, agentId, fromMs, toMs, signal }) {
   if (!agentId) return [];
   if (!activityUrl) {
     return generateEvents(agentId, fromMs, toMs);
@@ -74,10 +75,13 @@ export async function fetchAgentEvents({ activityUrl, accessToken, orgId, datace
     + `&to=${encodeURIComponent(new Date(toMs).toISOString())}`
     + (orgId ? `&orgId=${encodeURIComponent(orgId)}` : '')
     + (datacenter ? `&datacenter=${encodeURIComponent(datacenter)}` : '');
-  const res = await fetch(url, { headers: authHeaders(accessToken) });
+  const res = await fetch(url, { headers: authHeaders(accessToken), signal });
   if (!res.ok) throw new Error(`activity query HTTP ${res.status}`);
+  const end = perfStart('fetchAgentEvents parse');
   const body = await res.json();
-  return Array.isArray(body.events) ? body.events : [];
+  const events = Array.isArray(body.events) ? body.events : [];
+  end({ events: events.length });
+  return events;
 }
 
 /**
@@ -85,7 +89,7 @@ export async function fetchAgentEvents({ activityUrl, accessToken, orgId, datace
  * Demo → generate for the whole mock roster; live → GET ?team=1.
  * @returns {Promise<Array<object>>}
  */
-export async function fetchTeamEvents({ activityUrl, accessToken, orgId, datacenter, fromMs, toMs }) {
+export async function fetchTeamEvents({ activityUrl, accessToken, orgId, datacenter, fromMs, toMs, signal }) {
   if (!activityUrl) {
     return AGENTS.flatMap((a) => generateEvents(a.id, fromMs, toMs));
   }
@@ -94,10 +98,13 @@ export async function fetchTeamEvents({ activityUrl, accessToken, orgId, datacen
     + `&to=${encodeURIComponent(new Date(toMs).toISOString())}`
     + (orgId ? `&orgId=${encodeURIComponent(orgId)}` : '')
     + (datacenter ? `&datacenter=${encodeURIComponent(datacenter)}` : '');
-  const res = await fetch(url, { headers: authHeaders(accessToken) });
+  const res = await fetch(url, { headers: authHeaders(accessToken), signal });
   if (!res.ok) throw new Error(`team query HTTP ${res.status}`);
+  const end = perfStart('fetchTeamEvents parse');
   const body = await res.json();
-  return Array.isArray(body.events) ? body.events : [];
+  const events = Array.isArray(body.events) ? body.events : [];
+  end({ events: events.length });
+  return events;
 }
 
 /**
@@ -113,16 +120,39 @@ export function createLiveSubscription({ activityUrl, accessToken, orgId, datace
   let stopped = false;
   let timer = null;
   const span = windowMs || 60 * 60 * 1000;
+  // On the first tick we load the whole window; afterwards we only fetch the
+  // delta since the last poll (plus a small overlap to catch late-arriving
+  // events), merge it into a keyed store and prune anything that has aged out of
+  // the rolling window. This keeps each poll tiny instead of re-downloading and
+  // re-processing the entire window every LIVE_POLL_MS.
+  const OVERLAP_MS = 60 * 1000;
+  const store = new Map();
+  let lastTo = null;
+
+  const keyOf = (e) => `${e.agent_id || ''}|${e.interaction_id || ''}|${e.event_type || ''}|${e.event_ts || ''}`;
+
+  const mergeAndPrune = (events, windowStart) => {
+    for (const e of events) store.set(keyOf(e), e);
+    for (const [k, e] of store) {
+      const ts = Date.parse(e.event_ts);
+      if (Number.isFinite(ts) && ts < windowStart) store.delete(k);
+    }
+  };
 
   const tick = async () => {
     if (stopped) return;
     const toMs = toMsFixed != null ? toMsFixed : Date.now();
-    const fromMs = fromMsFixed != null ? fromMsFixed : toMs - span;
+    const windowStart = fromMsFixed != null ? fromMsFixed : toMs - span;
+    const fromMs = lastTo == null ? windowStart : Math.max(windowStart, lastTo - OVERLAP_MS);
     try {
       const events = team
         ? await fetchTeamEvents({ activityUrl, accessToken, orgId, datacenter, fromMs, toMs })
         : await fetchAgentEvents({ activityUrl, accessToken, orgId, datacenter, agentId, fromMs, toMs });
-      if (!stopped) onEvents(events);
+      if (!stopped) {
+        mergeAndPrune(events, windowStart);
+        lastTo = toMs;
+        onEvents([...store.values()]);
+      }
     } catch (err) {
       console.warn('[activity-report] live poll failed:', err.message);
     }
@@ -149,7 +179,7 @@ function authHeaders(accessToken) {
  * Sourced from Webex CC in live mode (via the backend proxy); mock in demo.
  * @returns {Promise<object|null>}
  */
-export async function fetchAgentState({ activityUrl, accessToken, orgId, datacenter, agentId, fromMs, toMs }) {
+export async function fetchAgentState({ activityUrl, accessToken, orgId, datacenter, agentId, fromMs, toMs, signal }) {
   if (!agentId) return null;
   if (!activityUrl) return generateAgentState(agentId, fromMs, toMs);
   const url = `${activityUrl}?state=1&agentId=${encodeURIComponent(agentId)}`
@@ -158,7 +188,7 @@ export async function fetchAgentState({ activityUrl, accessToken, orgId, datacen
     + (orgId ? `&orgId=${encodeURIComponent(orgId)}` : '')
     + (datacenter ? `&datacenter=${encodeURIComponent(datacenter)}` : '');
   try {
-    const res = await fetch(url, { headers: authHeaders(accessToken) });
+    const res = await fetch(url, { headers: authHeaders(accessToken), signal });
     if (!res.ok) throw new Error(`state query HTTP ${res.status}`);
     const body = await res.json();
     return body.state || null;
@@ -172,7 +202,7 @@ export async function fetchAgentState({ activityUrl, accessToken, orgId, datacen
  * Fetch team state for the given agent ids. Mock in demo; Webex CC in live.
  * @returns {Promise<Array<object>>}
  */
-export async function fetchTeamState({ activityUrl, accessToken, orgId, datacenter, agentIds, fromMs, toMs }) {
+export async function fetchTeamState({ activityUrl, accessToken, orgId, datacenter, agentIds, fromMs, toMs, signal }) {
   if (!activityUrl) return generateTeamState(fromMs, toMs);
   if (!Array.isArray(agentIds) || !agentIds.length) return [];
   const url = `${activityUrl}?state=1&team=1&agentId=${encodeURIComponent(agentIds.join(','))}`

@@ -1,5 +1,6 @@
 'use strict';
 
+const zlib = require('zlib');
 const functions = require('@google-cloud/functions-framework');
 const { fetchInboundEmail, watchGmailInbox } = require('./gmail');
 const { enrichEmailWithAi } = require('./ai');
@@ -7,6 +8,23 @@ const { mintGmailToken, mintGeminiToken, verifyWebexIdentity } = require('./toke
 const { ingestEvents, queryAgentEvents, queryTeamEvents, queryAgents } = require('./activity');
 const { queryAgentState, queryTeamState, queryAgentRoster } = require('./agent-state');
 const { queryTeams, queryUsers, loadDirectory, canonicalUser, resolveAgentIds } = require('./config-api');
+
+/**
+ * Send JSON, gzip-compressed when the client supports it. Activity/state JSON is
+ * large and highly repetitive (segment/event arrays) → gzip cuts it ~85-90%,
+ * slashing transfer + client receive time. Small bodies are sent as-is.
+ */
+function sendJson(req, res, obj, status = 200) {
+  const json = JSON.stringify(obj);
+  res.set('Content-Type', 'application/json; charset=utf-8');
+  res.set('Vary', 'Accept-Encoding');
+  if (json.length > 1024 && /\bgzip\b/.test(String(req.headers['accept-encoding'] || ''))) {
+    const buf = zlib.gzipSync(json);
+    res.set('Content-Encoding', 'gzip');
+    return res.status(status).send(buf);
+  }
+  return res.status(status).send(json);
+}
 
 // ─── Health ───────────────────────────────────────────────────────────────────
 
@@ -249,10 +267,10 @@ functions.http('activity', async (req, res) => {
         if (team) {
           const agentIds = String(agentId || '').split(',').map((s) => s.trim()).filter(Boolean);
           const states = await queryTeamState({ agentIds, from, to, accessToken, orgId, datacenter });
-          return res.status(200).json({ states });
+          return sendJson(req, res, { states });
         }
         const agentState = await queryAgentState({ agentId, from, to, accessToken, orgId, datacenter });
-        return res.status(200).json({ state: agentState });
+        return sendJson(req, res, { state: agentState });
       }
       // Team occupancy: GET /activity?team=1 → all agents' events in range.
       if (team) {
@@ -273,7 +291,7 @@ functions.http('activity', async (req, res) => {
             console.warn('[activity] team id remap failed:', e.message);
           }
         }
-        return res.status(200).json({ count: rows.length, events: rows });
+        return sendJson(req, res, { count: rows.length, events: rows });
       }
       if (!agentId) {
         return res.status(400).json({ error: 'agentId query param is required' });
@@ -293,7 +311,7 @@ functions.http('activity', async (req, res) => {
         }
       }
       const rows = await queryAgentEvents({ agentIds, from, to, limit });
-      return res.status(200).json({ agentId, count: rows.length, events: rows });
+      return sendJson(req, res, { agentId, count: rows.length, events: rows });
     }
 
     return res.status(405).send('Method Not Allowed');

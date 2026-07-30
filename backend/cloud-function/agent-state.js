@@ -157,6 +157,20 @@ async function queryAgentState({ agentId, from, to, accessToken, orgId, datacent
     }
     segments.sort((a, b) => a.startMs - b.startMs);
 
+    // Coalesce contiguous same-state segments (Webex mirrors global states across
+    // channels/sessions, producing many back-to-back identical slivers). Merging
+    // them keeps the state lane identical while cutting the payload — the single
+    // biggest response — dramatically for wide ranges / large teams.
+    const mergedSegments = [];
+    for (const seg of segments) {
+      const last = mergedSegments[mergedSegments.length - 1];
+      if (last && last.code === seg.code && last.name === seg.name && seg.startMs <= last.endMs + 1000) {
+        if (seg.endMs > last.endMs) last.endMs = seg.endMs;
+      } else {
+        mergedSegments.push({ ...seg });
+      }
+    }
+
     // Build an ordered, authoritative state breakdown for the distribution bar.
     const breakdown = [];
     if (stateMs.connected) breakdown.push({ code: 'engaged', name: 'Engaged', ms: stateMs.connected });
@@ -177,7 +191,7 @@ async function queryAgentState({ agentId, from, to, accessToken, orgId, datacent
       for (const s of breakdown) s.ms = Math.round(s.ms * scale);
     }
 
-    return { agentId, agentName: null, loginMs, logoutMs: active ? null : logoutMs, breakdown, segments };
+    return { agentId, agentName: null, loginMs, logoutMs: active ? null : logoutMs, breakdown, segments: mergedSegments };
   } catch (err) {
     console.warn('[agent-state] Webex Search API query failed:', err.message);
     return null;

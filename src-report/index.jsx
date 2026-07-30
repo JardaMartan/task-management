@@ -58,6 +58,7 @@ if (globalThis.document?.getElementById('react-root')) {
   store.dispatch(hydrateContext({
     view: urlView || 'mock',
     activityurl: urlActivityUrl || null,
+    debug: params?.get('debug') || null,
   }));
   const locale = urlLocale || detectBrowserLocale();
   const render = (
@@ -91,13 +92,14 @@ class AgentActivityElement extends HTMLElement {
       locale: null,
       view: null,          // 'mock' | 'live'
       activityurl: null,   // Cloud Function ingest/query URL
+      debug: null,         // 'perf' → console performance instrumentation
       config: null,
     };
     this._updatePending = false;
   }
 
   static get observedAttributes() {
-    return ['darkmode', 'accesstoken', 'orgid', 'datacenter', 'locale', 'view', 'activityurl'];
+    return ['darkmode', 'accesstoken', 'orgid', 'datacenter', 'locale', 'view', 'activityurl', 'debug'];
   }
 
   set darkmode(v) { this._props.darkmode = v; this.updateComponent(); }
@@ -123,6 +125,9 @@ class AgentActivityElement extends HTMLElement {
 
   set activityurl(v) { this._props.activityurl = v; this.updateComponent(); }
   get activityurl() { return this._props.activityurl; }
+
+  set debug(v) { this._props.debug = v; this.updateComponent(); }
+  get debug() { return this._props.debug; }
 
   set config(v) {
     let parsed = v;
@@ -179,7 +184,7 @@ class AgentActivityElement extends HTMLElement {
 
   connectedCallback() {
     // Promote any pre-upgrade properties so prototype setters run.
-    const preUpgrade = ['config', 'view', 'activityurl', 'accesstoken', 'orgid', 'datacenter', 'darkmode', 'locale'];
+    const preUpgrade = ['config', 'view', 'activityurl', 'accesstoken', 'orgid', 'datacenter', 'darkmode', 'locale', 'debug'];
     for (const prop of preUpgrade) {
       if (Object.prototype.hasOwnProperty.call(this, prop)) {
         const val = this[prop];
@@ -189,7 +194,7 @@ class AgentActivityElement extends HTMLElement {
     }
 
     // Seed from attributes when properties were not set.
-    for (const name of ['darkmode', 'accesstoken', 'orgid', 'datacenter', 'locale', 'view', 'activityurl']) {
+    for (const name of ['darkmode', 'accesstoken', 'orgid', 'datacenter', 'locale', 'view', 'activityurl', 'debug']) {
       if (this._props[name] == null && this.hasAttribute(name)) {
         this._props[name] = this.getAttribute(name);
       }

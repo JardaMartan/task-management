@@ -12,7 +12,7 @@ const CHANNEL_COLORS = {
   social: '#17a2b8', custom: '#e0559b', sms: '#f5a623', workitem: '#c1440e',
   unknown: '#97a4b1',
 };
-const ROW_H = 46; // per-interaction lane height
+const ROW_H = 56; // per-interaction lane height (fits channel line + metric chips)
 
 const clampPct = (p) => Math.max(0, Math.min(100, p));
 const inView = (p) => p >= -0.01 && p <= 100.01;
@@ -123,6 +123,11 @@ export default function ActivityTimeline({ timeline, stateTimeline, mode, onScro
                         <span className="meta-chip__sep">·</span>
                         <span className="meta-chip__focus">{formatDuration(m.focusMs)} {t('timeline.focusShort')}</span>
                       </span>
+                      {m.wrapupMs > 0 && (
+                        <span className="meta-chip meta-chip--wrap" title={`${t('timeline.wrapup')}: ${formatDuration(m.wrapupMs)}`}>
+                          {formatDuration(m.wrapupMs)} {t('timeline.wrapupShort')}
+                        </span>
+                      )}
                       {m.interruptions > 0 && (
                         <span className="meta-chip meta-chip--intr" title={t('timeline.tooltipInterruptions')}>
                           {m.interruptions} {t('timeline.interruptionsShort')}

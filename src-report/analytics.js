@@ -27,10 +27,13 @@ export function computeOverview({ byInteraction, bounds, windowMs }) {
     totalWrapupMs += it.wrapupMs || 0;
     totalInterruptions += it.interruptions;
     const ch = it.channel || 'unknown';
-    const c = byChannel[ch] || (byChannel[ch] = { channel: ch, count: 0, handleMs: 0, focusMs: 0 });
+    const c = byChannel[ch] || (byChannel[ch] = { channel: ch, count: 0, handleMs: 0, focusMs: 0, wrapupMs: 0, minHandleMs: Infinity, maxHandleMs: 0 });
     c.count += 1;
     c.handleMs += it.handleMs;
     c.focusMs += it.focusMs;
+    c.wrapupMs += it.wrapupMs || 0;
+    c.minHandleMs = Math.min(c.minHandleMs, it.handleMs);
+    c.maxHandleMs = Math.max(c.maxHandleMs, it.handleMs);
   }
 
   const ahtMs = handled ? totalHandleMs / handled : 0;
@@ -50,8 +53,11 @@ export function computeOverview({ byInteraction, bounds, windowMs }) {
       count: c.count,
       handleMs: c.handleMs,
       focusMs: c.focusMs,
+      wrapupMs: c.wrapupMs,
       avgHandleMs: c.count ? c.handleMs / c.count : 0,
       avgFocusMs: c.count ? c.focusMs / c.count : 0,
+      minHandleMs: c.minHandleMs === Infinity ? 0 : c.minHandleMs,
+      maxHandleMs: c.maxHandleMs,
     }))
     .sort((a, b) => channelOrderIndex(a.channel) - channelOrderIndex(b.channel));
 

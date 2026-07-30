@@ -3,12 +3,44 @@ import {
   fetchTeams, fetchAgents, fetchAgentEvents, fetchTeamEvents,
   fetchAgentState, fetchTeamState, createLiveSubscription,
 } from '../../api';
+import { setPerfEnabled } from '../../perf';
 
 // Non-serializable live-subscription handle kept at module scope so Redux state
 // stays fully serializable (mirrors the reskill slice's desktopSDKRef pattern).
 let liveSub = null;
 function stopLive() {
   if (liveSub) { try { liveSub.stop(); } catch { /* ignore */ } liveSub = null; }
+}
+
+// Request sequencing + cancellation. Rapid control changes (range/scope/agent)
+// fire overlapping loads; we tag each with a monotonically increasing token and
+// abort the previous in-flight fetch, so only the latest response is applied and
+// superseded requests stop downloading/processing.
+let eventsSeq = 0;
+let eventsAbort = null;
+let agentsSeq = 0;
+let agentsAbort = null;
+
+// ── View-parameter persistence ──────────────────────────────────────────────
+// Remember the supervisor's view (scope / mode / range / selection) so a reload
+// or re-login restores the same view and fetches the matching data.
+const PREFS_KEY = 'wx_activity_prefs';
+
+function loadPrefs() {
+  try {
+    if (typeof localStorage === 'undefined') return {};
+    return JSON.parse(localStorage.getItem(PREFS_KEY) || '{}') || {};
+  } catch { return {}; }
+}
+
+function savePrefs(activity) {
+  try {
+    if (typeof localStorage === 'undefined' || !activity) return;
+    const { scope, mode, rangeKey, customFrom, customTo, selectedTeamId, selectedAgentId } = activity;
+    localStorage.setItem(PREFS_KEY, JSON.stringify({
+      scope, mode, rangeKey, customFrom, customTo, selectedTeamId, selectedAgentId,
+    }));
+  } catch { /* quota / denied */ }
 }
 
 const HOUR = 60 * 60 * 1000;
@@ -53,6 +85,8 @@ export function rangeWindowMs(rangeKey, customFrom, customTo) {
   return r.toMs - r.fromMs;
 }
 
+const persistedPrefs = loadPrefs();
+
 const initialState = {
   status: 'idle',        // 'idle' | 'loading' | 'ready' | 'error'
   errorMessage: null,
@@ -66,18 +100,18 @@ const initialState = {
   darkMode: false,
   forcedMode: null,      // 'mock' | 'live' | null (data source, not view mode)
 
-  // teams + roster + selection
+  // teams + roster + selection (restored from the last session where possible)
   teams: [],
-  selectedTeamId: null,   // null → all agents with recent activity
+  selectedTeamId: persistedPrefs.selectedTeamId ?? null,   // null → all agents with recent activity
   agents: [],
-  selectedAgentId: null,
+  selectedAgentId: persistedPrefs.selectedAgentId ?? null,
 
-  // view controls
-  scope: 'agent',        // 'agent' | 'team'
-  mode: 'historical',    // 'historical' | 'live'
-  rangeKey: '8h',        // 1h|8h|24h|today|2d|week|custom
-  customFrom: null,      // ms (custom range start)
-  customTo: null,        // ms (custom range end)
+  // view controls (restored so reload/login resumes the same view)
+  scope: persistedPrefs.scope === 'team' ? 'team' : 'agent',        // 'agent' | 'team'
+  mode: persistedPrefs.mode === 'live' ? 'live' : 'historical',     // 'historical' | 'live'
+  rangeKey: RANGE_KEYS.includes(persistedPrefs.rangeKey) ? persistedPrefs.rangeKey : '8h',
+  customFrom: persistedPrefs.customFrom ?? null,      // ms (custom range start)
+  customTo: persistedPrefs.customTo ?? null,          // ms (custom range end)
 
   // data
   events: [],
@@ -129,6 +163,8 @@ export const {
 // ── Thunks (own all orchestration + async) ──────────────────────────────────
 
 export const hydrateContext = (props = {}) => async (dispatch, getState) => {
+  // Perf instrumentation is opt-in from the Desktop layout config (debug="perf").
+  setPerfEnabled(props.debug ?? props.debugMode);
   dispatch(setContext({
     accessToken: props.accesstoken ?? props.accessToken,
     orgId: props.orgid ?? props.orgId,
@@ -138,8 +174,9 @@ export const hydrateContext = (props = {}) => async (dispatch, getState) => {
     forcedMode: props.view ?? props.forcedMode,
   }));
   if (getState().activity.status === 'idle') {
-    await dispatch(loadTeams());
-    await dispatch(loadAgents());
+    // Teams and the initial roster are independent (the roster query doesn't need
+    // the team list) → load them concurrently, then fetch the view's data.
+    await Promise.all([dispatch(loadTeams()), dispatch(loadAgents())]);
     await dispatch(refresh());
   }
 };
@@ -158,14 +195,20 @@ export const loadTeams = () => async (dispatch, getState) => {
 export const loadAgents = () => async (dispatch, getState) => {
   const s = getState().activity;
   const { fromMs, toMs } = resolveRange(s.rangeKey, s.customFrom, s.customTo);
+  // Cancel any prior in-flight roster load; only the latest one is applied.
+  const mySeq = ++agentsSeq;
+  if (agentsAbort) { try { agentsAbort.abort(); } catch { /* ignore */ } }
+  const ac = new AbortController();
+  agentsAbort = ac;
   dispatch(setStatus('loading'));
   try {
     // "All active agents" (no team) is scoped to the selected range — an agent is
     // "active" if they had a session or interaction inside the chosen window.
     const agents = await fetchAgents({
       activityUrl: s.isDemo ? null : s.activityUrl, accessToken: s.accessToken,
-      orgId: s.orgId, datacenter: s.datacenter, teamId: s.selectedTeamId, fromMs, toMs,
+      orgId: s.orgId, datacenter: s.datacenter, teamId: s.selectedTeamId, fromMs, toMs, signal: ac.signal,
     });
+    if (mySeq !== agentsSeq) return; // superseded by a newer load
     dispatch(setAgents(agents));
     dispatch(setStatus('ready'));
     // Keep the current selection if it's still in the roster; else pick the first.
@@ -174,27 +217,31 @@ export const loadAgents = () => async (dispatch, getState) => {
       dispatch(setSelectedAgent(agents.length ? agents[0].id : null));
     }
     if (!agents.length) { dispatch(setEvents([])); dispatch(setAgentState(null)); dispatch(setTeamState([])); }
+    savePrefs(getState().activity);
   } catch (err) {
-    dispatch(setError(err.message));
+    if (err.name !== 'AbortError' && mySeq === agentsSeq) dispatch(setError(err.message));
   }
 };
 
 /** Pick a team → reload the roster scoped to that team, then refresh the view. */
-export const selectTeam = (teamId) => async (dispatch) => {
+export const selectTeam = (teamId) => async (dispatch, getState) => {
   dispatch(setSelectedTeam(teamId || null));
   dispatch(setSelectedAgent(null));
   await dispatch(loadAgents());
   await dispatch(refresh());
+  savePrefs(getState().activity);
 };
 
 export const selectAgent = (agentId) => async (dispatch, getState) => {
   dispatch(setSelectedAgent(agentId));
   await dispatch(refresh());
+  savePrefs(getState().activity);
 };
 
-export const changeMode = (mode) => async (dispatch) => {
+export const changeMode = (mode) => async (dispatch, getState) => {
   dispatch(setMode(mode));
   await dispatch(refresh());
+  savePrefs(getState().activity);
 };
 
 export const changeScope = (scope) => async (dispatch, getState) => {
@@ -205,6 +252,7 @@ export const changeScope = (scope) => async (dispatch, getState) => {
     dispatch(setSelectedAgent(s.agents[0].id));
   }
   await dispatch(refresh());
+  savePrefs(getState().activity);
 };
 
 export const changeRange = (rangeKey) => async (dispatch, getState) => {
@@ -213,6 +261,7 @@ export const changeRange = (rangeKey) => async (dispatch, getState) => {
   // is pinned. A pinned team's membership is range-independent.
   if (!getState().activity.selectedTeamId) await dispatch(loadAgents());
   await dispatch(refresh());
+  savePrefs(getState().activity);
 };
 
 /** Apply a calendar-picked custom [from, to] range. */
@@ -221,6 +270,7 @@ export const applyCustomRange = ({ fromMs, toMs }) => async (dispatch, getState)
   dispatch(setRange('custom'));
   if (!getState().activity.selectedTeamId) await dispatch(loadAgents());
   await dispatch(refresh());
+  savePrefs(getState().activity);
 };
 
 /** (Re)load data for the current agent according to mode + range. */
@@ -228,6 +278,13 @@ export const refresh = () => async (dispatch, getState) => {
   stopLive();
   const s = getState().activity;
   const team = s.scope === 'team';
+
+  // Tag this load and cancel the previous in-flight one so only the latest wins.
+  const mySeq = ++eventsSeq;
+  if (eventsAbort) { try { eventsAbort.abort(); } catch { /* ignore */ } }
+  const ac = new AbortController();
+  eventsAbort = ac;
+
   if (!team && !s.selectedAgentId) { dispatch(setEvents([])); return; }
 
   const r = resolveRange(s.rangeKey, s.customFrom, s.customTo);
@@ -235,7 +292,8 @@ export const refresh = () => async (dispatch, getState) => {
 
   // Agent/team state (idle breakdown + shift) is sourced from Webex CC and
   // changes slowly, so it is loaded once per refresh (not polled every tick).
-  loadState(dispatch, s, activityUrl, r, team);
+  // It runs in parallel with the events fetch (independent endpoints).
+  loadState(dispatch, s, activityUrl, r, team, ac.signal, mySeq);
 
   if (s.mode === 'live') {
     liveSub = createLiveSubscription(
@@ -246,7 +304,7 @@ export const refresh = () => async (dispatch, getState) => {
         fromMsFixed: r.anchored ? r.fromMs : null,
         toMsFixed: r.fixedTo ? r.toMs : null,
       },
-      (events) => dispatch(setEvents(events)),
+      (events) => { if (mySeq === eventsSeq) dispatch(setEvents(events)); },
     );
     return;
   }
@@ -256,32 +314,33 @@ export const refresh = () => async (dispatch, getState) => {
   try {
     const { fromMs, toMs } = r;
     const events = team
-      ? await fetchTeamEvents({ activityUrl, accessToken: s.accessToken, orgId: s.orgId, datacenter: s.datacenter, fromMs, toMs })
-      : await fetchAgentEvents({ activityUrl, accessToken: s.accessToken, orgId: s.orgId, datacenter: s.datacenter, agentId: s.selectedAgentId, fromMs, toMs });
-    dispatch(setEvents(events));
+      ? await fetchTeamEvents({ activityUrl, accessToken: s.accessToken, orgId: s.orgId, datacenter: s.datacenter, fromMs, toMs, signal: ac.signal })
+      : await fetchAgentEvents({ activityUrl, accessToken: s.accessToken, orgId: s.orgId, datacenter: s.datacenter, agentId: s.selectedAgentId, fromMs, toMs, signal: ac.signal });
+    if (mySeq === eventsSeq) dispatch(setEvents(events));
   } catch (err) {
-    dispatch(setError(err.message));
+    if (err.name !== 'AbortError' && mySeq === eventsSeq) dispatch(setError(err.message));
   } finally {
-    dispatch(setLoading(false));
+    if (mySeq === eventsSeq) dispatch(setLoading(false));
   }
 };
 
 export const teardown = () => () => { stopLive(); };
 
 /** Load agent/team state (shift + idle breakdown) from Webex CC / mock. */
-async function loadState(dispatch, s, activityUrl, range, team) {
+async function loadState(dispatch, s, activityUrl, range, team, signal, mySeq) {
   const { fromMs, toMs } = range;
-  const ctx = { activityUrl, accessToken: s.accessToken, orgId: s.orgId, datacenter: s.datacenter };
+  const ctx = { activityUrl, accessToken: s.accessToken, orgId: s.orgId, datacenter: s.datacenter, signal };
   try {
     if (team) {
       const agentIds = (s.agents || []).map((a) => a.id);
       const states = await fetchTeamState({ ...ctx, agentIds, fromMs, toMs });
-      dispatch(setTeamState(states));
+      if (mySeq === eventsSeq) dispatch(setTeamState(states));
     } else if (s.selectedAgentId) {
       const st = await fetchAgentState({ ...ctx, agentId: s.selectedAgentId, fromMs, toMs });
-      dispatch(setAgentState(st));
+      if (mySeq === eventsSeq) dispatch(setAgentState(st));
     }
   } catch (err) {
+    if (err.name === 'AbortError') return;
     console.warn('[activity] loadState failed:', err.message);
   }
 }
