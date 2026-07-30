@@ -315,6 +315,7 @@
 .lane-label__line1 { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .lane-label__channel { font-size: 12px; font-weight: 600; color: var(--ar-text); white-space: nowrap; }
 .lane-label__cust { font-size: 11px; color: var(--ar-text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lane-label__contact { font-size: 10px; color: var(--ar-text2); opacity: 0.75; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lane-label__live { flex-shrink: 0; margin-left: auto; }
 .lane-label__meta { display: flex; flex-wrap: wrap; gap: 4px; }
 .meta-chip { font-size: 10px; line-height: 1.5; padding: 0 5px; border-radius: 4px; background: var(--ar-bg); border: 1px solid var(--ar-border); color: var(--ar-text2); white-space: nowrap; }

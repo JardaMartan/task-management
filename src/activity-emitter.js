@@ -103,6 +103,8 @@
       return;
     }
     data = data || {};
+    // Privacy: only task-related fields are emitted/stored. Customer identity is
+    // resolved live (Search API) at timeline render time, never persisted here.
     var event = {
       event_ts:       new Date().toISOString(),
       agent_id:       _config.agentId,
@@ -111,7 +113,6 @@
       interaction_id: data.interactionId || null,
       channel:        (data.channel || '').toLowerCase() || null,
       event_type:     eventType,
-      customer_id:    data.customerId || null,
       queue:          data.queue || null,
       org_id:         _config.orgId,
     };

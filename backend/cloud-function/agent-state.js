@@ -253,4 +253,73 @@ async function queryAgentRoster({ accessToken, datacenter, days, from, to }) {
   }
 }
 
-module.exports = { queryAgentState, queryTeamState, queryAgentRoster, resolveHost, genTrackingId };
+// Short-lived (per warm instance) cache of interaction_id → customer contact, so
+// customer data is fetched live for display but NEVER persisted in our store.
+const _contactCache = new Map();
+const CONTACT_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * Resolve the customer contact (origin = phone for voice, email for digital) for
+ * a set of interaction ids straight from the Webex CC Search API at query time.
+ * Nothing is stored — this augments the timeline for display only. Returns a map
+ * { interactionId: { contact, channel } }.
+ */
+async function queryTaskContacts({ interactionIds, from, to, accessToken, datacenter }) {
+  const host = resolveHost(datacenter);
+  if (!accessToken || !host || !Array.isArray(interactionIds) || !interactionIds.length) return {};
+  const fromTs = from ? Date.parse(from) : Date.now() - 24 * 3600 * 1000;
+  const toTs = to ? Date.parse(to) : Date.now();
+  const now = Date.now();
+
+  const out = {};
+  const need = [];
+  const seen = new Set();
+  for (const raw of interactionIds) {
+    const id = String(raw || '').trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    const cached = _contactCache.get(id);
+    if (cached && (now - cached.ts) < CONTACT_TTL_MS) {
+      if (cached.contact) out[id] = { contact: cached.contact, channel: cached.channel };
+    } else {
+      need.push(id);
+    }
+  }
+  if (!need.length) return out;
+
+  const CHUNK = 40;
+  const chunks = [];
+  for (let i = 0; i < need.length; i += CHUNK) chunks.push(need.slice(i, i + CHUNK));
+  await Promise.all(chunks.map(async (chunk) => {
+    const orFilter = chunk.map((id) => `{ id: { equals: "${id.replace(/[^\w.-]/g, '')}" } }`).join(' ');
+    const query = `query Contacts($from: Long!, $to: Long!) {
+      taskDetails(from: $from, to: $to, filter: { or: [ ${orFilter} ] }) {
+        tasks { id channelType origin }
+      }
+    }`;
+    try {
+      const res = await fetch(`${host}/search`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}`, TrackingId: genTrackingId() },
+        body: JSON.stringify({ query, variables: { from: fromTs, to: toTs } }),
+      });
+      if (!res.ok) return;
+      const body = await res.json();
+      const tasks = body?.data?.taskDetails?.tasks || [];
+      const found = new Set();
+      for (const tk of tasks) {
+        if (!tk.id) continue;
+        const channel = String(tk.channelType || '').toLowerCase();
+        _contactCache.set(tk.id, { contact: tk.origin || null, channel, ts: now });
+        found.add(tk.id);
+        if (tk.origin) out[tk.id] = { contact: tk.origin, channel };
+      }
+      for (const id of chunk) if (!found.has(id)) _contactCache.set(id, { contact: null, channel: null, ts: now });
+    } catch (e) {
+      console.warn('[agent-state] task contact lookup failed:', e.message);
+    }
+  }));
+  return out;
+}
+
+module.exports = { queryAgentState, queryTeamState, queryAgentRoster, queryTaskContacts, resolveHost, genTrackingId };

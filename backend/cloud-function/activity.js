@@ -81,6 +81,9 @@ function _normalizeEvent(raw, ingestTs) {
   const parsed = eventTs ? Date.parse(eventTs) : NaN;
   if (Number.isNaN(parsed)) eventTs = ingestTs;
 
+  // Privacy: only opaque task-related data is persisted. Customer identity
+  // (id / name / phone) is deliberately NOT stored — it is resolved live from the
+  // Webex CC Search API at query time when the timeline is assembled.
   return {
     event_ts:       eventTs,
     agent_id:       String(raw.agent_id || 'unknown'),
@@ -89,7 +92,6 @@ function _normalizeEvent(raw, ingestTs) {
     interaction_id: String(raw.interaction_id),
     channel:        raw.channel != null ? String(raw.channel).toLowerCase() : null,
     event_type:     raw.event_type,
-    customer_id:    raw.customer_id != null ? String(raw.customer_id) : null,
     queue:          raw.queue != null ? String(raw.queue) : null,
     org_id:         raw.org_id != null ? String(raw.org_id) : null,
     ingest_ts:      ingestTs,
@@ -197,7 +199,7 @@ async function queryAgentEvents({ agentId, agentIds, from, to, limit } = {}) {
 
   const query = `
     SELECT event_ts, agent_id, agent_name, session_id, interaction_id,
-           channel, event_type, customer_id, queue, org_id
+           channel, event_type, queue, org_id
     FROM \`${BQ_DATASET}.${BQ_TABLE}\`
     WHERE agent_id IN UNNEST(@agentIds)
       AND event_ts >= TIMESTAMP(@fromTs)
@@ -237,7 +239,7 @@ async function queryTeamEvents({ from, to, limit } = {}) {
 
   const query = `
     SELECT event_ts, agent_id, agent_name, session_id, interaction_id,
-           channel, event_type, customer_id, queue, org_id
+           channel, event_type, queue, org_id
     FROM \`${BQ_DATASET}.${BQ_TABLE}\`
     WHERE event_ts >= TIMESTAMP(@fromTs)
       AND event_ts <= TIMESTAMP(@toTs)

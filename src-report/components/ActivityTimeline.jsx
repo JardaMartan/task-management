@@ -17,6 +17,24 @@ const ROW_H = 56; // per-interaction lane height (fits channel line + metric chi
 const clampPct = (p) => Math.max(0, Math.min(100, p));
 const inView = (p) => p >= -0.01 && p <= 100.01;
 
+const isEmailLike = (v) => typeof v === 'string' && /@/.test(v);
+const isPhoneLike = (v) => typeof v === 'string' && /^\+?[\d][\d\s().-]{4,}$/.test(v.trim());
+
+// Pick the contact address that fits the channel (phone for voice/SMS, email for
+// email/work-item, handle/id otherwise), from whichever fields we captured.
+function contactFor(channel, m) {
+  const ch = String(channel || '').toLowerCase();
+  const id = m.customer || null;
+  const ani = m.ani || null;
+  if (ch === 'voice' || ch === 'telephony' || ch === 'sms') {
+    return (isPhoneLike(ani) && ani) || (isPhoneLike(id) && id) || ani || id;
+  }
+  if (ch === 'email' || ch === 'workitem') {
+    return (isEmailLike(id) && id) || (isEmailLike(ani) && ani) || id || ani;
+  }
+  return id || ani; // chat / social / custom → handle / id
+}
+
 /**
  * Agent activity timeline: a single shared-zoom viewport with the agent's state
  * (login/logout/status) lane pinned on top of the interaction swim-lanes, so
@@ -105,13 +123,20 @@ export default function ActivityTimeline({ timeline, stateTimeline, mode, onScro
             {groups.map((g) => {
               const m = timeline.byInteraction[g.id] || {};
               const focusPct = m.handleMs ? Math.round((m.focusMs / m.handleMs) * 100) : 0;
+              const custName = m.customerName || null;
+              const custContact = m.contact || contactFor(g.channel, m);
               return (
                 <div className="atl__gut atl__gut--lane" key={g.id} title={g.id}>
                   <span className="lane-label__chip" style={{ background: CHANNEL_COLORS[g.channel] || CHANNEL_COLORS.unknown }} />
                   <div className="lane-label__body">
                     <div className="lane-label__line1">
                       <span className="lane-label__channel">{t(`channel.${g.channel}`) || g.channel}</span>
-                      {m.customer && <span className="lane-label__cust">{m.customer}</span>}
+                      {(custName || custContact) && (
+                        <span className="lane-label__cust" title={custContact || custName}>{custName || custContact}</span>
+                      )}
+                      {custName && custContact && custContact !== custName && (
+                        <span className="lane-label__contact">{custContact}</span>
+                      )}
                       {m.open && <span className="meta-chip meta-chip--live lane-label__live">{t('controls.live')}</span>}
                     </div>
                     <div className="lane-label__meta">

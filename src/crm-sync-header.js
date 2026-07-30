@@ -327,13 +327,11 @@
     if (_lastSelectedInteractionId === interactionId) {
       _emitActivity('focus_lost', {
         interactionId: interactionId, channel: _endedEntry && _endedEntry.channel,
-        customerId: _endedEntry && _endedEntry.customerId,
       });
       _lastSelectedInteractionId = null;
     }
     _emitActivity('task_ended', {
       interactionId: interactionId, channel: _endedEntry && _endedEntry.channel,
-      customerId: _endedEntry && _endedEntry.customerId,
     });
     _persistOpen();
     setTimeout(function () { delete _aqmEndedSent[interactionId]; }, 30000);
@@ -619,13 +617,11 @@
         _emitActivity('focus_lost', {
           interactionId: _prevSelected,
           channel: _prevEntry && _prevEntry.channel,
-          customerId: _prevEntry && _prevEntry.customerId,
         });
       }
       _emitActivity('focus_gained', {
         interactionId: parsed.interactionId,
         channel: _mediaType,
-        customerId: parsed.customerId || null,
       });
     }
 
@@ -662,11 +658,11 @@
     // repeated task prop for the same state does not double-count).
     if (_state === 'connected' && _prevState !== 'connected') {
       _emitActivity('task_accepted', {
-        interactionId: parsed.interactionId, channel: _mediaType, customerId: parsed.customerId || null,
+        interactionId: parsed.interactionId, channel: _mediaType,
       });
     } else if (_state === 'wrapup' && _prevState !== 'wrapup') {
       _emitActivity('wrapup', {
-        interactionId: parsed.interactionId, channel: _mediaType, customerId: parsed.customerId || null,
+        interactionId: parsed.interactionId, channel: _mediaType,
       });
     }
 

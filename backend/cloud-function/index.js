@@ -6,7 +6,7 @@ const { fetchInboundEmail, watchGmailInbox } = require('./gmail');
 const { enrichEmailWithAi } = require('./ai');
 const { mintGmailToken, mintGeminiToken, verifyWebexIdentity } = require('./token-broker');
 const { ingestEvents, queryAgentEvents, queryTeamEvents, queryAgents } = require('./activity');
-const { queryAgentState, queryTeamState, queryAgentRoster } = require('./agent-state');
+const { queryAgentState, queryTeamState, queryAgentRoster, queryTaskContacts } = require('./agent-state');
 const { queryTeams, queryUsers, loadDirectory, canonicalUser, resolveAgentIds } = require('./config-api');
 
 /**
@@ -311,6 +311,15 @@ functions.http('activity', async (req, res) => {
         }
       }
       const rows = await queryAgentEvents({ agentIds, from, to, limit });
+      // Augment (display only — NOT stored) with the customer contact resolved
+      // live from the Search API, so no customer PII lives in our event store.
+      try {
+        const ids = [...new Set(rows.map((r) => r.interaction_id).filter(Boolean))];
+        const contacts = await queryTaskContacts({ interactionIds: ids, from, to, accessToken, datacenter });
+        for (const r of rows) { const c = contacts[r.interaction_id]; if (c) r.customer_contact = c.contact; }
+      } catch (e) {
+        console.warn('[activity] contact augmentation failed:', e.message);
+      }
       return sendJson(req, res, { agentId, count: rows.length, events: rows });
     }
 

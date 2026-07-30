@@ -57,12 +57,15 @@ export function buildTimeline(events, options = {}) {
     if (!e.interaction_id) continue;
     const ch = normalizeChannel(e.channel);
     if (!byId.has(e.interaction_id)) {
-      byId.set(e.interaction_id, { id: e.interaction_id, channel: ch, customer: e.customer_id || null, events: [] });
+      byId.set(e.interaction_id, { id: e.interaction_id, channel: ch, customer: e.customer_id || null, customerName: null, ani: null, contact: null, events: [] });
     }
     const g = byId.get(e.interaction_id);
     g.events.push(e);
     if (!g.channel || g.channel === 'unknown') g.channel = ch;
     if (!g.customer) g.customer = e.customer_id || g.customer;
+    if (!g.customerName && e.customer_name) g.customerName = e.customer_name;
+    if (!g.ani && e.ani) g.ani = e.ani;
+    if (!g.contact && e.customer_contact) g.contact = e.customer_contact;
   }
 
   const groups = [];
@@ -167,6 +170,9 @@ export function buildTimeline(events, options = {}) {
       id: g.id,
       channel: g.channel,
       customer: g.customer,
+      customerName: g.customerName,
+      ani: g.ani,
+      contact: g.contact,
       startMs,
       endMs,
       handleMs: Math.max(0, endMs - startMs),
