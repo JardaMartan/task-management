@@ -151,6 +151,13 @@ const activitySlice = createSlice({
     setEvents(state, action) { state.events = action.payload || []; },
     setAgentState(state, action) { state.agentState = action.payload || null; },
     setTeamState(state, action) { state.teamState = action.payload || []; },
+    mergeTeamState(state, action) {
+      const incoming = action.payload || [];
+      if (!incoming.length) return;
+      const map = new Map((state.teamState || []).map((s) => [s.agentId, s]));
+      for (const s of incoming) if (s && s.agentId) map.set(s.agentId, s);
+      state.teamState = [...map.values()];
+    },
     setLoading(state, action) { state.loading = Boolean(action.payload); },
     setStatus(state, action) { state.status = action.payload; },
     setError(state, action) { state.status = 'error'; state.errorMessage = action.payload || null; },
@@ -159,7 +166,7 @@ const activitySlice = createSlice({
 
 export const {
   setContext, setTeams, setSelectedTeam, setAgents, setSelectedAgent, setScope, setMode, setRange,
-  setCustomRange, setEvents, setAgentState, setTeamState, setLoading, setStatus, setError,
+  setCustomRange, setEvents, setAgentState, setTeamState, mergeTeamState, setLoading, setStatus, setError,
 } = activitySlice.actions;
 
 // ── Thunks (own all orchestration + async) ──────────────────────────────────
@@ -335,9 +342,18 @@ async function loadState(dispatch, s, activityUrl, range, team, signal, mySeq) {
   const ctx = { activityUrl, accessToken: s.accessToken, orgId: s.orgId, datacenter: s.datacenter, signal };
   try {
     if (team) {
-      const agentIds = (s.agents || []).map((a) => a.id);
-      const states = await fetchTeamState({ ...ctx, agentIds, fromMs, toMs });
-      if (mySeq === eventsSeq) dispatch(setTeamState(states));
+      const agentIds = (s.agents || []).map((a) => a.id).filter(Boolean);
+      // Paint status lanes progressively: fetch team state in small parallel
+      // chunks and dispatch each as it returns, instead of waiting for the
+      // slowest agent and rendering everything at once.
+      if (mySeq === eventsSeq) dispatch(setTeamState([]));
+      const CHUNK = 6;
+      const chunks = [];
+      for (let i = 0; i < agentIds.length; i += CHUNK) chunks.push(agentIds.slice(i, i + CHUNK));
+      await Promise.all(chunks.map(async (chunk) => {
+        const states = await fetchTeamState({ ...ctx, agentIds: chunk, fromMs, toMs });
+        if (mySeq === eventsSeq && states.length) dispatch(mergeTeamState(states));
+      }));
     } else if (s.selectedAgentId) {
       const st = await fetchAgentState({ ...ctx, agentId: s.selectedAgentId, fromMs, toMs });
       if (mySeq === eventsSeq) dispatch(setAgentState(st));
