@@ -8,6 +8,7 @@ const { mintGmailToken, mintGeminiToken, verifyWebexIdentity } = require('./toke
 const { ingestEvents, queryAgentEvents, queryTeamEvents, queryAgents } = require('./activity');
 const { queryAgentState, queryTeamState, queryAgentRoster, queryTaskContacts } = require('./agent-state');
 const { queryTeams, queryUsers, loadDirectory, canonicalUser, resolveAgentIds } = require('./config-api');
+const { resolveCustomerNames } = require('./jds');
 
 /**
  * Send JSON, gzip-compressed when the client supports it. Activity/state JSON is
@@ -317,8 +318,15 @@ functions.http('activity', async (req, res) => {
         const ids = [...new Set(rows.map((r) => r.interaction_id).filter(Boolean))];
         const contacts = await queryTaskContacts({ interactionIds: ids, from, to, accessToken, datacenter });
         for (const r of rows) { const c = contacts[r.interaction_id]; if (c) r.customer_contact = c.contact; }
+        // Best-effort customer NAME from JDS (identity = the resolved contact).
+        const workspaceId = req.query.workspaceId || req.query.workspaceid || null;
+        const identities = [...new Set(Object.values(contacts).map((c) => c.contact).filter(Boolean))];
+        if (workspaceId && identities.length) {
+          const names = await resolveCustomerNames({ identities, accessToken, workspaceId, datacenter });
+          for (const r of rows) { if (r.customer_contact && names[r.customer_contact]) r.customer_name = names[r.customer_contact]; }
+        }
       } catch (e) {
-        console.warn('[activity] contact augmentation failed:', e.message);
+        console.warn('[activity] contact/name augmentation failed:', e.message);
       }
       return sendJson(req, res, { agentId, count: rows.length, events: rows });
     }

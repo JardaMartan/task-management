@@ -97,6 +97,7 @@ const initialState = {
   orgId: null,
   datacenter: null,
   activityUrl: null,     // Cloud Function ingest/query URL; null → demo
+  workspaceId: null,     // JDS workspace id (customer name resolution)
   darkMode: false,
   forcedMode: null,      // 'mock' | 'live' | null (data source, not view mode)
 
@@ -125,11 +126,12 @@ const activitySlice = createSlice({
   initialState,
   reducers: {
     setContext(state, action) {
-      const { accessToken, orgId, datacenter, activityUrl, darkMode, forcedMode } = action.payload || {};
+      const { accessToken, orgId, datacenter, activityUrl, workspaceId, darkMode, forcedMode } = action.payload || {};
       if (accessToken !== undefined) state.accessToken = accessToken;
       if (orgId !== undefined) state.orgId = orgId;
       if (datacenter !== undefined) state.datacenter = datacenter;
       if (activityUrl !== undefined) state.activityUrl = activityUrl || null;
+      if (workspaceId !== undefined) state.workspaceId = workspaceId || null;
       if (darkMode !== undefined) state.darkMode = Boolean(darkMode);
       if (forcedMode !== undefined) state.forcedMode = forcedMode;
       state.isDemo = !(state.activityUrl && state.forcedMode !== 'mock');
@@ -170,6 +172,7 @@ export const hydrateContext = (props = {}) => async (dispatch, getState) => {
     orgId: props.orgid ?? props.orgId,
     datacenter: props.datacenter,
     activityUrl: props.activityurl ?? props.activityUrl,
+    workspaceId: props.workspaceid ?? props.workspaceId,
     darkMode: props.darkmode ?? props.darkMode,
     forcedMode: props.view ?? props.forcedMode,
   }));
@@ -315,7 +318,7 @@ export const refresh = () => async (dispatch, getState) => {
     const { fromMs, toMs } = r;
     const events = team
       ? await fetchTeamEvents({ activityUrl, accessToken: s.accessToken, orgId: s.orgId, datacenter: s.datacenter, fromMs, toMs, signal: ac.signal })
-      : await fetchAgentEvents({ activityUrl, accessToken: s.accessToken, orgId: s.orgId, datacenter: s.datacenter, agentId: s.selectedAgentId, fromMs, toMs, signal: ac.signal });
+      : await fetchAgentEvents({ activityUrl, accessToken: s.accessToken, orgId: s.orgId, datacenter: s.datacenter, agentId: s.selectedAgentId, workspaceId: s.workspaceId, fromMs, toMs, signal: ac.signal });
     if (mySeq === eventsSeq) dispatch(setEvents(events));
   } catch (err) {
     if (err.name !== 'AbortError' && mySeq === eventsSeq) dispatch(setError(err.message));

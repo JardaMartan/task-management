@@ -65,7 +65,7 @@ export async function fetchAgents({ activityUrl, accessToken, orgId, datacenter,
  * Fetch an agent's events for [fromMs, toMs].
  * @returns {Promise<Array<object>>}
  */
-export async function fetchAgentEvents({ activityUrl, accessToken, orgId, datacenter, agentId, fromMs, toMs, signal }) {
+export async function fetchAgentEvents({ activityUrl, accessToken, orgId, datacenter, agentId, workspaceId, fromMs, toMs, signal }) {
   if (!agentId) return [];
   if (!activityUrl) {
     return generateEvents(agentId, fromMs, toMs);
@@ -74,7 +74,8 @@ export async function fetchAgentEvents({ activityUrl, accessToken, orgId, datace
     + `&from=${encodeURIComponent(new Date(fromMs).toISOString())}`
     + `&to=${encodeURIComponent(new Date(toMs).toISOString())}`
     + (orgId ? `&orgId=${encodeURIComponent(orgId)}` : '')
-    + (datacenter ? `&datacenter=${encodeURIComponent(datacenter)}` : '');
+    + (datacenter ? `&datacenter=${encodeURIComponent(datacenter)}` : '')
+    + (workspaceId ? `&workspaceId=${encodeURIComponent(workspaceId)}` : '');
   const res = await fetch(url, { headers: authHeaders(accessToken), signal });
   if (!res.ok) throw new Error(`activity query HTTP ${res.status}`);
   const end = perfStart('fetchAgentEvents parse');
