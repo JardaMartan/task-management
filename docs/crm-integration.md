@@ -120,17 +120,29 @@ Org IDs are normalized (raw UUID, base64 hydra ID, or
 | `PORT` | Listen port. | `3001` |
 | `ALLOWED_ORG_IDS` | Comma‑separated org UUIDs; empty = allow all (dev). | `''` |
 
-### Deploy (Cloud Run via Cloud Build)
+### Deploy
+
+`/dist` is served from a GCS bucket mounted at `/srv/dist`, so **JS bundle changes
+deploy by object sync — no image rebuild** (see
+[development.md](development.md#deploying-the-relay-server)):
+
+```bash
+npm run build:standalone
+gcloud storage rsync dist gs://newagent-kxwo-relay-dist --recursive --project newagent-kxwo
+```
+
+A full image rebuild (Cloud Build) is only needed for `relay-server/` code, the
+`Dockerfile`, dependencies, or `crm-tab-manager/`:
 
 ```bash
 gcloud builds submit \
   --config=cloudbuild.yaml \
-  --substitutions="_SERVICE=webex-crm-relay,_REGION=us-central1,_ALLOWED_ORGS=<org-uuid>" \
+  --substitutions="_SERVICE=webex-crm-relay,_REGION=us-central1,_ALLOWED_ORGS=<org-uuid>,_DIST_BUCKET=newagent-kxwo-relay-dist" \
   --project <gcp-project>
 ```
 
-See [cloudbuild.yaml](../cloudbuild.yaml) and the relay
-[Dockerfile](../relay-server/Dockerfile).
+See [scripts/deploy.sh](../scripts/deploy.sh), [cloudbuild.yaml](../cloudbuild.yaml),
+and the relay [Dockerfile](../relay-server/Dockerfile).
 
 ---
 

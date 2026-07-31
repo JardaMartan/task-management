@@ -88,29 +88,51 @@ The headless `crm-sync-header` is added as a `crm-sync-header` component in the
 
 ## Deploying the relay server
 
-The relay serves `dist/*`, the CRM Tab Manager, and the extension, and brokers
-the WebSocket traffic. Deploy via Cloud Build:
+The relay serves the widget bundles (`/dist`), the CRM Tab Manager, and the
+extension, and brokers the WebSocket traffic.
+
+**`/dist` is served from a GCS bucket** (`newagent-kxwo-relay-dist`) mounted into
+the Cloud Run service at `/srv/dist` (gcsfuse, gen2). That mount **shadows** the
+image's baked‑in `dist/` copy, so **JS bundle changes deploy by syncing objects
+to the bucket — no image rebuild.**
+
+### Fast path — JS bundle changes (the common case)
+
+```bash
+npm run build:standalone   # or build:report:standalone / build:reskill:standalone
+gcloud storage rsync dist gs://newagent-kxwo-relay-dist --recursive --project newagent-kxwo
+```
+
+Or use the helper [scripts/deploy.sh](../scripts/deploy.sh):
+
+```bash
+scripts/deploy.sh sync                               # rsync existing dist/ → bucket (no build)
+BUILD_CMD="npm run build:standalone" scripts/deploy.sh   # build + sync
+```
+
+Changes go live within ~60s (the FUSE metadata TTL) on existing instances, and
+immediately on new instances. Then hard‑reload the Desktop (browsers cache the
+bundles).
+
+> Prefer `gcloud storage cp dist/<file> gs://newagent-kxwo-relay-dist/` for just
+> the files you changed — a full `rsync` makes the bucket match your local
+> `dist/`, which could revert other widgets' bundles if `dist/` is stale.
+
+### Full rebuild — only for server / image changes
+
+A Docker image rebuild is required **only** for `relay-server/` code, the
+`Dockerfile`, dependency changes, or `crm-tab-manager/` (which is served from the
+image, not the bucket). It does **not** update `/dist` (that's bucket‑backed).
 
 ```bash
 gcloud builds submit \
   --config=cloudbuild.yaml \
-  --substitutions="_SERVICE=webex-crm-relay,_REGION=us-central1,_ALLOWED_ORGS=<org-uuid>" \
+  --substitutions="_SERVICE=webex-crm-relay,_REGION=us-central1,_ALLOWED_ORGS=<org-uuid>,_DIST_BUCKET=newagent-kxwo-relay-dist" \
   --project <gcp-project>
 ```
 
-Because the relay serves `dist/`, a typical publish is:
-
-```bash
-npm run build:standalone          # includes crm-sync-header.js
-# (only when those bundles change:)
-npm run build:report:standalone
-npm run build:reskill:standalone
-npm run ext:package
-# then deploy the relay (command above)
-```
-
-> After deploying, hard‑reload the Desktop — browsers cache `crm-sync-header.js`
-> and the standalone bundles.
+Or `scripts/deploy.sh full` (build + sync + image rebuild). One‑time setup of the
+bucket + mount is `scripts/deploy.sh setup`.
 
 See [CRM integration](crm-integration.md#2-relay-server-relay-server) for env
 vars and WebSocket behavior, and [backend.md](backend.md) for the cloud function.
