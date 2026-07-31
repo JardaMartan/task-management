@@ -429,6 +429,17 @@
       });
     }
 
+    // Auto-submit the configured wrap-up code for tasks we requeued, the moment
+    // they enter wrap-up, so the requeue doesn't wait for a manual wrap-up.
+    if (aqmContact.eAgentWrapup && typeof aqmContact.eAgentWrapup.listen === 'function') {
+      aqmContact.eAgentWrapup.listen(function (msg) {
+        try {
+          var id = msg && msg.data && msg.data.interactionId;
+          if (id && _rqAutoWrapupIds[id]) _rqSubmitWrapup(id, 0);
+        } catch (e) {}
+      });
+    }
+
     _aqmEndListenersReady = true;
     console.log('[crm-sync-header] aqm-end-listeners registered | wrappedUp:', hasWrappedUp,
       '| ended:', hasEnded);
@@ -804,6 +815,7 @@
   var _rqAutoActive     = false;
   var _rqAutoDismissed  = false;
   var _rqManualOpen     = false; // agent opened the requeue dialog from the header button
+  var _rqAutoWrapupIds  = {};    // ids we requeued that still need the configured wrap-up auto-submitted
 
   var FOCUS_LS_PREFIX    = 'wx_c360_focus_';
   var SETTINGS_LS_PREFIX = 'wx_c360_settings_';
@@ -1157,9 +1169,35 @@
     var contact = _aqmContact();
     if (!q || !q.vteamId || !contact || typeof contact.vteamTransfer !== 'function') return false;
     Promise.resolve(contact.vteamTransfer({ interactionId: id, data: { vteamId: q.vteamId, vteamType: q.vteamType || 'inboundqueue' } }))
-      .then(function () { console.log('[crm-sync-header] SLA requeue: transferred', id, '→', q.vteamId); })
+      .then(function () {
+        console.log('[crm-sync-header] SLA requeue: transferred', id, '→', q.vteamId);
+        _rqAutoWrapupIds[id] = true;
+        _rqSubmitWrapup(id, 0); // the transfer drops the task into wrap-up
+      })
       .catch(function (err) { console.warn('[crm-sync-header] SLA requeue failed for', id, err && err.message); });
     return true;
+  }
+  // Configured wrap-up reason (auto-submitted on requeue so the task doesn't wait).
+  function _rqWrapup() {
+    var s = _lsRead(_agentKey(SETTINGS_LS_PREFIX));
+    return (s && s.sla && s.sla.wrapUp) || null;
+  }
+  function _rqSubmitWrapup(id, attempt) {
+    if (!_rqAutoWrapupIds[id]) return;
+    var wrap = _rqWrapup();
+    var contact = _aqmContact();
+    if (!wrap || !wrap.auxCodeId) { console.warn('[crm-sync-header] auto-wrapup: no wrap-up reason configured'); return; }
+    if (!contact || typeof contact.wrapup !== 'function') return;
+    Promise.resolve(contact.wrapup({ interactionId: id, data: {
+      wrapUpReason: wrap.name || 'Auto wrap-up', auxCodeId: String(wrap.auxCodeId), isAutoWrapup: 'false',
+    } })).then(function () {
+      console.log('[crm-sync-header] auto-wrapup submitted for', id, '(' + (wrap.name || wrap.auxCodeId) + ')');
+      delete _rqAutoWrapupIds[id];
+    }).catch(function (err) {
+      attempt = attempt || 0;
+      if (attempt < 8) { setTimeout(function () { _rqSubmitWrapup(id, attempt + 1); }, 1500); } // task may not be in wrap-up yet
+      else { delete _rqAutoWrapupIds[id]; console.warn('[crm-sync-header] auto-wrapup failed for', id, err && err.message); }
+    });
   }
 
   function _rqBuildOffer() {
@@ -1352,13 +1390,7 @@
       if (touched[id]) return;                                       // skip drafts (in-progress)
       if (!canRequeue) { skipped++; return; }
       count++;
-      Promise.resolve(contact.vteamTransfer({ interactionId: id, data: {
-        vteamId: queue.vteamId, vteamType: queue.vteamType || 'inboundqueue',
-      } })).then(function () {
-        console.log('[crm-sync-header] end-shift: requeued new email', id, '→', queue.vteamId);
-      }).catch(function (err) {
-        console.warn('[crm-sync-header] end-shift: requeue failed for', id, err && err.message);
-      });
+      _rqRequeue(id); // transfers + auto-submits the configured wrap-up
     });
     if (skipped) {
       console.warn('[crm-sync-header] end-shift:', skipped,
