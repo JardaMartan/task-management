@@ -792,6 +792,17 @@
   var _syncListenBc        = null;
   var _endShiftActive      = false; // agent ended shift → suppress focus auto-manage
   var _touchedEmailIds     = null;  // { [interactionId]: true } — emails the agent has drafted
+  // Centralized SLA requeue (offer/auto) state — covers ALL eligible email tasks.
+  var _rqOfferEl        = null;
+  var _rqShownIds       = {};   // eligible ids already presented (to detect new ones)
+  var _rqSel            = {};    // id → checkbox selection in the offer
+  var _rqDismissed      = false; // agent dismissed the offer; reopen only on a new task
+  var _rqRenderedKey    = '';
+  var _rqToastEl        = null;
+  var _rqAutoTimer      = null;
+  var _rqAutoSecs       = 0;
+  var _rqAutoActive     = false;
+  var _rqAutoDismissed  = false;
 
   var FOCUS_LS_PREFIX    = 'wx_c360_focus_';
   var SETTINGS_LS_PREFIX = 'wx_c360_settings_';
@@ -1028,22 +1039,23 @@
     if (!focus || !focus.enabled) {
       if (_focusEngaged) _focusRelease();
       _focusOverride = false;
-      return;
+    } else {
+      var critical = _hasCriticalTask(focus.triggerOn || 'imminent');
+      var now = Date.now();
+      if (now - _slaDbgTs > 30000) {
+        _slaDbgTs = now;
+        console.log('[crm-sync-header] focus tick | enabled | trigger=', focus.triggerOn || 'imminent',
+          '| critical=', critical, '| engaged=', _focusEngaged, '| override=', _focusOverride,
+          '| tasks=', _slaDbgSummary());
+      }
+      if (critical && !_focusEngaged && !_focusOverride) {
+        _focusEngage(focus.idleCode || null);
+      } else if (!critical) {
+        if (_focusEngaged) _focusRelease();
+        _focusOverride = false; // pressure cleared → fresh slate for next time
+      }
     }
-    var critical = _hasCriticalTask(focus.triggerOn || 'imminent');
-    var now = Date.now();
-    if (now - _slaDbgTs > 30000) {
-      _slaDbgTs = now;
-      console.log('[crm-sync-header] focus tick | enabled | trigger=', focus.triggerOn || 'imminent',
-        '| critical=', critical, '| engaged=', _focusEngaged, '| override=', _focusOverride,
-        '| tasks=', _slaDbgSummary());
-    }
-    if (critical && !_focusEngaged && !_focusOverride) {
-      _focusEngage(focus.idleCode || null);
-    } else if (!critical) {
-      if (_focusEngaged) _focusRelease();
-      _focusOverride = false; // pressure cleared → fresh slate for next time
-    }
+    _rqTick(); // requeue offer/auto is independent of focus mode
   }
 
   function _slaDbgSummary() {
@@ -1055,6 +1067,183 @@
       out.push(ids[i].slice(0, 8) + ':' + (e.slaExpiresAt ? new Date(e.slaExpiresAt).toISOString() : 'no-sla') + '/' + e.state);
     }
     return out.join(', ');
+  }
+
+  // ── Centralized SLA requeue: offer / auto for ALL eligible email tasks ──────
+  // Runs on every periodic tick and event-driven check, independent of focus
+  // mode, so eligible tasks are presented whether or not the agent has them open.
+  function _rqSettings() {
+    var s = _lsRead(_agentKey(SETTINGS_LS_PREFIX)) || {};
+    return s.sla || {};
+  }
+  function _rqEligible() {
+    var sla = _rqSettings();
+    var triggerOn = sla.triggerOn || 'imminent';
+    var thMs = (_slaThresholdMin || 0) * 60000;
+    var touched = _getTouchedEmailIds();
+    var now = Date.now();
+    var out = [];
+    var ids = Object.keys(_activeInteractions);
+    for (var i = 0; i < ids.length; i++) {
+      var e = _activeInteractions[ids[i]];
+      if (!e || e.state === 'ended' || !e.slaExpiresAt) continue;
+      if (String(e.channel || '').toLowerCase() !== 'email') continue;
+      if (touched[ids[i]]) continue; // agent already started it → not requeue-eligible
+      var triggerAt = triggerOn === 'expired' ? e.slaExpiresAt : (e.slaExpiresAt - thMs);
+      if (now >= triggerAt) out.push({ id: ids[i], title: e.title || e.email || e.customerId || ids[i], slaExpiresAt: e.slaExpiresAt });
+    }
+    out.sort(function (a, b) { return a.slaExpiresAt - b.slaExpiresAt; });
+    return out;
+  }
+  function _rqSlaLabel(exp) {
+    var ms = exp - Date.now();
+    if (ms <= 0) return _t('rqOverdue');
+    var m = Math.floor(ms / 60000), s = Math.floor((ms % 60000) / 1000);
+    return (m > 0 ? m + 'm ' : '') + s + 's';
+  }
+  function _rqRequeue(id) {
+    var q = _getRequeueQueue();
+    var contact = _aqmContact();
+    if (!q || !q.vteamId || !contact || typeof contact.vteamTransfer !== 'function') return false;
+    Promise.resolve(contact.vteamTransfer({ interactionId: id, data: { vteamId: q.vteamId, vteamType: q.vteamType || 'inboundqueue' } }))
+      .then(function () { console.log('[crm-sync-header] SLA requeue: transferred', id, '→', q.vteamId); })
+      .catch(function (err) { console.warn('[crm-sync-header] SLA requeue failed for', id, err && err.message); });
+    return true;
+  }
+
+  function _rqBuildOffer() {
+    if (_rqOfferEl) return;
+    _injectSlaStyles();
+    var el = document.createElement('div');
+    el.className = 'wxsla-dialog' + (_darkMode ? ' md--dark' : '');
+    el.style.display = 'none';
+    document.body.appendChild(el);
+    _rqOfferEl = el;
+  }
+  function _rqCloseOffer(dismissed) {
+    if (dismissed) _rqDismissed = true;
+    if (_rqOfferEl) _rqOfferEl.style.display = 'none';
+    _rqRenderedKey = '';
+  }
+  function _rqOpenOffer(eligible) {
+    _rqBuildOffer();
+    var q = _getRequeueQueue();
+    var hasQueue = !!(q && q.vteamId);
+    var rows = '';
+    for (var i = 0; i < eligible.length; i++) {
+      var t = eligible[i];
+      rows += '<label class="wxrq-row"><input type="checkbox" class="wxrq-cb" data-id="' + _slaEsc(t.id) + '"' + (_rqSel[t.id] ? ' checked' : '') + '>'
+        + '<span class="wxrq-title" title="' + _slaEsc(t.title) + '">' + _slaEsc(t.title) + '</span>'
+        + '<span class="wxrq-sla">' + _slaEsc(_rqSlaLabel(t.slaExpiresAt)) + '</span></label>';
+    }
+    _rqOfferEl.innerHTML = [
+      '<div class="wxsla-h">' + _slaEsc(_t('rqOfferTitle')) + '</div>',
+      '<p>' + _slaEsc(_t('rqOfferMsg')) + '</p>',
+      '<div class="wxrq-list">' + rows + '</div>',
+      hasQueue ? '' : '<p class="wxrq-warn">' + _slaEsc(_t('rqNoQueue')) + '</p>',
+      '<div class="wxsla-actions"><button id="wxrq-dismiss" class="wxsla-btn">' + _slaEsc(_t('rqDismiss')) + '</button>',
+      '<button id="wxrq-go" class="wxsla-btn wxsla-btn--primary"' + (hasQueue ? '' : ' disabled') + '>' + _slaEsc(_t('rqRequeueSelected')) + '</button></div>',
+    ].join('');
+    var cbs = _rqOfferEl.querySelectorAll('.wxrq-cb');
+    for (var c = 0; c < cbs.length; c++) {
+      (function (cb) { cb.addEventListener('change', function () { _rqSel[cb.getAttribute('data-id')] = cb.checked; }); })(cbs[c]);
+    }
+    _rqOfferEl.querySelector('#wxrq-dismiss').addEventListener('click', function () { _rqCloseOffer(true); });
+    var go = _rqOfferEl.querySelector('#wxrq-go');
+    if (go && hasQueue) go.addEventListener('click', _rqRequeueSelected);
+    _rqOfferEl.className = 'wxsla-dialog' + (_darkMode ? ' md--dark' : '');
+    _rqOfferEl.style.display = 'block';
+  }
+  function _rqRequeueSelected() {
+    var ids = Object.keys(_rqSel);
+    for (var i = 0; i < ids.length; i++) {
+      var id = ids[i];
+      if (!_rqSel[id] || !_activeInteractions[id]) continue;
+      if (_rqRequeue(id)) { delete _rqSel[id]; delete _rqShownIds[id]; }
+    }
+    // Unchecked (kept) tasks stay eligible; suppress re-prompt until a new one appears.
+    _rqCloseOffer(true);
+  }
+  function _rqOfferTick(eligible) {
+    var eligIds = {}, newIds = false, i, id;
+    for (i = 0; i < eligible.length; i++) { eligIds[eligible[i].id] = true; if (!_rqShownIds[eligible[i].id]) newIds = true; }
+    Object.keys(_rqShownIds).forEach(function (sid) { if (!eligIds[sid]) { delete _rqShownIds[sid]; delete _rqSel[sid]; } });
+    if (!eligible.length) { _rqDismissed = false; _rqCloseOffer(false); return; }
+    for (i = 0; i < eligible.length; i++) { id = eligible[i].id; if (!(id in _rqSel)) _rqSel[id] = true; _rqShownIds[id] = true; }
+    if (newIds) _rqDismissed = false; // a newly eligible task re-presents the offer
+    var isOpen = _rqOfferEl && _rqOfferEl.style.display !== 'none';
+    if (_rqDismissed && !isOpen) return;
+    var key = eligible.map(function (t) { return t.id; }).sort().join('|');
+    if (isOpen && key === _rqRenderedKey) return; // set unchanged → keep current dialog
+    _rqRenderedKey = key;
+    _rqOpenOffer(eligible);
+  }
+
+  function _rqBuildToast() {
+    if (_rqToastEl) return;
+    _injectSlaStyles();
+    var el = document.createElement('div');
+    el.className = 'wxrq-toast';
+    el.style.display = 'none';
+    document.body.appendChild(el);
+    _rqToastEl = el;
+  }
+  function _rqShowToast(n, secs) {
+    _rqBuildToast();
+    var msg = _t('rqAutoMsg').replace('{n}', String(n)).replace('{s}', String(secs));
+    _rqToastEl.innerHTML = '<span>' + _slaEsc(msg) + '</span><button id="wxrq-cancel">' + _slaEsc(_t('cancel')) + '</button>';
+    _rqToastEl.querySelector('#wxrq-cancel').addEventListener('click', function () { _rqCancelAuto(true); });
+    _rqToastEl.style.display = 'flex';
+  }
+  function _rqCancelAuto(dismissed) {
+    if (_rqAutoTimer) { clearInterval(_rqAutoTimer); _rqAutoTimer = null; }
+    _rqAutoActive = false;
+    if (dismissed) _rqAutoDismissed = true;
+    if (_rqToastEl) _rqToastEl.style.display = 'none';
+  }
+  function _rqSyncShown(eligible) {
+    var eligIds = {};
+    for (var i = 0; i < eligible.length; i++) { eligIds[eligible[i].id] = true; _rqShownIds[eligible[i].id] = true; }
+    Object.keys(_rqShownIds).forEach(function (id) { if (!eligIds[id]) delete _rqShownIds[id]; });
+  }
+  function _rqAutoTick(eligible) {
+    var q = _getRequeueQueue();
+    if (!eligible.length || !(q && q.vteamId)) { _rqCancelAuto(false); _rqAutoDismissed = false; return; }
+    if (_rqAutoDismissed) {
+      var grew = false;
+      for (var i = 0; i < eligible.length; i++) { if (!_rqShownIds[eligible[i].id]) grew = true; }
+      _rqSyncShown(eligible);
+      if (!grew) return; // stay dismissed until a new task becomes eligible
+      _rqAutoDismissed = false;
+    }
+    _rqSyncShown(eligible);
+    if (_rqAutoActive) return;
+    _rqAutoActive = true;
+    _rqAutoSecs = _rqSettings().autoCountdownSec || 15;
+    _rqShowToast(eligible.length, _rqAutoSecs);
+    _rqAutoTimer = setInterval(function () {
+      _rqAutoSecs--;
+      var elig = _rqEligible();
+      if (!elig.length) { _rqCancelAuto(false); return; }
+      if (_rqAutoSecs <= 0) {
+        _rqCancelAuto(false);
+        for (var k = 0; k < elig.length; k++) _rqRequeue(elig[k].id);
+      } else {
+        _rqShowToast(elig.length, _rqAutoSecs);
+      }
+    }, 1000);
+  }
+
+  function _rqTick() {
+    var action = _rqSettings().action || 'none';
+    if (action === 'none' || _endShiftActive) {
+      _rqCloseOffer(false); _rqCancelAuto(false);
+      _rqDismissed = false; _rqAutoDismissed = false;
+      return;
+    }
+    var eligible = _rqEligible();
+    if (action === 'auto') { _rqCloseOffer(false); _rqAutoTick(eligible); }
+    else { _rqCancelAuto(false); _rqOfferTick(eligible); }
   }
 
   // End-of-shift: requeue every NEW (untouched) email task to the configured
@@ -1229,6 +1418,13 @@
       selectQueue: 'Select a queue…',
       selectWrapup: 'Select a wrap-up reason…',
       search: 'Type to search…',
+      rqOfferTitle: 'Requeue expiring emails',
+      rqOfferMsg: 'These new emails are near or past their SLA. Choose which to requeue.',
+      rqRequeueSelected: 'Requeue selected',
+      rqDismiss: 'Dismiss',
+      rqNoQueue: 'Set a requeue queue in settings first.',
+      rqOverdue: 'overdue',
+      rqAutoMsg: 'Requeuing {n} expiring email(s) in {s}s…',
       endShiftTitle: 'End shift?',
       endShiftMsg: 'This will requeue every new (unedited) email to the configured queue and set you to Not Ready on all channels so you can finish your current work. Continue?',
       cancel: 'Cancel',
@@ -1264,6 +1460,13 @@
       selectQueue: 'Warteschlange wählen…',
       selectWrapup: 'Nachbearbeitungsgrund wählen…',
       search: 'Zum Suchen tippen…',
+      rqOfferTitle: 'Ablaufende E-Mails rückstellen',
+      rqOfferMsg: 'Diese neuen E-Mails haben ihr SLA fast oder bereits überschritten. Wählen Sie, welche rückgestellt werden sollen.',
+      rqRequeueSelected: 'Auswahl rückstellen',
+      rqDismiss: 'Schließen',
+      rqNoQueue: 'Legen Sie zuerst eine Rückstell-Warteschlange in den Einstellungen fest.',
+      rqOverdue: 'überfällig',
+      rqAutoMsg: 'Rückstellung von {n} ablaufenden E-Mail(s) in {s}s…',
       endShiftTitle: 'Schicht beenden?',
       endShiftMsg: 'Dadurch wird jede neue (unbearbeitete) E-Mail an die konfigurierte Warteschlange zurückgestellt und Sie werden auf allen Kanälen auf Nicht bereit gesetzt, damit Sie Ihre aktuelle Arbeit abschließen können. Fortfahren?',
       cancel: 'Abbrechen',
@@ -1299,6 +1502,13 @@
       selectQueue: 'Vyberte frontu…',
       selectWrapup: 'Vyberte důvod uzavření…',
       search: 'Začněte psát pro vyhledávání…',
+      rqOfferTitle: 'Přeřadit vypršující e-maily',
+      rqOfferMsg: 'Tyto nové e-maily se blíží svému SLA nebo jej překročily. Vyberte, které přeřadit.',
+      rqRequeueSelected: 'Přeřadit vybrané',
+      rqDismiss: 'Zavřít',
+      rqNoQueue: 'Nejprve nastavte frontu pro přeřazení v nastavení.',
+      rqOverdue: 'po termínu',
+      rqAutoMsg: 'Přeřazení {n} vypršujících e-mailů za {s}s…',
       endShiftTitle: 'Ukončit směnu?',
       endShiftMsg: 'Tímto se každý nový (neupravený) e-mail přeřadí do nakonfigurované fronty a na všech kanálech budete nastaveni na Nedostupný, abyste mohli dokončit svou aktuální práci. Pokračovat?',
       cancel: 'Zrušit',
@@ -1582,6 +1792,21 @@
       'border-radius:10px;padding:18px;box-shadow:0 12px 40px rgba(0,0,0,.28);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}',
       '.wxsla-dialog.md--dark{background:#1a2733;color:#e6edf5;border-color:#31424f;}',
       '.wxsla-dialog p{font-size:13px;line-height:1.5;margin:0 0 16px;}',
+      // Centralized SLA requeue offer + auto toast.
+      '.wxrq-list{max-height:240px;overflow:auto;margin:0 0 14px;border:1px solid #dbe3ec;border-radius:8px;}',
+      '.wxsla-dialog.md--dark .wxrq-list{border-color:#31424f;}',
+      '.wxrq-row{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid #eef2f6;cursor:pointer;font-size:13px;}',
+      '.wxrq-row:last-child{border-bottom:none;}',
+      '.wxsla-dialog.md--dark .wxrq-row{border-bottom-color:#2a3742;}',
+      '.wxrq-cb{flex:0 0 auto;width:15px;height:15px;accent-color:#0e7fc1;cursor:pointer;}',
+      '.wxrq-title{flex:1 1 auto;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}',
+      '.wxrq-sla{flex:0 0 auto;font-size:11px;font-weight:600;color:#d5493f;}',
+      '.wxrq-warn{color:#d5493f;font-size:12px;margin:0 0 12px;}',
+      '.wxrq-toast{position:fixed;top:52px;right:16px;z-index:100001;max-width:320px;display:flex;align-items:center;gap:12px;',
+      'background:#1a2733;color:#e6edf5;border-radius:10px;padding:12px 14px;box-shadow:0 12px 40px rgba(0,0,0,.3);',
+      'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:13px;}',
+      '.wxrq-toast button{flex:0 0 auto;height:26px;padding:0 12px;border-radius:13px;border:1px solid rgba(255,255,255,.35);',
+      'background:transparent;color:#fff;font-family:inherit;font-size:12px;font-weight:600;cursor:pointer;}',
     ].join('');
     var style = document.createElement('style');
     style.id = 'wxsla-styles';

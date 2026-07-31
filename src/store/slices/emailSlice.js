@@ -389,7 +389,7 @@ export default emailSlice.reducer;
  * The SLA is delivered WITH the task (Agent-Viewable variable in CAD); the
  * variable name is configurable via widget.emailConfig.slaVariable and the CAD
  * value is unwrapped by the caller (UnifiedView360.buildEmailCallDetails).
- * Accepts epoch-ms (string/number) or ISO-8601. Sets email.slaExpiresAt or null.
+ * Accepts epoch seconds or epoch-ms (string/number) or ISO-8601. Sets email.slaExpiresAt or null.
  */
 export const loadEmailSla = (rawSlaValue) => (dispatch) => {
   if (rawSlaValue == null || rawSlaValue === '') {
@@ -397,8 +397,12 @@ export const loadEmailSla = (rawSlaValue) => (dispatch) => {
     dispatch(setSlaExpiresAt(null));
     return;
   }
-  let ms = Number(rawSlaValue);                          // epoch-ms as string/number
-  if (!Number.isFinite(ms)) ms = Date.parse(rawSlaValue); // ISO-8601 fallback
+  let ms = Number(rawSlaValue);
+  if (Number.isFinite(ms)) {
+    if (ms > 0 && ms < 1e12) ms *= 1000;                // epoch seconds → ms
+  } else {
+    ms = Date.parse(rawSlaValue);                        // ISO-8601 fallback
+  }
   console.log('[SLA] raw=', rawSlaValue, '→ expiresAt(ms)=', ms);
   dispatch(setSlaExpiresAt(Number.isFinite(ms) && ms > 0 ? ms : null));
 };

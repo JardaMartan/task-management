@@ -31,7 +31,6 @@ import EmailWidget from '../email/EmailWidget';
 import SlaCountdown from '../email/SlaCountdown';
 import ChatWidget from '../chat/ChatWidget';
 import TaskWidget from '../task/TaskWidget';
-import SlaRequeueController from '../email/SlaRequeueController';
 import { loadAgentSettings, provisionSlaCatalog, applyAgentState } from '../store/slices/settingsSlice';
 import { setEmailTouched } from '../store/slices/emailSlice';
 
@@ -396,9 +395,6 @@ const UnifiedView360 = ({ darkMode, mockMode, task }) => {
             : <TaskWidget task={task} darkMode={darkMode} onNavigate={navigate} />
         )}
       </div>
-      {isEmailTask && (
-        <SlaRequeueController darkMode={darkMode} interactionId={task?.interactionId} />
-      )}
     </div>
   );
 };
