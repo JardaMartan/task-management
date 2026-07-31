@@ -210,7 +210,7 @@ export default function TeamTimeline({ agents, team, teamState, mode, windowMs, 
             const stateTop = top + 2;
             return (
               <React.Fragment key={agent.id}>
-                <div className="team-row" style={{ top: top + height - GAP / 2, height: 0 }} />
+                <div className="team-row" style={{ top: top + height, height: 0 }} />
 
                 {/* state timeline lane (login → logout with state colours) */}
                 {loginMs != null && (
