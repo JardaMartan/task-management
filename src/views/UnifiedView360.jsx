@@ -256,6 +256,56 @@ const UnifiedView360 = ({ darkMode, mockMode, task }) => {
     } catch { /* BroadcastChannel unsupported */ }
   }, [emailTouched, task?.interactionId]);
 
+  // Feed the FULL open-task list to the headless watcher so its SLA requeue /
+  // focus checks cover every task — not just the one the Desktop pushes as the
+  // selected `task` prop. The Desktop only exposes all open tasks via getTaskMap.
+  useEffect(() => {
+    if (demoMode) return undefined;
+    let cancelled = false;
+    const cadVal = (cad, cad2, key) => (cad?.[key]?.value) || cad2?.[key] || null;
+    const extractOne = (tk) => {
+      if (!tk) return null;
+      const t = tk.interaction || tk;
+      const id = tk.interactionId || t.interactionId || tk.id || null;
+      if (!id) return null;
+      const cad = t.callAssociatedData || {};
+      const cad2 = t.callAssociatedDetails || {};
+      const channel = String(t.mediaType || tk.mediaType || t.channelType || '').toLowerCase();
+      const first = cadVal(cad, cad2, 'firstName') || cadVal(cad, cad2, 'first_name');
+      const last = cadVal(cad, cad2, 'lastName') || cadVal(cad, cad2, 'last_name');
+      const fullName = (first && last) ? `${first} ${last}` : (first || last || null);
+      const title = cadVal(cad, cad2, 'title') || fullName || cadVal(cad, cad2, 'name')
+        || t.customerName || cadVal(cad, cad2, 'customerName') || null;
+      const email = cadVal(cad, cad2, 'email') || t.fromAddress || cadVal(cad, cad2, 'fromAddress') || null;
+      let slaExpiresAt = null;
+      if (slaVariable) {
+        const raw = cadVal(cad, cad2, slaVariable);
+        if (raw != null && raw !== '') {
+          let ms = Number(raw);
+          if (Number.isFinite(ms)) { if (ms > 0 && ms < 1e12) ms *= 1000; } else ms = Date.parse(raw);
+          if (Number.isFinite(ms) && ms > 0) slaExpiresAt = ms;
+        }
+      }
+      return { interactionId: id, channel, slaExpiresAt, title: title || email || null, email };
+    };
+    const poll = async () => {
+      try {
+        const { Desktop } = await import('@wxcc-desktop/sdk');
+        const map = await Desktop.actions.getTaskMap();
+        if (cancelled || !map) return;
+        const list = [];
+        if (typeof map.forEach === 'function') map.forEach((v) => { const x = extractOne(v); if (x) list.push(x); });
+        else Object.keys(map).forEach((k) => { const x = extractOne(map[k]); if (x) list.push(x); });
+        const bc = new BroadcastChannel('crm-sync');
+        bc.postMessage({ type: 'TASK_MAP', tasks: list });
+        bc.close();
+      } catch { /* SDK unavailable */ }
+    };
+    poll();
+    const timer = setInterval(poll, 8000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [demoMode, slaVariable, task?.interactionId]);
+
   return (
     <div className={`unified-360${darkMode ? ' md--dark' : ''}`}>
       {/* ── Customer context bar ── */}

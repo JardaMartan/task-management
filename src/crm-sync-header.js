@@ -907,6 +907,39 @@
   }
 
   // Listen for the Customer360 result so we know whether the change succeeded.
+  // Merge the full open-task list (from React's Desktop.actions.getTaskMap poll)
+  // so the requeue/focus checks cover EVERY task, not just the focused one the
+  // Desktop pushes via the `task` prop. Map-sourced entries are marked _fromMap
+  // and never overwrite a real entry built by handleTaskSync.
+  function _mergeTaskMap(tasks) {
+    var present = {}, i, t, id, e;
+    for (i = 0; i < tasks.length; i++) {
+      t = tasks[i];
+      if (!t || !t.interactionId) continue;
+      id = t.interactionId; present[id] = true;
+      e = _activeInteractions[id];
+      if (e && !e._fromMap) { if (t.slaExpiresAt && e.slaExpiresAt !== t.slaExpiresAt) e.slaExpiresAt = t.slaExpiresAt; continue; }
+      if (!e) {
+        _activeInteractions[id] = {
+          ani: t.email || null, email: t.email || null, customerId: t.email || null,
+          displayUrl: null, title: t.title || t.email || null, state: 'connected',
+          channel: String(t.channel || '').toLowerCase(), slaExpiresAt: t.slaExpiresAt || null, _fromMap: true,
+        };
+      } else {
+        e.slaExpiresAt = t.slaExpiresAt || e.slaExpiresAt;
+        if (t.title) e.title = t.title;
+        e.channel = String(t.channel || '').toLowerCase();
+        e.email = t.email || e.email;
+      }
+    }
+    // Drop map-only tasks that are no longer open (ended / requeued elsewhere).
+    Object.keys(_activeInteractions).forEach(function (aid) {
+      var a = _activeInteractions[aid];
+      if (a && a._fromMap && !present[aid]) delete _activeInteractions[aid];
+    });
+    _slaCheckNow('task-map');
+  }
+
   function _initFocusResultListener() {
     if (_syncListenBc) return;
     try {
@@ -915,6 +948,7 @@
         var d = e && e.data;
         if (!d) return;
         if (d.type === 'EMAIL_TOUCHED' && d.interactionId) { _markEmailTouched(d.interactionId); return; }
+        if (d.type === 'TASK_MAP' && d.tasks) { _mergeTaskMap(d.tasks); return; }
         if (d.type === 'CATALOG_UPDATED') {
           // Fresh catalog written by React — refresh the open panel's queue list,
           // preserving the current selection and any in-progress filter text.
@@ -1090,7 +1124,7 @@
       if (String(e.channel || '').toLowerCase() !== 'email') continue;
       if (touched[ids[i]]) continue; // agent already started it → not requeue-eligible
       var triggerAt = triggerOn === 'expired' ? e.slaExpiresAt : (e.slaExpiresAt - thMs);
-      if (now >= triggerAt) out.push({ id: ids[i], title: e.title || e.email || e.customerId || ids[i], slaExpiresAt: e.slaExpiresAt });
+      if (now >= triggerAt) out.push({ id: ids[i], title: _bestTitle(e), slaExpiresAt: e.slaExpiresAt });
     }
     out.sort(function (a, b) { return a.slaExpiresAt - b.slaExpiresAt; });
     return out;
@@ -1100,6 +1134,21 @@
     if (ms <= 0) return _t('rqOverdue');
     var m = Math.floor(ms / 60000), s = Math.floor((ms % 60000) / 1000);
     return (m > 0 ? m + 'm ' : '') + s + 's';
+  }
+  // Prefer a real name over a bare email — and, for same-sender tasks, reuse a
+  // name another task already resolved so identities are consistent in the offer.
+  function _bestTitle(e) {
+    var title = e.title || e.email || e.customerId || '';
+    if (title && title.indexOf('@') !== -1 && e.email) {
+      var ids = Object.keys(_activeInteractions);
+      for (var i = 0; i < ids.length; i++) {
+        var o = _activeInteractions[ids[i]];
+        if (o && o !== e && String(o.email || '').toLowerCase() === String(e.email).toLowerCase()) {
+          if (o.title && o.title.indexOf('@') === -1) return o.title;
+        }
+      }
+    }
+    return title;
   }
   function _rqRequeue(id) {
     var q = _getRequeueQueue();
