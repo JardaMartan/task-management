@@ -803,6 +803,7 @@
   var _rqAutoSecs       = 0;
   var _rqAutoActive     = false;
   var _rqAutoDismissed  = false;
+  var _rqManualOpen     = false; // agent opened the requeue dialog from the header button
 
   var FOCUS_LS_PREFIX    = 'wx_c360_focus_';
   var SETTINGS_LS_PREFIX = 'wx_c360_settings_';
@@ -1130,6 +1131,7 @@
     return out;
   }
   function _rqSlaLabel(exp) {
+    if (!exp) return '';
     var ms = exp - Date.now();
     if (ms <= 0) return _t('rqOverdue');
     var m = Math.floor(ms / 60000), s = Math.floor((ms % 60000) / 1000);
@@ -1171,6 +1173,7 @@
   }
   function _rqCloseOffer(dismissed) {
     if (dismissed) _rqDismissed = true;
+    _rqManualOpen = false;
     if (_rqOfferEl) _rqOfferEl.style.display = 'none';
     _rqRenderedKey = '';
   }
@@ -1188,7 +1191,7 @@
     _rqOfferEl.innerHTML = [
       '<div class="wxsla-h">' + _slaEsc(_t('rqOfferTitle')) + '</div>',
       '<p>' + _slaEsc(_t('rqOfferMsg')) + '</p>',
-      '<div class="wxrq-list">' + rows + '</div>',
+      '<div class="wxrq-list">' + (rows || '<div class="wxrq-row" style="justify-content:center;opacity:.6;">—</div>') + '</div>',
       hasQueue ? '' : '<p class="wxrq-warn">' + _slaEsc(_t('rqNoQueue')) + '</p>',
       '<div class="wxsla-actions"><button id="wxrq-dismiss" class="wxsla-btn">' + _slaEsc(_t('rqDismiss')) + '</button>',
       '<button id="wxrq-go" class="wxsla-btn wxsla-btn--primary"' + (hasQueue ? '' : ' disabled') + '>' + _slaEsc(_t('rqRequeueSelected')) + '</button></div>',
@@ -1212,6 +1215,41 @@
     }
     // Unchecked (kept) tasks stay eligible; suppress re-prompt until a new one appears.
     _rqCloseOffer(true);
+  }
+  // All open, not-yet-started email tasks (for the manual header button), newest
+  // SLA first; tasks without an SLA sort last.
+  function _rqAllEmailTasks() {
+    var touched = _getTouchedEmailIds();
+    var out = [], ids = Object.keys(_activeInteractions);
+    for (var i = 0; i < ids.length; i++) {
+      var e = _activeInteractions[ids[i]];
+      if (!e || e.state === 'ended') continue;
+      if (String(e.channel || '').toLowerCase() !== 'email') continue;
+      if (touched[ids[i]]) continue;
+      out.push({ id: ids[i], title: _bestTitle(e), slaExpiresAt: e.slaExpiresAt || 0 });
+    }
+    out.sort(function (a, b) { return (a.slaExpiresAt || Infinity) - (b.slaExpiresAt || Infinity); });
+    return out;
+  }
+  function _rqOpenManual() {
+    var all = _rqAllEmailTasks();
+    if (_slaPanelEl) _slaPanelEl.style.display = 'none';
+    if (_slaConfirmEl) _slaConfirmEl.style.display = 'none';
+    var sla = _rqSettings();
+    var triggerOn = sla.triggerOn || 'imminent';
+    var thMs = (_slaThresholdMin || 0) * 60000;
+    var now = Date.now();
+    for (var i = 0; i < all.length; i++) {
+      var t = all[i];
+      if (!(t.id in _rqSel)) {
+        var triggered = t.slaExpiresAt && now >= (triggerOn === 'expired' ? t.slaExpiresAt : t.slaExpiresAt - thMs);
+        _rqSel[t.id] = !!triggered; // pre-check the tasks already past their trigger
+      }
+      _rqShownIds[t.id] = true;
+    }
+    _rqManualOpen = true;
+    _rqRenderedKey = 'manual';
+    _rqOpenOffer(all);
   }
   function _rqOfferTick(eligible) {
     var eligIds = {}, newIds = false, i, id;
@@ -1284,6 +1322,7 @@
   }
 
   function _rqTick() {
+    if (_rqManualOpen) return; // agent opened the dialog manually — leave it alone
     var action = _rqSettings().action || 'none';
     if (action === 'none' || _endShiftActive) {
       _rqCloseOffer(false); _rqCancelAuto(false);
@@ -1474,6 +1513,7 @@
       rqNoQueue: 'Set a requeue queue in settings first.',
       rqOverdue: 'overdue',
       rqAutoMsg: 'Requeuing {n} expiring email(s) in {s}s…',
+      requeueBtn: 'Requeue tasks',
       endShiftTitle: 'End shift?',
       endShiftMsg: 'This will requeue every new (unedited) email to the configured queue and set you to Not Ready on all channels so you can finish your current work. Continue?',
       cancel: 'Cancel',
@@ -1516,6 +1556,7 @@
       rqNoQueue: 'Legen Sie zuerst eine Rückstell-Warteschlange in den Einstellungen fest.',
       rqOverdue: 'überfällig',
       rqAutoMsg: 'Rückstellung von {n} ablaufenden E-Mail(s) in {s}s…',
+      requeueBtn: 'Aufgaben rückstellen',
       endShiftTitle: 'Schicht beenden?',
       endShiftMsg: 'Dadurch wird jede neue (unbearbeitete) E-Mail an die konfigurierte Warteschlange zurückgestellt und Sie werden auf allen Kanälen auf Nicht bereit gesetzt, damit Sie Ihre aktuelle Arbeit abschließen können. Fortfahren?',
       cancel: 'Abbrechen',
@@ -1558,6 +1599,7 @@
       rqNoQueue: 'Nejprve nastavte frontu pro přeřazení v nastavení.',
       rqOverdue: 'po termínu',
       rqAutoMsg: 'Přeřazení {n} vypršujících e-mailů za {s}s…',
+      requeueBtn: 'Přeřadit úkoly',
       endShiftTitle: 'Ukončit směnu?',
       endShiftMsg: 'Tímto se každý nový (neupravený) e-mail přeřadí do nakonfigurované fronty a na všech kanálech budete nastaveni na Nedostupný, abyste mohli dokončit svou aktuální práci. Pokračovat?',
       cancel: 'Zrušit',
@@ -1988,7 +2030,7 @@
     // Clicks on our header buttons are handled separately; don't treat as outside.
     try {
       var root = _shadowRoot;
-      return !!(root && (root.getElementById('sla-btn') === node || root.getElementById('endshift-btn') === node));
+      return !!(root && (root.getElementById('sla-btn') === node || root.getElementById('endshift-btn') === node || root.getElementById('requeue-btn') === node));
     } catch (e) { return false; }
   }
 
@@ -2159,6 +2201,11 @@
             '    </svg>',
             '    <span class="btn-label">CRM</span>',
             '  </button>',
+            '  <button class="hbtn hbtn--icon" id="requeue-btn" title="' + _slaEsc(_t('requeueBtn')) + '">',
+            '    <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">',
+            '      <path d="M18.4 10.6C16.55 8.99 14.15 8 11.5 8c-4.65 0-8.58 3.03-9.96 7.22L3.9 16c1.05-3.19 4.05-5.5 7.6-5.5 1.95 0 3.73.72 5.12 1.88L13 16h9V7l-3.6 3.6z"/>',
+            '    </svg>',
+            '  </button>',
             '  <button class="hbtn hbtn--end" id="endshift-btn" title="' + _slaEsc(_t('endShiftTip')) + '">',
             '    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">',
             '      <path d="M16 17v-2H9v-2h7V9l4 4-4 4zM14 2a2 2 0 012 2v3h-2V4H5v16h9v-3h2v3a2 2 0 01-2 2H5a2 2 0 01-2-2V4a2 2 0 012-2h9z"/>',
@@ -2182,6 +2229,7 @@
           });
           shadow.getElementById('sla-btn').addEventListener('click', _toggleSlaPanel);
           shadow.getElementById('endshift-btn').addEventListener('click', _openEndShiftConfirm);
+          shadow.getElementById('requeue-btn').addEventListener('click', _rqOpenManual);
         }
 
         _shadowRoot = shadow;
