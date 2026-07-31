@@ -1164,18 +1164,25 @@
     }
     return title;
   }
-  function _rqRequeue(id) {
+  function _rqRequeueOne(id) {
     var q = _getRequeueQueue();
     var contact = _aqmContact();
-    if (!q || !q.vteamId || !contact || typeof contact.vteamTransfer !== 'function') return false;
-    Promise.resolve(contact.vteamTransfer({ interactionId: id, data: { vteamId: q.vteamId, vteamType: q.vteamType || 'inboundqueue' } }))
+    if (!q || !q.vteamId || !contact || typeof contact.vteamTransfer !== 'function') return Promise.resolve(false);
+    return Promise.resolve(contact.vteamTransfer({ interactionId: id, data: { vteamId: q.vteamId, vteamType: q.vteamType || 'inboundqueue' } }))
       .then(function () {
         console.log('[crm-sync-header] SLA requeue: transferred', id, '→', q.vteamId);
         _rqAutoWrapupIds[id] = true;
         _rqSubmitWrapup(id, 0); // the transfer drops the task into wrap-up
+        return true;
       })
-      .catch(function (err) { console.warn('[crm-sync-header] SLA requeue failed for', id, err && err.message); });
-    return true;
+      .catch(function (err) { console.warn('[crm-sync-header] SLA requeue failed for', id, err && err.message); return false; });
+  }
+  function _rqRequeue(id) { _rqRequeueOne(id); return true; }
+  // Requeue ids one after another — firing several transfers/wrap-ups at once can
+  // stall the platform, so process sequentially.
+  function _rqProcessQueue(ids, i) {
+    if (!ids || i >= ids.length) return;
+    _rqRequeueOne(ids[i]).then(function () { setTimeout(function () { _rqProcessQueue(ids, i + 1); }, 500); });
   }
   // Configured wrap-up reason (auto-submitted on requeue so the task doesn't wait).
   function _rqWrapup() {
@@ -1208,6 +1215,15 @@
     el.style.display = 'none';
     document.body.appendChild(el);
     _rqOfferEl = el;
+    // Manual (button-opened) dialog closes on an outside click, like the settings panel.
+    document.addEventListener('mousedown', function (e) {
+      if (!_rqManualOpen || !_rqOfferEl || _rqOfferEl.style.display === 'none') return;
+      var path = (e.composedPath && e.composedPath()) || [];
+      if (path.indexOf(_rqOfferEl) !== -1) return; // inside the dialog
+      var btn = _shadowRoot && _shadowRoot.getElementById('requeue-btn');
+      if (btn && path.indexOf(btn) !== -1) return; // the button toggles it
+      _rqCloseOffer(false);
+    });
   }
   function _rqCloseOffer(dismissed) {
     if (dismissed) _rqDismissed = true;
@@ -1245,14 +1261,11 @@
     _rqOfferEl.style.display = 'block';
   }
   function _rqRequeueSelected() {
-    var ids = Object.keys(_rqSel);
-    for (var i = 0; i < ids.length; i++) {
-      var id = ids[i];
-      if (!_rqSel[id] || !_activeInteractions[id]) continue;
-      if (_rqRequeue(id)) { delete _rqSel[id]; delete _rqShownIds[id]; }
-    }
-    // Unchecked (kept) tasks stay eligible; suppress re-prompt until a new one appears.
+    var ids = [];
+    Object.keys(_rqSel).forEach(function (id) { if (_rqSel[id] && _activeInteractions[id]) ids.push(id); });
+    for (var i = 0; i < ids.length; i++) { delete _rqSel[ids[i]]; delete _rqShownIds[ids[i]]; }
     _rqCloseOffer(true);
+    _rqProcessQueue(ids, 0); // process all selected, one after another
   }
   // All open, not-yet-started email tasks (for the manual header button), newest
   // SLA first; tasks without an SLA sort last.
@@ -1270,24 +1283,30 @@
     return out;
   }
   function _rqOpenManual() {
-    var all = _rqAllEmailTasks();
+    if (_rqManualOpen && _rqOfferEl && _rqOfferEl.style.display !== 'none') { _rqCloseOffer(false); return; }
     if (_slaPanelEl) _slaPanelEl.style.display = 'none';
     if (_slaConfirmEl) _slaConfirmEl.style.display = 'none';
-    var sla = _rqSettings();
-    var triggerOn = sla.triggerOn || 'imminent';
-    var thMs = (_slaThresholdMin || 0) * 60000;
-    var now = Date.now();
-    for (var i = 0; i < all.length; i++) {
-      var t = all[i];
-      if (!(t.id in _rqSel)) {
-        var triggered = t.slaExpiresAt && now >= (triggerOn === 'expired' ? t.slaExpiresAt : t.slaExpiresAt - thMs);
-        _rqSel[t.id] = !!triggered; // pre-check the tasks already past their trigger
-      }
+    _rqManualOpen = true;
+    _rqRenderedKey = '__init__';
+    _rqRefreshOpen(_rqAllEmailTasks());
+  }
+  // Keep an OPEN dialog in sync with the given task list: prune gone tasks, add
+  // new ones (pre-checking those past their trigger), and re-render on change so
+  // an empty dialog picks up a newly eligible task.
+  function _rqRefreshOpen(tasks) {
+    var present = {}, i;
+    for (i = 0; i < tasks.length; i++) present[tasks[i].id] = true;
+    Object.keys(_rqShownIds).forEach(function (id) { if (!present[id]) { delete _rqShownIds[id]; delete _rqSel[id]; } });
+    var sla = _rqSettings(), triggerOn = sla.triggerOn || 'imminent', thMs = (_slaThresholdMin || 0) * 60000, now = Date.now();
+    for (i = 0; i < tasks.length; i++) {
+      var t = tasks[i];
+      if (!(t.id in _rqSel)) { _rqSel[t.id] = !!(t.slaExpiresAt && now >= (triggerOn === 'expired' ? t.slaExpiresAt : t.slaExpiresAt - thMs)); }
       _rqShownIds[t.id] = true;
     }
-    _rqManualOpen = true;
-    _rqRenderedKey = 'manual';
-    _rqOpenOffer(all);
+    var key = tasks.map(function (x) { return x.id; }).sort().join('|');
+    if (key === _rqRenderedKey) return;
+    _rqRenderedKey = key;
+    _rqOpenOffer(tasks);
   }
   function _rqOfferTick(eligible) {
     var eligIds = {}, newIds = false, i, id;
@@ -1352,7 +1371,7 @@
       if (!elig.length) { _rqCancelAuto(false); return; }
       if (_rqAutoSecs <= 0) {
         _rqCancelAuto(false);
-        for (var k = 0; k < elig.length; k++) _rqRequeue(elig[k].id);
+        _rqProcessQueue(elig.map(function (t) { return t.id; }), 0);
       } else {
         _rqShowToast(elig.length, _rqAutoSecs);
       }
@@ -1360,7 +1379,12 @@
   }
 
   function _rqTick() {
-    if (_rqManualOpen) return; // agent opened the dialog manually — leave it alone
+    if (_rqManualOpen) {
+      // Keep the manually-opened dialog live (empty list picks up new tasks).
+      if (_rqOfferEl && _rqOfferEl.style.display !== 'none') _rqRefreshOpen(_rqAllEmailTasks());
+      else _rqManualOpen = false;
+      return;
+    }
     var action = _rqSettings().action || 'none';
     if (action === 'none' || _endShiftActive) {
       _rqCloseOffer(false); _rqCancelAuto(false);
@@ -1381,7 +1405,7 @@
     var touched = _getTouchedEmailIds();
     var canRequeue = !!(contact && typeof contact.vteamTransfer === 'function' && queue && queue.vteamId);
     var ids = Object.keys(_activeInteractions);
-    var count = 0;
+    var toRequeue = [];
     var skipped = 0;
     ids.forEach(function (id) {
       var e = _activeInteractions[id];
@@ -1389,9 +1413,10 @@
       if (String(e.channel || '').toLowerCase() !== 'email') return; // emails only
       if (touched[id]) return;                                       // skip drafts (in-progress)
       if (!canRequeue) { skipped++; return; }
-      count++;
-      _rqRequeue(id); // transfers + auto-submits the configured wrap-up
+      toRequeue.push(id);
     });
+    _rqProcessQueue(toRequeue, 0); // transfer + auto-wrap-up each, one after another
+    var count = toRequeue.length;
     if (skipped) {
       console.warn('[crm-sync-header] end-shift:', skipped,
         'new email(s) NOT requeued — no email queue configured or vteamTransfer unavailable');
