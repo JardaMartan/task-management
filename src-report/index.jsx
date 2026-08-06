@@ -1,6 +1,5 @@
 // Ensure AgentX globals exist before anything imports SDK expectations.
 import './agentx-globals';
-import '@momentum-ui/core/css/momentum-ui.min.css';
 import './styles.css';
 import React from 'react';
 import ReactDOM from 'react-dom';
@@ -13,6 +12,31 @@ import { hydrateContext } from './store/slices/activitySlice';
 
 const ELEMENT_TAG = 'agent-activity-widget';
 const STYLE_ID = 'agent-activity-styles';
+
+// Momentum core CSS is loaded from a CDN instead of bundled (~1.3 MB saved). Its
+// @font-face url()s resolve against the CDN, so fonts come from the CDN too.
+const MOMENTUM_CSS_CDN = 'https://cdn.jsdelivr.net/npm/@momentum-ui/core@19.16.1/css/momentum-ui.min.css';
+const MOMENTUM_LINK_ID = 'agent-activity-momentum-css';
+
+const addMomentumLinkTo = (root) => {
+  if (!root || root.querySelector(`#${MOMENTUM_LINK_ID}`)) return;
+  const link = document.createElement('link');
+  link.id = MOMENTUM_LINK_ID;
+  link.rel = 'stylesheet';
+  link.href = MOMENTUM_CSS_CDN;
+  root.insertBefore(link, root.firstChild);
+};
+
+/**
+ * Inject the Momentum CSS <link>. Always into <head> so `:root{--md-*}` tokens
+ * land on <html> and inherit into shadow trees; also directly into a shadow root
+ * (when present) so Momentum component classes style the shadowed elements.
+ */
+const injectMomentumLink = (container) => {
+  addMomentumLinkTo(document.head);
+  const root = container?.getRootNode?.();
+  if (typeof ShadowRoot !== 'undefined' && root instanceof ShadowRoot) addMomentumLinkTo(root);
+};
 
 /**
  * Copy document stylesheets into a shadow root so Momentum + widget CSS resolve
@@ -46,9 +70,13 @@ const injectCSS = (container) => {
 };
 
 // ── Standalone harness mount (dev / preview) ─────────────────────────────────
+// Kick off the Momentum CSS download early (also sets :root tokens on <html>).
+injectMomentumLink(document);
+
 if (globalThis.document?.getElementById('react-root')) {
   const container = globalThis.document.getElementById('react-root');
   injectCSS(container);
+  injectMomentumLink(container);
   const params = (() => {
     try { return new URLSearchParams(globalThis.location?.search); } catch { return null; }
   })();
@@ -214,6 +242,7 @@ class AgentActivityElement extends HTMLElement {
     const container = this.querySelector('#agent-activity-container');
     this.container = container;
     injectCSS(this);
+    injectMomentumLink(this);
     if (ReactDOM.createRoot) this.root = ReactDOM.createRoot(container);
 
     this._hydrate();

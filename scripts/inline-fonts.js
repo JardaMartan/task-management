@@ -7,6 +7,35 @@
 const fs = require('fs');
 const path = require('path');
 
+// ── Font delivery mode ───────────────────────────────────────────────────────
+// By default fonts are INLINED as base64 data URIs (fully self-contained bundle).
+// Bundles listed in CDN_FONT_BUNDLES instead reference the fonts from a public
+// CDN (jsDelivr), which trims ~1.2 MB of base64 payload from the bundle. This is
+// shadow-DOM safe because:
+//   • the @font-face rules stay in the same-origin injected <style> (cssRules copy
+//     into the shadow root still works — only the url() targets are cross-origin);
+//   • jsDelivr serves the woff2 with `Access-Control-Allow-Origin: *`, which
+//     cross-origin @font-face fetches require;
+//   • absolute URLs are baked at build time (relative paths would resolve against
+//     the Desktop document origin and 404 — the original reason fonts were inlined).
+// Versions are read from the installed packages so the CDN URL always matches the
+// bytes we would otherwise inline. Override the CDN via FONT_CDN_BASE.
+// NOTE: the bulk-reskill bundle no longer bundles Momentum CSS at all (it loads
+// momentum-ui.min.css from the CDN via a <link>), so its fonts come from that
+// stylesheet's own @font-face — no rewrite needed here. Hence the empty default.
+const CDN_FONT_BUNDLES = (process.env.FONT_CDN_BUNDLES
+  ? process.env.FONT_CDN_BUNDLES.split(',').map((s) => s.trim())
+  : []);
+const CDN_BASE = process.env.FONT_CDN_BASE || 'https://cdn.jsdelivr.net/npm';
+
+function pkgVersion(pkg, fallback) {
+  try {
+    return require(`@momentum-ui/${pkg}/package.json`).version || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 function inlineFonts() {
   try {
     // Process both rollup outputs so icons work in all modes.
@@ -70,8 +99,18 @@ function inlineFonts() {
     // browsers (last 2 Chrome/Firefox/Safari/Edge) we skip it, saving ~500KB.
     console.log(`ℹ Skipping WOFF inlining (modern browsers use WOFF2 only)`);
 
+    // Absolute CDN URLs (jsDelivr) for bundles that externalize fonts. Versions
+    // come from the installed packages so the URL matches the bundled CSS.
+    const iconsVer = pkgVersion('icons', '8.33.0');
+    const coreVer = pkgVersion('core', '19.16.1');
+    const iconsCdnUrl = `${CDN_BASE}/@momentum-ui/icons@${iconsVer}/fonts/momentum-ui-icons.woff2`;
+    const ciscoCdnUrl = (name) => `${CDN_BASE}/@momentum-ui/core@${coreVer}/fonts/${name}.woff2`;
+
     for (const bundlePath of bundlePaths) {
       let bundleContent = fs.readFileSync(bundlePath, 'utf-8');
+      const useCdn = CDN_FONT_BUNDLES.includes(path.basename(bundlePath));
+      const iconsRef = useCdn ? iconsCdnUrl : `data:font/woff2;base64,${woff2Base64}`;
+      console.log(`[${path.basename(bundlePath)}] Font mode: ${useCdn ? 'CDN (' + CDN_BASE + ')' : 'inline base64'}`);
 
       // Check before replacement
       const woff2Before = (bundleContent.match(/momentum-ui-icons\.woff2/g) || []).length;
@@ -81,7 +120,7 @@ function inlineFonts() {
       // Inline WOFF2 as a data URI
       bundleContent = bundleContent.replace(
         /url\([^)]*momentum-ui-icons\.woff2[^)]*\)/g,
-        `url(data:font/woff2;base64,${woff2Base64})`
+        `url(${iconsRef})`
       );
 
       // Remove WOFF fallback url() AND its format() hint (keeps the src syntax valid).
@@ -117,20 +156,23 @@ function inlineFonts() {
 
       // Inline CiscoSansTT text fonts — fixes Edge shadow-DOM font resolution.
       // The momentum-ui CSS uses relative paths like url(../fonts/CiscoSansTTRegular.woff2)
-      // which fail inside Shadow DOM when copied by cssText injection.
+      // which fail inside Shadow DOM when copied by cssText injection. In CDN mode
+      // the same relative paths are rewritten to absolute jsDelivr URLs instead.
       let ciscoSansCount = 0;
       for (const [fontName, base64] of Object.entries(ciscoSansBase64Map)) {
         const before = bundleContent.length;
+        const ref = useCdn ? ciscoCdnUrl(fontName) : `data:font/woff2;base64,${base64}`;
         bundleContent = bundleContent.replace(
           new RegExp(`url\\([^)]*${fontName}\\.woff2[^)]*\\)`, 'g'),
-          `url(data:font/woff2;base64,${base64})`
+          `url(${ref})`
         );
         if (bundleContent.length !== before) ciscoSansCount++;
       }
-      console.log(`[${path.basename(bundlePath)}] ✓ CiscoSansTT: inlined ${ciscoSansCount} font variant(s).`);
+      const fontModeLabel = useCdn ? 'linked (CDN)' : 'inlined';
+      console.log(`[${path.basename(bundlePath)}] ✓ CiscoSansTT: ${fontModeLabel} ${ciscoSansCount} font variant(s).`);
 
       fs.writeFileSync(bundlePath, bundleContent, 'utf-8');
-      console.log(`[${path.basename(bundlePath)}] ✓ Font files inlined. Corrected ${fixedCount} @font-face definitions.`);
+      console.log(`[${path.basename(bundlePath)}] ✓ Fonts ${useCdn ? 'linked to CDN' : 'inlined'}. Corrected ${fixedCount} @font-face definitions.`);
     }
   } catch (error) {
     console.error('Error inlining fonts:', error.message);

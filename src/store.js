@@ -31,6 +31,7 @@ import emailReducer, {
   setAiEnrichment, setAiReplyDraft, setTemplates, setPendingCorrelationId,
   fetchCustomerJdsHistory, loadJdsHistoryForEmailTask, loadJdsHistoryForWorkItemTask, loadJdsHistoryForVoiceTask, loadJdsHistoryForChatTask, loadJdsHistoryForSocialTask, refreshAiEnrichment, generateAiReply, improveAiDraft,
   sendEmailReply, handleSseEvent, submitWrapUp,
+  searchCustomerByIdentityManual, clearManualCustomerSearch,
   // Helpers
   parseGmailMessage, decodeBase64Url, extractEmailFromTask,
 } from './store/slices/emailSlice';
@@ -66,6 +67,7 @@ export {
   setAiEnrichment, setAiReplyDraft, setTemplates, setPendingCorrelationId,
   fetchCustomerJdsHistory, loadJdsHistoryForEmailTask, loadJdsHistoryForWorkItemTask, loadJdsHistoryForVoiceTask, loadJdsHistoryForChatTask, loadJdsHistoryForSocialTask, refreshAiEnrichment, generateAiReply, improveAiDraft,
   sendEmailReply, handleSseEvent, submitWrapUp,
+  searchCustomerByIdentityManual, clearManualCustomerSearch,
   // Email helpers
   parseGmailMessage, decodeBase64Url, extractEmailFromTask,
 };

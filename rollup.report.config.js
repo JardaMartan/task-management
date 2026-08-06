@@ -6,25 +6,44 @@ import replace from '@rollup/plugin-replace';
 import json from '@rollup/plugin-json';
 import postcss from 'rollup-plugin-postcss';
 
-// Self-contained build for the Webex CC supervisor desktop.
-const isSelfContained = process.env.BUILD_MODE === 'self-contained';
+// Build modes:
+//   'self-contained' → bundles everything (React/Redux inlined) → agent-activity-standalone.js
+//   'cdn-libs'       → externalizes React + Redux family as CDN globals → agent-activity-cdn.js
+//                      (loaded via agent-activity-cdn-loader.js, which pulls the UMD deps first)
+//   (default)        → dev build, React externalized to page globals → agent-activity.js
+const buildMode = process.env.BUILD_MODE;
+const isSelfContained = buildMode === 'self-contained';
+const isCdnLibs = buildMode === 'cdn-libs';
+
+const cdnGlobals = {
+  react: 'React',
+  'react-dom': 'ReactDOM',
+  'react-dom/client': 'ReactDOM',
+  'react-redux': 'ReactRedux',
+  '@reduxjs/toolkit': 'RTK',
+};
+const cdnExternalIds = new Set(Object.keys(cdnGlobals));
+const reactGlobals = {
+  react: 'React',
+  'react-dom': 'ReactDOM',
+  'react-dom/client': 'ReactDOM',
+};
+const isReactExternal = (id) => id === 'react' || id === 'react-dom' || id === 'react-dom/client';
 
 export default {
   input: 'src-report/index.jsx',
   output: {
-    file: isSelfContained ? 'dist/agent-activity-standalone.js' : 'dist/agent-activity.js',
+    file: isCdnLibs
+      ? 'dist/agent-activity-cdn.js'
+      : (isSelfContained ? 'dist/agent-activity-standalone.js' : 'dist/agent-activity.js'),
     format: 'iife',
     inlineDynamicImports: true,
     name: 'AgentActivity',
-    globals: isSelfContained ? {} : {
-      react: 'React',
-      'react-dom': 'ReactDOM',
-      'react-dom/client': 'ReactDOM',
-    },
+    globals: isCdnLibs ? cdnGlobals : (isSelfContained ? {} : reactGlobals),
   },
-  external: isSelfContained ? [] : (id) => (
-    id === 'react' || id === 'react-dom' || id === 'react-dom/client'
-  ),
+  external: isCdnLibs
+    ? (id) => cdnExternalIds.has(id)
+    : (isSelfContained ? [] : isReactExternal),
   onwarn: (warning, warn) => {
     if (warning.code === 'NAMESPACE_REDEFINE') return;
     if (warning.code === 'THIS_IS_UNDEFINED') return;
@@ -52,7 +71,10 @@ export default {
       'process ||': 'false ||',
       'global.process': 'undefined',
       'window.process': 'undefined',
-      ...(isSelfContained ? {} : {
+      // Dev build only: rewrite CJS require('react') to the page global. The
+      // cdn-libs build must NOT do this — rollup's external + commonjs interop
+      // wires the globals correctly and the replace hack corrupts them.
+      ...((isSelfContained || isCdnLibs) ? {} : {
         'require("react")': 'React',
         "require('react')": 'React',
         'require("react-dom")': 'ReactDOM',

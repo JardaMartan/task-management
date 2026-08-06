@@ -59,6 +59,7 @@ the Desktop layout's `advancedHeader`. Responsibilities:
   "properties": {
     "task":        "$STORE.agentContact.taskSelected",
     "wsurl":       "wss://<relay-host>",
+    "transport":   "bridge",
     "accesstoken": "$STORE.auth.accessToken",
     "workspaceid": "<JDS workspace id>",
     "datacenter":  "$STORE.app.datacenter",
@@ -80,6 +81,25 @@ the Desktop layout's `advancedHeader`. Responsibilities:
 | `wx_c360_focus_{agentId}` | Focus‑mode settings. |
 | `wx_c360_settings_{agentId}` | Requeue settings (queue, wrap‑up code, countdown). |
 | `wx_c360_catalog_{agentId}` | Idle‑code / queue / wrap‑up‑code options. |
+
+---
+
+### Transport modes
+
+The header ↔ Tab Manager channel has two interchangeable transports, selected by
+the `transport` property:
+
+| `transport` | How messages move | Server needed |
+|---|---|---|
+| `relay` (default) | WebSocket to the relay server (`wss://<relay-host>`) | Relay Cloud Run runs 24/7 while a session is open |
+| `bridge` (recommended) | Direct `window.postMessage` between the header and the Tab Manager window it opened (`window.opener`) | **None** — no persistent connection; the relay is only a static host |
+
+Both carry the identical JSON message protocol and the same `sessionId` scoping;
+only the transport differs. In `bridge` mode the header still uses `wsurl` purely
+to derive the host that serves the Tab Manager page, and messages never leave the
+agent's browser — so the relay's WebSocket (and its always‑warm cost) is bypassed.
+Bridge requires the Tab Manager to be opened **from the header** (it relies on the
+`window.opener` link); opening it from a bookmark has no peer to talk to.
 
 ---
 

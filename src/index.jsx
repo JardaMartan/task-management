@@ -1,6 +1,5 @@
 // Ensure AgentX globals exist before anything else imports SDK expectations
 import './agentx-globals';
-import '@momentum-ui/core/css/momentum-ui.min.css';
 import React from 'react';
 import ReactDOM from 'react-dom';
 import { Provider } from 'react-redux';
@@ -16,6 +15,32 @@ import { detectBrowserLocale } from './i18n/translations';
 // window.postMessage requests into Desktop SDK actions. Safe to call in every
 // mount path — it self-guards against double registration.
 initCrmContactBridge(store);
+
+// Momentum core CSS is loaded from a CDN instead of bundled (~1.3 MB saved). Its
+// @font-face url()s resolve against the CDN, so fonts come from the CDN too.
+const MOMENTUM_CSS_CDN = 'https://cdn.jsdelivr.net/npm/@momentum-ui/core@19.16.1/css/momentum-ui.min.css';
+const MOMENTUM_LINK_ID = 'task-management-momentum-css';
+
+const addMomentumLinkTo = (root) => {
+  if (!root || root.querySelector(`#${MOMENTUM_LINK_ID}`)) return;
+  const link = document.createElement('link');
+  link.id = MOMENTUM_LINK_ID;
+  link.rel = 'stylesheet';
+  link.href = MOMENTUM_CSS_CDN;
+  root.insertBefore(link, root.firstChild);
+};
+
+/**
+ * Inject the Momentum CSS <link>. Always into <head> so `:root{--md-*}` tokens
+ * land on <html> and inherit into shadow trees; also directly into a shadow root
+ * (when present) so Momentum component classes style the shadowed elements.
+ * Cross-origin stylesheet: can't be copied via cssRules, so use a real <link>.
+ */
+const injectMomentumLink = (container) => {
+  addMomentumLinkTo(document.head);
+  const root = container?.getRootNode?.();
+  if (typeof ShadowRoot !== 'undefined' && root instanceof ShadowRoot) addMomentumLinkTo(root);
+};
 
 /**
  * Inject CSS into the container (shadow DOM or document head)
@@ -71,10 +96,14 @@ const injectCSS = (container) => {
   console.log('TaskManagement: CSS injected into shadow DOM (length:', combinedCSS.length, ')');
 };
 
+// Kick off the Momentum CSS download early (also sets :root tokens on <html>).
+injectMomentumLink(document);
+
 if (globalThis.document?.getElementById('react-root')) {
   const container = globalThis.document.getElementById('react-root');
 
   injectCSS(container);
+  injectMomentumLink(container);
 
   if (ReactDOM.createRoot) {
     const root = ReactDOM.createRoot(container);
@@ -573,6 +602,7 @@ class TaskManagementElement extends HTMLElement {
 
       // Inject CSS BEFORE React renders
       injectCSS(this);
+      injectMomentumLink(this);
       console.log('TaskManagement: CSS injected, ready to render React');
 
       // Convert darkmode string to boolean (web component attributes are always strings)

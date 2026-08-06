@@ -32,7 +32,7 @@ import SlaCountdown from '../email/SlaCountdown';
 import ChatWidget from '../chat/ChatWidget';
 import TaskWidget from '../task/TaskWidget';
 import { loadAgentSettings, provisionSlaCatalog, applyAgentState } from '../store/slices/settingsSlice';
-import { setEmailTouched } from '../store/slices/emailSlice';
+import { setEmailTouched, searchCustomerByIdentityManual, clearManualCustomerSearch } from '../store/slices/emailSlice';
 
 const TAB_IDS = ['cases', 'history', 'voice', 'email', 'chat', 'task'];
 const TAB_ICONS = { cases: 'tasks_16', history: 'recents_16', voice: 'handset_16', email: 'email_16', chat: 'chat_16', task: 'check-circle_16' };
@@ -74,7 +74,7 @@ const buildEmailCallDetails = (task, slaVariable) => {
   return { ...raw, customerEmail: fromAddress, fromAddress, gmailThreadId, rfcMessageId, subject, slaExpiresRaw };
 };
 
-const UnifiedView360 = ({ darkMode, mockMode, task }) => {
+const UnifiedView360 = ({ darkMode, mockMode, navPanel, task }) => {
   const { t, locale } = useI18n();
   const dispatch = useDispatch();
   // Auto-navigate to the correct tab when a task arrives.
@@ -101,6 +101,18 @@ const UnifiedView360 = ({ darkMode, mockMode, task }) => {
   const [activeTab, setActiveTab] = useState(initialTab);
   const [navParams, setNavParams] = useState({});
   const [demoMode, setDemoMode] = useState(Boolean(mockMode));
+
+  // ── Navigation-panel live customer lookup ────────────────────────────────
+  // When the widget is open outside of any task (navPanel) the agent can search
+  // a customer by email/phone. The resolved 360 context lives in Redux (same
+  // state the task-driven loaders populate).
+  const isNavPanel = Boolean(navPanel);
+  const [searchInput, setSearchInput] = useState('');
+  const manualStatus = useSelector((s) => s.email?.manualSearch?.status) || 'idle';
+  const manualIdentity = useSelector((s) => s.email?.manualSearch?.identity);
+  const resolvedProfile = useSelector((s) => s.email?.customerProfile);
+  // In nav-panel live mode, only reveal the 360 tabs once a customer is resolved.
+  const hasResolvedCustomer = Boolean(resolvedProfile) || manualStatus === 'searching';
 
   // Back / forward navigation stacks — each entry: { tab, params }
   const [histStack, setHistStack] = useState([]);
@@ -191,6 +203,34 @@ const UnifiedView360 = ({ darkMode, mockMode, task }) => {
 
   const canBack    = histStack.length > 0;
   const canForward = fwdStack.length > 0;
+
+  // Submit a manual customer lookup (email or phone) in nav-panel live mode.
+  const handleCustomerSearch = (e) => {
+    if (e && typeof e.preventDefault === 'function') e.preventDefault();
+    const q = searchInput.trim();
+    if (!q) return;
+    setActiveTab('history');
+    currentRef.current = { tab: 'history', params: {} };
+    setHistStack([]);
+    setFwdStack([]);
+    setNavParams({});
+    dispatch(searchCustomerByIdentityManual(q));
+  };
+
+  const handleClearCustomerSearch = () => {
+    setSearchInput('');
+    dispatch(clearManualCustomerSearch());
+  };
+
+  // Toggle between the demo showcase and the live search in nav-panel mode.
+  const handleToggleDemo = () => {
+    setDemoMode((d) => {
+      const next = !d;
+      // Leaving live → demo: drop any resolved customer so demo data is clean.
+      if (next && isNavPanel) dispatch(clearManualCustomerSearch());
+      return next;
+    });
+  };
 
   // Hydrate per-agent settings (localStorage) once the agent id is known.
   useEffect(() => {
@@ -308,6 +348,68 @@ const UnifiedView360 = ({ darkMode, mockMode, task }) => {
 
   return (
     <div className={`unified-360${darkMode ? ' md--dark' : ''}`}>
+      {/* ── Navigation-panel customer search bar (live lookup, no active task) ── */}
+      {isNavPanel && !demoMode && (
+        <form className="unified-360__search" onSubmit={handleCustomerSearch} role="search">
+          <div className="unified-360__search-field">
+            <Icon name="search_16" className="unified-360__search-icon" />
+            <input
+              type="text"
+              className="unified-360__search-input"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder={t('customer.search.placeholder')}
+              aria-label={t('customer.search.placeholder')}
+            />
+            {searchInput && (
+              <button
+                type="button"
+                className="unified-360__search-clear"
+                onClick={handleClearCustomerSearch}
+                title={t('customer.search.clear')}
+                aria-label={t('customer.search.clear')}
+              >
+                <Icon name="clear_16" />
+              </button>
+            )}
+          </div>
+          <button
+            type="submit"
+            className="unified-360__search-btn"
+            disabled={!searchInput.trim() || manualStatus === 'searching'}
+          >
+            {manualStatus === 'searching' ? t('customer.search.searching') : t('customer.search.button')}
+          </button>
+          <button
+            type="button"
+            className="unified-360__demo-toggle unified-360__demo-toggle--live"
+            onClick={handleToggleDemo}
+            title={t('analytics.demo')}
+          >
+            {t('analytics.demo')}
+          </button>
+        </form>
+      )}
+
+      {isNavPanel && !demoMode && manualStatus === 'notfound' && (
+        <div className="unified-360__search-msg" role="status">
+          {t('customer.search.notFound', { identity: manualIdentity || '' })}
+        </div>
+      )}
+      {isNavPanel && !demoMode && manualStatus === 'error' && (
+        <div className="unified-360__search-msg unified-360__search-msg--error" role="status">
+          {t('customer.search.error')}
+        </div>
+      )}
+
+      {/* ── Live-search empty state: prompt before any customer is resolved ── */}
+      {isNavPanel && !demoMode && !hasResolvedCustomer && manualStatus !== 'notfound' && (
+        <div className="unified-360__search-empty">
+          <Icon name="contact-card_24" className="unified-360__search-empty-icon" />
+          <p className="unified-360__search-empty-text">{t('customer.search.prompt')}</p>
+        </div>
+      )}
+
       {/* ── Customer context bar ── */}
       <div className="unified-360__customer-bar">
         <CustomerContactCard
@@ -317,6 +419,9 @@ const UnifiedView360 = ({ darkMode, mockMode, task }) => {
         />
       </div>
 
+      {/* ── Tab bar + content (hidden in live search until a customer resolves) ── */}
+      {(!isNavPanel || demoMode || hasResolvedCustomer) && (
+      <>
       {/* ── Tab bar ── */}
       <nav className="unified-360__tabs" role="tablist" aria-label="Customer 360">
         {/* Back / Forward buttons */}
@@ -363,7 +468,7 @@ const UnifiedView360 = ({ darkMode, mockMode, task }) => {
             <button
               type="button"
               className="unified-360__demo-toggle unified-360__demo-toggle--demo"
-              onClick={() => setDemoMode((d) => !d)}
+              onClick={handleToggleDemo}
               title={t('analytics.live')}
             >
               {t('analytics.demo')}
@@ -445,6 +550,8 @@ const UnifiedView360 = ({ darkMode, mockMode, task }) => {
             : <TaskWidget task={task} darkMode={darkMode} onNavigate={navigate} />
         )}
       </div>
+      </>
+      )}
     </div>
   );
 };

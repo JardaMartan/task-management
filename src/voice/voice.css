@@ -359,6 +359,132 @@
   color: rgba(255,255,255,.85);
 }
 
+/* ── Virtual Agent (IVR bot) pre-handoff segment ─────────────────────────── */
+.voice__va {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  margin-bottom: 8px;
+  background: var(--md-color-gray-05, #f7f8fa);
+  border: 1px solid var(--md-color-gray-20, #e8ebee);
+  border-radius: 10px;
+}
+.md--dark .voice__va {
+  background: rgba(255,255,255,.03);
+  border-color: rgba(255,255,255,.08);
+}
+.voice__va-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: #6b21a8;
+}
+.md--dark .voice__va-header { color: #c4b5fd; }
+.voice__va-icon { font-size: 13px; }
+.voice__va-provider { font-weight: 500; text-transform: none; letter-spacing: 0; color: #888; }
+.voice__va-containment {
+  margin-left: auto;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  color: #6b7280;
+}
+.md--dark .voice__va-containment { color: rgba(255,255,255,.5); }
+
+.voice__va-utterance { display: flex; flex-direction: column; max-width: 88%; }
+.voice__va-utterance--bot    { align-self: flex-start; }
+.voice__va-utterance--caller { align-self: flex-end; }
+.voice__va-utterance-meta { display: flex; gap: 6px; align-items: baseline; margin-bottom: 2px; padding: 0 4px; }
+.voice__va-utterance--caller .voice__va-utterance-meta { flex-direction: row-reverse; }
+.voice__va-utterance-speaker { font-size: 10px; font-weight: 600; color: #7c3aed; }
+.voice__va-utterance--caller .voice__va-utterance-speaker { color: #007ba3; }
+.md--dark .voice__va-utterance-speaker { color: #c4b5fd; }
+.md--dark .voice__va-utterance--caller .voice__va-utterance-speaker { color: #40c4f0; }
+.voice__va-utterance-time { font-size: 10px; color: #aaa; }
+.voice__va-utterance-text {
+  font-size: 12px;
+  line-height: 1.45;
+  padding: 6px 10px;
+  border-radius: 9px;
+  background: rgba(124,58,237,.08);
+  border: 1px solid rgba(124,58,237,.18);
+  color: #3b1a63;
+}
+.voice__va-utterance--caller .voice__va-utterance-text {
+  background: #fff;
+  border-color: rgba(0,0,0,.08);
+  color: #1a1a2e;
+}
+.md--dark .voice__va-utterance-text { background: rgba(124,58,237,.16); border-color: rgba(124,58,237,.3); color: rgba(255,255,255,.85); }
+.md--dark .voice__va-utterance--caller .voice__va-utterance-text { background: #252540; border-color: rgba(255,255,255,.08); color: rgba(255,255,255,.85); }
+
+.voice__va-handoff {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(124,58,237,.05);
+  border: 1px dashed rgba(124,58,237,.25);
+}
+.md--dark .voice__va-handoff { background: rgba(124,58,237,.08); border-color: rgba(124,58,237,.3); }
+.voice__va-handoff-row { display: flex; gap: 6px; font-size: 12px; line-height: 1.4; }
+.voice__va-handoff-label { flex: 0 0 auto; font-weight: 600; color: #6b21a8; }
+.md--dark .voice__va-handoff-label { color: #c4b5fd; }
+.voice__va-handoff-val { color: #1a1a2e; }
+.md--dark .voice__va-handoff-val { color: rgba(255,255,255,.82); }
+.voice__va-handoff-details { font-size: 11px; line-height: 1.45; color: #5b6b7b; font-style: italic; }
+.md--dark .voice__va-handoff-details { color: rgba(255,255,255,.55); }
+
+.voice__va-divider {
+  text-align: center;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: #16a34a;
+  padding-top: 4px;
+  position: relative;
+}
+.voice__va-divider::before,
+.voice__va-divider::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 24%;
+  height: 1px;
+  background: rgba(22,163,74,.35);
+}
+.voice__va-divider::before { left: 8%; }
+.voice__va-divider::after  { right: 8%; }
+.md--dark .voice__va-divider { color: #4ade80; }
+
+/* ── Wrap-up card (AI rail) ──────────────────────────────────────────────── */
+.voice__wrapup-reason { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 6px; }
+.voice__wrapup-reason-text { font-size: 13px; font-weight: 600; color: #1a1a2e; }
+.md--dark .voice__wrapup-reason-text { color: rgba(255,255,255,.88); }
+.voice__wrapup-code {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .03em;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(14,127,193,.1);
+  color: #0e7fc1;
+}
+.md--dark .voice__wrapup-code { background: rgba(45,173,206,.16); color: #40c4f0; }
+.voice__wrapup-note { display: flex; flex-direction: column; gap: 2px; }
+.voice__wrapup-note-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #6b7280; }
+.md--dark .voice__wrapup-note-label { color: rgba(255,255,255,.5); }
+.voice__wrapup-note-text { font-size: 12px; line-height: 1.45; color: #3b4757; }
+.md--dark .voice__wrapup-note-text { color: rgba(255,255,255,.75); }
+
 /* AI rail (right column): uses .widget-rail (flex col, gap 8px,
    padding 8px, overflow-y auto) from widget-layout.css. */
 

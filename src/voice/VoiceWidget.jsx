@@ -183,6 +183,49 @@ const VoiceWidget = ({ darkMode, mockMode, initialTaskId, onNavigate }) => {
             {selectedCall.active && <span className="voice__live-badge voice__live-badge--sm">● {t('voice.live')}</span>}
           </div>
           <div className="voice__transcript-scroll">
+            {selectedCall.virtualAgent && (
+              <div className="voice__va">
+                <div className="voice__va-header">
+                  <span className="voice__va-icon">🤖</span>
+                  {t('voice.va.title')}
+                  {selectedCall.virtualAgent.provider && (
+                    <span className="voice__va-provider">· {selectedCall.virtualAgent.provider}</span>
+                  )}
+                  {selectedCall.virtualAgent.containmentSec != null && (
+                    <span className="voice__va-containment">{t('voice.va.containment')}: {fmtDuration(selectedCall.virtualAgent.containmentSec)}</span>
+                  )}
+                </div>
+                {(selectedCall.virtualAgent.transcript || []).map((entry) => (
+                  <div key={entry.id} className={`voice__va-utterance voice__va-utterance--${entry.role}`}>
+                    <div className="voice__va-utterance-meta">
+                      <span className="voice__va-utterance-speaker">
+                        {entry.role === 'bot' ? t('voice.va.title') : selectedCall.customer}
+                      </span>
+                      {entry.time && <span className="voice__va-utterance-time">{entry.time}</span>}
+                    </div>
+                    <div className="voice__va-utterance-text">{entry.text}</div>
+                  </div>
+                ))}
+                <div className="voice__va-handoff">
+                  {selectedCall.virtualAgent.callReason && (
+                    <div className="voice__va-handoff-row">
+                      <span className="voice__va-handoff-label">{t('voice.va.callReason')}</span>
+                      <span className="voice__va-handoff-val">{selectedCall.virtualAgent.callReason}</span>
+                    </div>
+                  )}
+                  {selectedCall.virtualAgent.handOffReason && (
+                    <div className="voice__va-handoff-row">
+                      <span className="voice__va-handoff-label">{t('voice.va.handoffReason')}</span>
+                      <span className="voice__va-handoff-val">{selectedCall.virtualAgent.handOffReason}</span>
+                    </div>
+                  )}
+                  {selectedCall.virtualAgent.details && (
+                    <div className="voice__va-handoff-details">{selectedCall.virtualAgent.details}</div>
+                  )}
+                </div>
+                <div className="voice__va-divider">{t('voice.va.agentJoined')}</div>
+              </div>
+            )}
             {callTranscript.map(entry => {
               if (entry.role === 'system') {
                 return (
@@ -256,6 +299,25 @@ const VoiceWidget = ({ darkMode, mockMode, initialTaskId, onNavigate }) => {
               </div>
             ))}
           </div>
+
+          {/* Wrap-up */}
+          {selectedCall.wrapUp && (
+            <div className="voice__wrapup widget-rail-card">
+              <div className="widget-panel__subheader">{t('voice.wrapUp.title')}</div>
+              <div className="voice__wrapup-reason">
+                <span className="voice__wrapup-reason-text">{selectedCall.wrapUp.reason}</span>
+                {selectedCall.wrapUp.code && (
+                  <span className="voice__wrapup-code">{selectedCall.wrapUp.code}</span>
+                )}
+              </div>
+              {selectedCall.wrapUp.note && (
+                <div className="voice__wrapup-note">
+                  <span className="voice__wrapup-note-label">{t('voice.wrapUp.note')}</span>
+                  <span className="voice__wrapup-note-text">{selectedCall.wrapUp.note}</span>
+                </div>
+              )}
+            </div>
+          )}
 
         </div>
       </div>

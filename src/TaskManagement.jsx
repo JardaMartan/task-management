@@ -410,7 +410,8 @@ const TaskManagement = (props) => {
       <div className={`tm-view-mount${darkMode ? ' md--dark' : ''}`}>
         <UnifiedView360
           darkMode={darkMode}
-          mockMode={explicitView === '360-mock' || !taskPayload}
+          mockMode={explicitView === '360-mock'}
+          navPanel={!taskPayload}
           task={taskPayload}
         />
       </div>

@@ -48,6 +48,26 @@
 .reskill-root *::before,
 .reskill-root *::after { box-sizing: border-box; }
 
+/* Normalize Momentum React <Button> to the widget's 13px type scale. Momentum's
+   .md-button is 1rem (=16px) in a box sized per `size` prop (default 36/40px),
+   so buttons render larger and inconsistently vs the surrounding 13px UI. The
+   size rules are `.md-button.md-button--36` (0,2,0) and Momentum injects its CSS
+   lazily at runtime (often after this sheet), so an equal-specificity override
+   loses on source order — hence !important to force one uniform, compact box. */
+.reskill-root .md-button {
+  font-size: 13px !important;
+  line-height: 1.2 !important;
+  height: auto !important;
+  min-height: 0 !important;
+  min-width: 0 !important;
+  padding: 6px 14px !important;
+  border-radius: 14px !important;
+}
+.reskill-root .md-button .md-button__children {
+  font-size: 13px !important;
+  line-height: 1.2 !important;
+}
+
 .reskill-root.md--dark {
   --tm-border-card: 1px solid rgba(255, 255, 255, .08);
   --tm-shadow-card: none;
@@ -316,7 +336,7 @@
 }
 .reskill-ss__trigger:hover { border-color: var(--rk-accent); }
 .reskill-ss__trigger.is-open { border-color: var(--rk-accent); box-shadow: 0 0 0 3px var(--rk-accent-soft); }
-.reskill-ss__trigger.is-changed { border-color: var(--rk-changed); color: var(--rk-changed); font-weight: 700; }
+.reskill-ss__trigger.is-changed { border-color: var(--rk-changed); color: var(--rk-changed); font-weight: 600; }
 .reskill-ss__trigger:disabled { opacity: .55; cursor: default; }
 .reskill-ss__value { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .reskill-ss__trigger.is-placeholder .reskill-ss__value { color: var(--rk-muted); }

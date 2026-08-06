@@ -784,6 +784,70 @@
 .md--dark .history-view__interaction-summary-header { color: #a5b4fc; }
 .md--dark .history-view__interaction-summary-label  { color: #a5b4fc; }
 
+/* ── Virtual Agent handoff + Wrap-up blocks inside interaction summary ────── */
+.history-view__va,
+.history-view__wrapup-summary {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed rgba(99, 102, 241, 0.25);
+}
+.history-view__va-title,
+.history-view__wrapup-summary-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  font-weight: 700;
+  font-size: 0.73rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #6b21a8;
+  margin-bottom: 4px;
+}
+.md--dark .history-view__va-title,
+.md--dark .history-view__wrapup-summary-title { color: #c4b5fd; }
+.history-view__va-containment {
+  margin-left: auto;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  color: #6b7280;
+}
+.md--dark .history-view__va-containment { color: rgba(255,255,255,.5); }
+.history-view__va-row,
+.history-view__wrapup-summary-note {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 4px;
+}
+.history-view__va-label {
+  font-weight: 600;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #7c3aed;
+  margin-bottom: 1px;
+}
+.md--dark .history-view__va-label { color: #c4b5fd; }
+.history-view__va-val { font-size: 0.8rem; color: inherit; }
+.history-view__wrapup-summary-title { color: #0e7fc1; }
+.md--dark .history-view__wrapup-summary-title { color: #40c4f0; }
+.history-view__wrapup-summary-reason {
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  color: inherit;
+}
+.history-view__wrapup-summary-code {
+  font-weight: 700;
+  font-size: 0.66rem;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: rgba(14,127,193,.1);
+  color: #0e7fc1;
+}
+.md--dark .history-view__wrapup-summary-code { background: rgba(45,173,206,.16); color: #40c4f0; }
+
 /* ── Inline case detail panel ── */
 .history-view__case-panel {
   margin-top: 8px;
@@ -2682,6 +2746,144 @@
 .sla-requeue-btn--primary { background: var(--c-accent); border-color: var(--c-accent); color: #fff; }
 .sla-requeue-btn--primary:hover { filter: brightness(0.95); }
 .sla-requeue-btn--primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Navigation-panel customer search bar (live lookup, no active task) ── */
+.unified-360__search {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--md-color-white-100, #fff);
+  border-bottom: 1px solid var(--md-color-gray-20, #e8ebee);
+}
+.unified-360__search-field {
+  position: relative;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+}
+.unified-360__search-icon {
+  position: absolute;
+  left: 10px;
+  color: var(--md-color-gray-50, #8a9199);
+  pointer-events: none;
+  font-size: 16px;
+}
+.unified-360__search-input {
+  width: 100%;
+  box-sizing: border-box;
+  height: 34px;
+  padding: 0 32px 0 32px;
+  border: 1px solid var(--md-color-gray-30, #dbe3ec);
+  border-radius: 17px;
+  background: var(--md-color-gray-05, #f4f7fa);
+  color: var(--md-color-gray-90, #0a2236);
+  font-family: var(--md-font-family, inherit);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+.unified-360__search-input:focus {
+  border-color: var(--md-color-blue-50, #0e7fc1);
+  background: var(--md-color-white-100, #fff);
+  box-shadow: 0 0 0 3px rgba(14, 127, 193, 0.15);
+}
+.unified-360__search-clear {
+  position: absolute;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--md-color-gray-50, #8a9199);
+  cursor: pointer;
+}
+.unified-360__search-clear:hover {
+  background: var(--md-color-gray-20, #e8ebee);
+  color: var(--md-color-gray-80, #0a2236);
+}
+.unified-360__search-btn {
+  flex: none;
+  height: 34px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 17px;
+  background: var(--md-color-blue-50, #0e7fc1);
+  color: #fff;
+  font-family: var(--md-font-family, inherit);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+}
+.unified-360__search-btn:hover:not(:disabled) {
+  background: var(--md-color-blue-60, #0b6ca6);
+}
+.unified-360__search-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.unified-360__search-msg {
+  flex: none;
+  padding: 8px 14px;
+  font-size: 12.5px;
+  color: var(--md-color-gray-60, #5b6b7b);
+  background: var(--md-color-gray-05, #f4f7fa);
+  border-bottom: 1px solid var(--md-color-gray-20, #e8ebee);
+}
+.unified-360__search-msg--error {
+  color: var(--md-color-red-60, #b0362c);
+}
+.unified-360__search-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 40px 24px;
+  text-align: center;
+}
+.unified-360__search-empty-icon {
+  color: var(--md-color-gray-40, #b0bac4);
+  font-size: 24px;
+}
+.unified-360__search-empty-text {
+  margin: 0;
+  max-width: 280px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--md-color-gray-60, #5b6b7b);
+}
+/* Dark theme */
+.unified-360.md--dark .unified-360__search {
+  background: var(--md-color-gray-90, #22223a);
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+.unified-360.md--dark .unified-360__search-input {
+  background: var(--md-color-gray-95, #0f1b26);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.88);
+}
+.unified-360.md--dark .unified-360__search-input:focus {
+  background: var(--md-color-gray-90, #17242f);
+  border-color: #2dadce;
+  box-shadow: 0 0 0 3px rgba(45, 173, 206, 0.20);
+}
+.unified-360.md--dark .unified-360__search-msg {
+  background: var(--md-color-gray-90, #22223a);
+  color: rgba(255, 255, 255, 0.6);
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+.unified-360.md--dark .unified-360__search-empty-text {
+  color: rgba(255, 255, 255, 0.5);
+}
 
 /* ── Customer context bar (between tab nav and content, live mode) ── */
 /* The bar is always rendered in the DOM when not in demo mode, but the     */

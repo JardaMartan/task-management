@@ -17,6 +17,9 @@ const ANALYTICS_CHANNEL_COLORS = {
   phone: '#4db33d',
   chat: '#007aa3',
   webchat: '#007aa3',
+  web: '#00a0d1',
+  social: '#e1306c',
+  messenger: '#0084ff',
   whatsapp: '#25d366',
   sms: '#60a5fa',
   task: '#888888',
@@ -600,15 +603,19 @@ const deriveInteractionMetrics = (events) => {
 
 // ─── InteractionMetrics component ────────────────────────────────────────────
 
-const InteractionMetrics = ({ metrics }) => {
+const InteractionMetrics = ({ metrics, channel }) => {
   if (!metrics) return null;
   const { ivrSec, queueSec, talkSec, holdSec, wrapupDurSec, wrapUpName } = metrics;
   const { t } = useI18n();
 
+  // Voice interactions use "Talk"; other channels (email, chat, …) are "Handling" time.
+  const isVoice = ['voice', 'call', 'phone'].includes(channel);
+  const durationLabel = t(isVoice ? 'history.metrics.talk' : 'history.metrics.handle');
+
   const chips = [];
   if (ivrSec > 0)       chips.push({ key: 'ivr',    label: t('history.metrics.ivr'),    value: fmtSec(ivrSec)       });
   if (queueSec > 0)     chips.push({ key: 'queue',  label: t('history.metrics.queue'),  value: fmtSec(queueSec)     });
-  if (talkSec > 0)      chips.push({ key: 'talk',   label: t('history.metrics.talk'),   value: fmtSec(talkSec)      });
+  if (talkSec > 0)      chips.push({ key: 'talk',   label: durationLabel,               value: fmtSec(talkSec)      });
   if (holdSec > 0)      chips.push({ key: 'hold',   label: t('history.metrics.hold'),   value: fmtSec(holdSec)      });
   if (wrapupDurSec > 0) chips.push({ key: 'wrapup', label: t('history.metrics.wrapup'), value: fmtSec(wrapupDurSec) });
 
@@ -637,7 +644,7 @@ const InteractionMetrics = ({ metrics }) => {
 const InteractionSummary = ({ summary }) => {
   if (!summary) return null;
   const { t } = useI18n();
-  const { initialContactReason, keyActionsTaken, nextSteps, additionalContactReasons } = summary;
+  const { initialContactReason, keyActionsTaken, nextSteps, additionalContactReasons, virtualAgent, wrapUp } = summary;
   const rows = [
     { key: 'reason',     icon: '💬', label: t('history.aiSummaryReason'),      text: initialContactReason },
     { key: 'actions',    icon: '✅',    label: t('history.aiSummaryActions'),     text: keyActionsTaken },
@@ -645,7 +652,7 @@ const InteractionSummary = ({ summary }) => {
     { key: 'additional', icon: '📎',    label: t('history.aiSummaryAdditional'),  text: additionalContactReasons },
   ].filter((r) => r.text);
 
-  if (rows.length === 0) return null;
+  if (rows.length === 0 && !virtualAgent && !wrapUp) return null;
 
   return (
     <div className="history-view__interaction-summary">
@@ -659,6 +666,45 @@ const InteractionSummary = ({ summary }) => {
           <span className="history-view__interaction-summary-text">{r.text}</span>
         </div>
       ))}
+      {virtualAgent && (virtualAgent.callReason || virtualAgent.handOffReason) && (
+        <div className="history-view__va">
+          <div className="history-view__va-title">
+            🤖 {t('history.aiSummaryVaTitle')}
+            {virtualAgent.containmentSec != null && (
+              <span className="history-view__va-containment">
+                {t('history.aiSummaryVaContainment')}: {fmtSec(virtualAgent.containmentSec)}
+              </span>
+            )}
+          </div>
+          {virtualAgent.callReason && (
+            <div className="history-view__va-row">
+              <span className="history-view__va-label">{t('history.aiSummaryVaCallReason')}</span>
+              <span className="history-view__va-val">{virtualAgent.callReason}</span>
+            </div>
+          )}
+          {virtualAgent.handOffReason && (
+            <div className="history-view__va-row">
+              <span className="history-view__va-label">{t('history.aiSummaryVaHandoff')}</span>
+              <span className="history-view__va-val">{virtualAgent.handOffReason}</span>
+            </div>
+          )}
+        </div>
+      )}
+      {wrapUp && (wrapUp.reason || wrapUp.note) && (
+        <div className="history-view__wrapup-summary">
+          <div className="history-view__wrapup-summary-title">
+            🏷️ {t('history.aiSummaryWrapUpTitle')}
+            {wrapUp.reason && <span className="history-view__wrapup-summary-reason">{wrapUp.reason}</span>}
+            {wrapUp.code && <span className="history-view__wrapup-summary-code">{wrapUp.code}</span>}
+          </div>
+          {wrapUp.note && (
+            <div className="history-view__wrapup-summary-note">
+              <span className="history-view__va-label">{t('history.aiSummaryWrapUpNote')}</span>
+              <span className="history-view__va-val">{wrapUp.note}</span>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };
@@ -972,7 +1018,7 @@ const InteractionGroup = ({ taskId, events, darkMode, defaultOpen = false, cases
             )}
           </div>
         )}
-        <InteractionMetrics metrics={metrics} />
+        <InteractionMetrics metrics={metrics} channel={first.channel} />
         <div style={{ color: 'var(--md-color-gray-50)', fontSize: '0.75rem' }}>
           {shortId}
         </div>

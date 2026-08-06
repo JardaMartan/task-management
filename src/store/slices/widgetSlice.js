@@ -313,6 +313,16 @@ const widgetSlice = createSlice({
                 historyPageSize: state.caseWorkflow.historyPageSize,
             };
         },
+        // Seed the case workflow for a manually-searched customer (navigation-panel
+        // live lookup). Resets to a clean slate keyed to the searched identity so the
+        // Cases tab loads that customer's related cases.
+        setManualCustomerData: (state, action) => {
+            state.caseWorkflow = {
+                ...initialCaseState,
+                historyPageSize: state.caseWorkflow.historyPageSize,
+                customerData: action.payload || null,
+            };
+        },
         clearSearch: (state) => {
             state.caseWorkflow = {
                 ...initialCaseState,
@@ -386,6 +396,7 @@ export const {
     updateCaseData,
     rollbackCaseData,
     clearCaseWorkflow,
+    setManualCustomerData,
     clearSearch,
     stopJDSStreaming,
     setOutdialPending,

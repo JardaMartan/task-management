@@ -16,6 +16,7 @@ import {
   searchCustomerByIdentity,
 } from '../../api';
 import { createAiProvider } from '../../ai/aiProvider';
+import { setManualCustomerData, clearCaseWorkflow } from './widgetSlice';
 
 // Non-serializable refs stored outside Redux (per State Serialization Discipline)
 let emailSseUnsubscribe = null;
@@ -162,6 +163,8 @@ const initialState = {
   error: null,
   slaExpiresAt: null,       // SLA expiry (epoch ms) for the active email task; null = unknown
   emailTouched: false,      // agent has started working on this task (drafted a reply)
+  // Navigation-panel live customer lookup (search by email/phone, no active task).
+  manualSearch: { status: 'idle', identity: null }, // status: idle|searching|found|notfound|error
 };
 
 const emailSlice = createSlice({
@@ -280,6 +283,12 @@ const emailSlice = createSlice({
     setEmailTouched: (state, action) => {
       state.emailTouched = Boolean(action.payload);
     },
+    setManualSearch: (state, action) => {
+      state.manualSearch = {
+        status: action.payload?.status || 'idle',
+        identity: action.payload?.identity ?? null,
+      };
+    },
     resetEmail: () => ({ ...initialState }),
     resetEmailContent: (state) => ({
       // Preserves everything that was loaded for the current task so that
@@ -374,6 +383,7 @@ export const {
   setError,
   setSlaExpiresAt,
   setEmailTouched,
+  setManualSearch,
   resetEmail,
   resetEmailContent,
   setMockEmailData,
@@ -1191,6 +1201,125 @@ export const loadJdsHistoryForVoiceTask = (task) => async (dispatch, getState) =
     (event) => dispatch(handleSseEvent(event)),
     (err) => console.error('[EmailSlice] SSE error (voice):', err),
   );
+};
+
+/**
+ * Manually resolve a customer by a typed identity (email or phone number) and
+ * load their full Customer-360 context — used by the navigation-panel "live"
+ * lookup where the widget is open outside of any active task.
+ *
+ * Populates the same Redux state as the task-driven loaders so every 360 tab
+ * (contact card, History, Cases) renders the searched customer:
+ *   - email.customerProfile / customerEmail / customerIdentities / customerHistory
+ *   - widget.caseWorkflow.customerData (so the Cases tab can load related cases)
+ * Also subscribes to the JDS SSE stream for live event updates.
+ */
+export const searchCustomerByIdentityManual = (rawIdentity) => async (dispatch, getState) => {
+  const identity = String(rawIdentity || '').trim();
+  if (!identity) return;
+
+  const { widget } = getState();
+  const { accesstoken, workspaceid, datacenter } = widget;
+  if (!accesstoken || !workspaceid) {
+    console.warn('[EmailSlice] searchCustomerByIdentityManual: missing credentials');
+    dispatch(setManualSearch({ status: 'error', identity }));
+    return;
+  }
+
+  const isEmail = identity.includes('@');
+  const syntheticId = `manual:${identity}`;
+
+  // Clear any previous customer context and key the session to this search.
+  dispatch(setCustomerProfile(null));
+  dispatch(setCustomerHistory([]));
+  dispatch(setCustomerIdentities([]));
+  dispatch(setCustomerEmail(null));
+  dispatch(setAiEnrichment(null));
+  dispatch(setActiveInteractionId(syntheticId));
+  dispatch(setManualSearch({ status: 'searching', identity }));
+
+  let allIdentities = [identity];
+  let profile = null;
+  try {
+    const persons = await searchCustomerByIdentity(identity, accesstoken, workspaceid, datacenter);
+    // Staleness guard: discard if a newer search started while this was in-flight.
+    if (getState().email.activeInteractionId !== syntheticId) return;
+    if (persons && persons.length > 0) {
+      profile = persons[0];
+      const personEmails = Array.isArray(profile.email) ? profile.email : (profile.email ? [profile.email] : []);
+      const personPhones = Array.isArray(profile.phone) ? profile.phone : (profile.phone ? [profile.phone] : []);
+      allIdentities = [...new Set([identity, ...personEmails, ...personPhones].filter(Boolean))];
+    }
+  } catch (err) {
+    console.warn('[EmailSlice] searchCustomerByIdentityManual: JDS lookup failed', err);
+    if (getState().email.activeInteractionId !== syntheticId) return;
+  }
+
+  const hadPerson = Boolean(profile);
+  // Fall back to a minimal profile built from the typed identity so the contact
+  // card and history query still work when JDS has no person record.
+  if (!profile) profile = isEmail ? { email: identity } : { phone: identity };
+  dispatch(setCustomerProfile(profile));
+
+  const pickEmail = (v) => {
+    if (Array.isArray(v)) return v.find((e) => String(e).includes('@')) || null;
+    return typeof v === 'string' && v.includes('@') ? v : null;
+  };
+  const pickPhone = (v) => {
+    if (Array.isArray(v)) return v[0] || null;
+    return typeof v === 'string' ? v : null;
+  };
+  const primaryEmail = isEmail ? identity : pickEmail(profile.email);
+  const primaryPhone = !isEmail ? identity : pickPhone(profile.phone);
+  if (primaryEmail) dispatch(setCustomerEmail(primaryEmail));
+  dispatch(setCustomerIdentities(allIdentities));
+
+  // Seed the case workflow so the Cases tab loads this customer's related cases.
+  dispatch(setManualCustomerData({
+    name: profile.name || [profile.firstName, profile.lastName].filter(Boolean).join(' ') || null,
+    email: primaryEmail,
+    phone: primaryPhone,
+  }));
+
+  // Load JDS history across every resolved identity.
+  await dispatch(fetchCustomerJdsHistory(allIdentities, accesstoken, workspaceid, datacenter, undefined, syntheticId));
+  if (getState().email.activeInteractionId !== syntheticId) return;
+
+  // Optional AI-summary enrichment for the email identity.
+  if (primaryEmail) dispatch(fetchJdsAiSummary(primaryEmail));
+
+  // Subscribe to live SSE updates — prefer an email identity (more stable).
+  const sseIdentity = allIdentities.find((id) => String(id).includes('@')) || identity;
+  if (emailSseUnsubscribe) emailSseUnsubscribe();
+  emailSseUnsubscribe = subscribeToCustomerEvents(
+    sseIdentity,
+    accesstoken,
+    workspaceid,
+    datacenter,
+    (event) => dispatch(handleSseEvent(event)),
+    (err) => console.error('[EmailSlice] SSE error (manual search):', err),
+  );
+
+  const foundSomething = hadPerson || getState().email.customerHistory.length > 0;
+  dispatch(setManualSearch({ status: foundSomething ? 'found' : 'notfound', identity }));
+};
+
+/**
+ * Clear a manual navigation-panel customer lookup and its 360 context.
+ */
+export const clearManualCustomerSearch = () => (dispatch) => {
+  if (emailSseUnsubscribe) {
+    emailSseUnsubscribe();
+    emailSseUnsubscribe = null;
+  }
+  dispatch(setCustomerProfile(null));
+  dispatch(setCustomerHistory([]));
+  dispatch(setCustomerIdentities([]));
+  dispatch(setCustomerEmail(null));
+  dispatch(setAiEnrichment(null));
+  dispatch(setActiveInteractionId(null));
+  dispatch(clearCaseWorkflow());
+  dispatch(setManualSearch({ status: 'idle', identity: null }));
 };
 
 /**

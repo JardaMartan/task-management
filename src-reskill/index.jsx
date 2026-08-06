@@ -1,6 +1,5 @@
 // Ensure AgentX globals exist before anything imports SDK expectations.
 import './agentx-globals';
-import '@momentum-ui/core/css/momentum-ui.min.css';
 import './styles.css';
 import React from 'react';
 import ReactDOM from 'react-dom';
@@ -13,6 +12,34 @@ import { hydrateContext } from './store/slices/reskillSlice';
 
 const ELEMENT_TAG = 'bulk-reskill-widget';
 const STYLE_ID = 'bulk-reskill-styles';
+
+// Momentum core CSS is loaded from a CDN instead of bundled (~1.3 MB saved). The
+// stylesheet's own @font-face url()s then resolve against the CDN, so the fonts
+// come from the CDN too (jsDelivr sends the CORS header cross-origin fonts need).
+const MOMENTUM_CSS_CDN = 'https://cdn.jsdelivr.net/npm/@momentum-ui/core@19.16.1/css/momentum-ui.min.css';
+const MOMENTUM_LINK_ID = 'bulk-reskill-momentum-css';
+
+/**
+ * Inject the Momentum CSS <link> into the correct root. A cross-origin
+ * stylesheet cannot be copied via cssRules into a shadow root, so it must live
+ * directly inside the shadow root; in light DOM / an iframe it goes in the head.
+ * Inserted at the front so the widget's own styles (loaded after) still win.
+ */
+const injectMomentumLink = (node) => {
+  const root = node?.getRootNode?.() || document;
+  const inShadow = typeof ShadowRoot !== 'undefined' && root instanceof ShadowRoot;
+  const target = inShadow ? root : document.head;
+  if (!target || target.querySelector(`#${MOMENTUM_LINK_ID}`)) return;
+  const link = document.createElement('link');
+  link.id = MOMENTUM_LINK_ID;
+  link.rel = 'stylesheet';
+  link.href = MOMENTUM_CSS_CDN;
+  target.insertBefore(link, target.firstChild);
+};
+
+// Kick off the CDN download as early as possible (covers the light-DOM case).
+injectMomentumLink(document);
+
 
 /**
  * Copy document stylesheets into a shadow root so Momentum + widget CSS resolve
@@ -50,6 +77,7 @@ const injectCSS = (container) => {
 if (globalThis.document?.getElementById('react-root')) {
   const container = globalThis.document.getElementById('react-root');
   injectCSS(container);
+  injectMomentumLink(container);
   const params = (() => {
     try { return new URLSearchParams(globalThis.location?.search); } catch { return null; }
   })();
@@ -216,6 +244,7 @@ class BulkReskillElement extends HTMLElement {
     this.appendChild(container);
 
     injectCSS(this);
+    injectMomentumLink(this);
     this._hydrate();
 
     const locale = this._props.locale || detectBrowserLocale();

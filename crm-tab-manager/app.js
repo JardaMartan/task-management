@@ -14,6 +14,7 @@ var _tabManagerI18n = {
     placementSide:        'Side (left)',
     placementTop:         'Top',
     saveBtn:              'Save & Reconnect',
+    saveOnly:             'Save',
     interactionsTitle:    'Active Interactions',
     emptyState:           'No active interactions',
     connected:            'Connected',
@@ -72,6 +73,7 @@ var _tabManagerI18n = {
     placementSide:        'Seitlich (links)',
     placementTop:         'Oben',
     saveBtn:              'Speichern & Verbinden',
+    saveOnly:             'Speichern',
     interactionsTitle:    'Aktive Interaktionen',
     emptyState:           'Keine aktiven Interaktionen',
     connected:            'Verbunden',
@@ -130,6 +132,7 @@ var _tabManagerI18n = {
     placementSide:        'Po straně (vlevo)',
     placementTop:         'Nahoře',
     saveBtn:              'Uložit a připojit',
+    saveOnly:             'Uložit',
     interactionsTitle:    'Aktivní interakce',
     emptyState:           'Žádné aktivní interakce',
     connected:            'Připojeno',
@@ -211,6 +214,11 @@ if (_sessionId) {
   console.warn('[tab-manager] No session ID in URL — multi-agent isolation disabled for this window');
 }
 
+// Transport selection (Option E). When the header opens this window with
+// ?transport=bridge, talk directly to window.opener via postMessage — no relay.
+const _transport = (new URLSearchParams(location.search).get('transport') || 'relay').toLowerCase();
+if (_transport === 'bridge') console.log('[tab-manager] transport = bridge (postMessage to opener; no relay server)');
+
 function loadConfig() {
   try { return JSON.parse(localStorage.getItem(CONFIG_KEY)) || {}; } catch { return {}; }
 }
@@ -242,6 +250,15 @@ let config = {
   sla: { focus: { enabled: false, triggerOn: 'imminent', idleCode: null } },
   ..._savedConfig,
 };
+
+// Layout-driven override: crm-sync-header forwards ?autoclose=1|0 so auto-close
+// follows the Desktop layout rather than this origin's localStorage (which
+// resets whenever the Tab Manager host changes).
+const _autoCloseParam = new URLSearchParams(location.search).get('autoclose');
+if (_autoCloseParam !== null) {
+  config.autoCloseOnWrapup = (_autoCloseParam === '1' || _autoCloseParam === 'true');
+  saveConfig(config);
+}
 
 // SLA settings runtime state: catalog relayed by the watcher + the current
 // focus/requeue values to reflect in the pickers once options arrive.
@@ -396,12 +413,18 @@ function _doEndShift() {
 function wireSaveBtn() {
   if (!saveBtn) return;
   saveBtn.addEventListener('click', () => {
-    if (wsUrlInput)      config.wsUrl             = wsUrlInput.value.trim() || 'ws://localhost:3001';
+    if (_transport !== 'bridge' && wsUrlInput) config.wsUrl = wsUrlInput.value.trim() || 'ws://localhost:3001';
     if (crmUrlInput)     config.crmUrlTemplate    = crmUrlInput.value.trim();
     if (autoCloseEl)     config.autoCloseOnWrapup = autoCloseEl.checked;
     if (placementSelect) config.crmTabPlacement   = placementSelect.value;
     saveConfig(config);
-    reconnect();
+    // Bridge mode has no relay connection to re-establish; the postMessage link
+    // to the opener stays up across saves. Only re-handshake if it had dropped.
+    if (_transport === 'bridge') {
+      if (!_bridgeReady) bridgeReconnect(); else setStatus(true);
+    } else {
+      reconnect();
+    }
   });
 }
 
@@ -596,6 +619,20 @@ if (USE_EMBEDDED) {
 applyConfigToUI();
 applyI18n();
 wireSaveBtn();
+
+// Bridge mode: no relay connection to (re)establish, so simplify the settings
+// UI — relabel the button ("Save", not "Save & Reconnect") and hide the
+// irrelevant Relay WebSocket URL field.
+if (_transport === 'bridge') {
+  ['save-btn', 'save-btn-emb'].forEach((id) => {
+    const b = document.getElementById(id);
+    if (b) b.textContent = _t.saveOnly;
+  });
+  ['ws-url-input', 'ws-url-input-emb'].forEach((id) => {
+    const field = document.getElementById(id) && document.getElementById(id).closest('.field');
+    if (field) field.style.display = 'none';
+  });
+}
 
 
 function isEmailIdentity(value) {
@@ -879,12 +916,71 @@ function setStatus(connected) {
 }
 
 function sendWs(msg) {
+  if (_transport === 'bridge') { bridgeSend(msg); return; }
   if (ws && ws.readyState === WebSocket.OPEN) {
     console.log('[tab-manager] →', msg.type, msg);
     ws.send(JSON.stringify(msg));
   } else {
     console.warn('[tab-manager] cannot send (not connected):', msg.type);
   }
+}
+
+/* ── Peer-to-peer bridge transport (Option E) ────────────────────────────── */
+// Direct postMessage link to the header's window (our window.opener). No server.
+let _bridgeReady = false;
+let _bridgeHelloTimer = null;
+let _bridgePeerOrigin = '*';   // refined to the opener's real origin on first message
+
+function bridgeSend(msg) {
+  const peer = window.opener;
+  if (!peer || peer.closed) { console.warn('[tab-manager] bridge: no opener to send', msg.type); return; }
+  console.log('[tab-manager] →(bridge)', msg.type, msg);
+  try { peer.postMessage({ __crmBridge: true, v: 1, sessionId: _sessionId, payload: msg }, _bridgePeerOrigin); }
+  catch (e) { console.warn('[tab-manager] bridge send failed:', e.message); }
+}
+
+function bridgeOnMessage(evt) {
+  const d = evt.data;
+  if (!d || d.__crmBridge !== true) return;
+  if (d.sessionId && _sessionId && d.sessionId !== _sessionId) return; // not our session
+  if (evt.origin && evt.origin !== 'null') _bridgePeerOrigin = evt.origin;
+  if (d.kind === 'BRIDGE_ACK') {
+    if (!_bridgeReady) {
+      _bridgeReady = true;
+      clearInterval(_bridgeHelloTimer);
+      setStatus(true);
+      console.log('[tab-manager] bridge connected to opener');
+      sendWs({ type: 'CRM_CLIENT_CONNECTED' }); // trigger the header's state flush
+    }
+    return;
+  }
+  if (d.payload) handleMessage(d.payload);
+}
+
+function bridgeConnect() {
+  window.addEventListener('message', bridgeOnMessage);
+  startBridgeHello();
+}
+
+// Post BRIDGE_HELLO to the opener until it acks. Used on first connect and on
+// an explicit re-handshake (Save) without re-installing the message listener.
+function startBridgeHello() {
+  const hello = () => {
+    const peer = window.opener;
+    if (!peer || peer.closed) { setStatus(false); console.warn('[tab-manager] bridge: no window.opener — open the Tab Manager from the header'); return; }
+    try { peer.postMessage({ __crmBridge: true, v: 1, kind: 'BRIDGE_HELLO', sessionId: _sessionId }, _bridgePeerOrigin); }
+    catch (e) { /* opener not ready yet */ }
+  };
+  hello();
+  clearInterval(_bridgeHelloTimer);
+  _bridgeHelloTimer = setInterval(() => { if (_bridgeReady) { clearInterval(_bridgeHelloTimer); return; } hello(); }, 1000);
+}
+
+// Re-run the opener handshake (message listener already installed).
+function bridgeReconnect() {
+  _bridgeReady = false;
+  setStatus(false);
+  startBridgeHello();
 }
 
 function connect() {
@@ -927,6 +1023,7 @@ function connect() {
 }
 
 function reconnect() {
+  if (_transport === 'bridge') { bridgeReconnect(); return; }
   clearTimeout(reconnectTimer);
   clearInterval(heartbeatTimer);
   if (ws) { try { ws.close(); } catch (_) {} }
@@ -1129,4 +1226,5 @@ try {
   console.warn('[tab-manager] BroadcastChannel not available:', e.message);
 }
 
-connect();
+if (_transport === 'bridge') bridgeConnect();
+else connect();

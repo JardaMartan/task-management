@@ -40,6 +40,17 @@
   var _relayReconnectTimer = null;
   var _relayReady         = false;
   var _titleQueue         = [];   // messages buffered before WS is open
+
+  /* ── Transport selection (Option E: peer-to-peer postMessage bridge) ─────── */
+  // 'relay'  = WebSocket relay server (default, unchanged).
+  // 'bridge' = direct window.postMessage to the opened Tab Manager window; no server.
+  var _transport      = 'relay';  // configured via the `transport` property
+  var _bridgePeer     = null;     // Tab Manager Window handle (bridge mode)
+  var _bridgeOrigin   = '*';      // targetOrigin for postMessage to the peer
+  var _bridgeReady    = false;    // true once the peer handshake (HELLO/ACK) completes
+  var _bridgeListening = false;   // guards single window 'message' listener registration
+  var _managerUrl     = null;     // explicit Tab Manager base URL (`managerurl` property); overrides wsurl-derived host
+  var _autoCloseCrm   = null;     // `autoclose` property; null = leave the Tab Manager's own setting, else force it
   var _accessToken        = '';    // configured via the `accesstoken` property
   var _autoOpenManager    = false; // configured via the `autoopen` property
   var _jdsWorkspaceId     = '';    // configured via the `workspaceid` property; enables customer email resolution
@@ -150,22 +161,27 @@
   function _openCrmTabManager() {
     if (_crmTabManagerWindow && !_crmTabManagerWindow.closed) return;
 
-    var wsUrl = _relayWsUrl;
-    if (!wsUrl) {
-      console.warn('[crm-sync-header] _openCrmTabManager: relay URL not configured (wsurl property missing)');
-      return;
-    }
-    var managerUrl;
-    try {
-      var parsed = new URL(wsUrl);
-      var scheme = parsed.protocol === 'wss:' ? 'https' : 'http';
-      managerUrl = scheme + '://' + parsed.host + '/crm-tab-manager/';
-    } catch (e) {
-      console.warn('[crm-sync-header] _openCrmTabManager: cannot parse wsUrl', wsUrl);
-      return;
+    var managerUrl = _managerUrl;
+    if (!managerUrl) {
+      var wsUrl = _relayWsUrl;
+      if (!wsUrl) {
+        console.warn('[crm-sync-header] _openCrmTabManager: no managerurl and no wsurl configured');
+        return;
+      }
+      try {
+        var parsed = new URL(wsUrl);
+        var scheme = parsed.protocol === 'wss:' ? 'https' : 'http';
+        managerUrl = scheme + '://' + parsed.host + '/crm-tab-manager/';
+      } catch (e) {
+        console.warn('[crm-sync-header] _openCrmTabManager: cannot parse wsUrl', wsUrl);
+        return;
+      }
     }
 
-    var url = managerUrl + '?session=' + encodeURIComponent(_sessionId);
+    var sep = managerUrl.indexOf('?') === -1 ? '?' : '&';
+    var url = managerUrl + sep + 'session=' + encodeURIComponent(_sessionId);
+    if (_transport === 'bridge') url += '&transport=bridge';
+    if (_autoCloseCrm !== null) url += '&autoclose=' + (_autoCloseCrm ? '1' : '0');
     var windowName = 'crm_manager_' + _sessionId;
 
     // Open WITHOUT a window-features string so the browser creates a normal
@@ -178,12 +194,17 @@
     _crmTabManagerWindow = window.open(url, windowName);
     if (!_crmTabManagerWindow) {
       console.warn('[crm-sync-header] Tab Manager window.open blocked');
+    } else if (_transport === 'bridge') {
+      // Seed the peer handle + origin; the handshake refines them on first message.
+      _bridgePeer = _crmTabManagerWindow;
+      try { _bridgeOrigin = new URL(managerUrl).origin; } catch (_) {}
     }
   }
 
   /* ── Relay WebSocket ─────────────────────────────────────────────────────── */
 
   function _relaySend(msg) {
+    if (_transport === 'bridge') { _bridgeSend(msg); return; }
     if (_relayReady && _relayWs && _relayWs.readyState === WebSocket.OPEN) {
       _relayWs.send(JSON.stringify(msg));
     } else {
@@ -192,7 +213,98 @@
     }
   }
 
+  /* ── Peer-to-peer bridge (Option E) ──────────────────────────────────────── */
+
+  function _bridgeSend(msg) {
+    if (_bridgeReady && _bridgePeer && !_bridgePeer.closed) {
+      try {
+        _bridgePeer.postMessage({ __crmBridge: true, v: 1, sessionId: _sessionId, payload: msg }, _bridgeOrigin);
+        return;
+      } catch (e) { /* peer gone — fall through to queue */ }
+    }
+    _titleQueue.push(msg);
+  }
+
+  function _bridgeFlush() {
+    while (_titleQueue.length && _bridgeReady && _bridgePeer && !_bridgePeer.closed) {
+      _bridgeSend(_titleQueue.shift());
+    }
+  }
+
+  function _bridgeOnMessage(evt) {
+    var d = evt.data;
+    if (!d || d.__crmBridge !== true) return;
+    if (d.sessionId && _sessionId && d.sessionId !== _sessionId) return; // not our session
+    // Adopt the peer handle + origin from the first valid inbound message.
+    if (evt.source) _bridgePeer = evt.source;
+    if (evt.origin && evt.origin !== 'null') _bridgeOrigin = evt.origin;
+
+    if (d.kind === 'BRIDGE_HELLO') {
+      _bridgeReady = true;
+      try {
+        _bridgePeer.postMessage({ __crmBridge: true, v: 1, kind: 'BRIDGE_ACK', sessionId: _sessionId }, _bridgeOrigin);
+      } catch (e) { /* ignore */ }
+      _bridgeFlush();
+      _tickStatus();
+      return; // the peer follows up with CRM_CLIENT_CONNECTED to trigger the flush
+    }
+    if (d.payload) _handleRelayMessage(d.payload);
+  }
+
+  function _bridgeStart() {
+    if (_bridgeListening) return;
+    _bridgeListening = true;
+    window.addEventListener('message', _bridgeOnMessage);
+    console.log('[crm-sync-header] transport = bridge (postMessage; no relay server)');
+  }
+
+  /* ── Inbound message handling (shared by relay + bridge transports) ──────── */
+
+  function _handleRelayMessage(msg) {
+    if (msg && msg.type === 'CRM_TAB_SELECTED' && msg.interactionId) {
+      // The agent focused a CRM tab → ask panel-layout-headless to click the
+      // matching task in the Desktop list. If the Desktop is ALREADY on this
+      // task, do nothing (avoids a redundant click).
+      //
+      // We deliberately do NOT mutate _lastSelectedInteractionId here. When
+      // the click lands, handleTaskSync() observes the new Desktop selection
+      // and emits INTERACTION_SELECTED — which keeps the Tab Manager's own
+      // authoritative _desktopSelectedId in sync. The loop is broken on the
+      // Tab Manager side by per-id focus-echo suppression, not here.
+      if (msg.interactionId !== _lastSelectedInteractionId) {
+        try {
+          var bc = new BroadcastChannel('crm-sync');
+          bc.postMessage({ type: 'SELECT_INTERACTION', interactionId: msg.interactionId });
+          bc.close();
+        } catch (e) { /* BroadcastChannel unavailable */ }
+      } else {
+        console.log('[crm-sync-header] CRM_TAB_SELECTED already-selected — no click needed', msg.interactionId);
+      }
+    }
+
+    if (msg && msg.type === 'CRM_CLIENT_CONNECTED') {
+      // Tab Manager just (re)connected — re-send all active interactions so it
+      // can rebuild its state without a full page reload.
+      console.log('[crm-sync-header] CRM client connected — flushing', Object.keys(_activeInteractions).length, 'active interactions');
+      // Also flush the current theme so the Tab Manager adopts the right mode.
+      if (_darkMode !== null) {
+        _relaySend({ type: 'THEME_CHANGED', darkMode: _darkMode });
+      }
+      Object.keys(_activeInteractions).forEach(function (interactionId) {
+        var data = _activeInteractions[interactionId];
+        if (data.state === 'ended') return;
+        var msgType = data.state === 'wrapup' ? 'INTERACTION_WRAPUP' : 'INTERACTION_ARRIVED';
+        _relaySend({ type: msgType, interactionId: interactionId, ani: data.ani,
+          email: data.email, customerId: data.customerId, displayUrl: data.displayUrl, title: data.title, state: data.state });
+        if (data.title) {
+          _relaySend({ type: 'TASK_TITLE', interactionId: interactionId, title: data.title });
+        }
+      });
+    }
+  }
+
   function _relayConnect() {
+    if (_transport === 'bridge') return; // bridge mode uses postMessage, not WebSocket
     if (!_relayWsUrl) return; // wait until the `wsurl` property is configured
     if (_relayWs && (_relayWs.readyState === WebSocket.OPEN ||
                      _relayWs.readyState === WebSocket.CONNECTING)) return;
@@ -218,51 +330,8 @@
     };
 
     _relayWs.onmessage = function (evt) {
-      try {
-        var msg = JSON.parse(evt.data);
-
-        if (msg && msg.type === 'CRM_TAB_SELECTED' && msg.interactionId) {
-          // The agent focused a CRM tab → ask panel-layout-headless to click the
-          // matching task in the Desktop list. If the Desktop is ALREADY on this
-          // task, do nothing (avoids a redundant click).
-          //
-          // We deliberately do NOT mutate _lastSelectedInteractionId here. When
-          // the click lands, handleTaskSync() observes the new Desktop selection
-          // and emits INTERACTION_SELECTED — which keeps the Tab Manager's own
-          // authoritative _desktopSelectedId in sync. The loop is broken on the
-          // Tab Manager side by per-id focus-echo suppression, not here.
-          if (msg.interactionId !== _lastSelectedInteractionId) {
-            try {
-              var bc = new BroadcastChannel('crm-sync');
-              bc.postMessage({ type: 'SELECT_INTERACTION', interactionId: msg.interactionId });
-              bc.close();
-            } catch (e) { /* BroadcastChannel unavailable */ }
-          } else {
-            console.log('[crm-sync-header] CRM_TAB_SELECTED already-selected — no click needed', msg.interactionId);
-          }
-        }
-
-        if (msg && msg.type === 'CRM_CLIENT_CONNECTED') {
-          // Tab Manager just (re)connected — re-send all active interactions so it
-          // can rebuild its state without a full page reload.
-          console.log('[crm-sync-header] CRM client connected — flushing', Object.keys(_activeInteractions).length, 'active interactions');
-          // Also flush the current theme so the Tab Manager adopts the right mode.
-          if (_darkMode !== null) {
-            _relaySend({ type: 'THEME_CHANGED', darkMode: _darkMode });
-          }
-          Object.keys(_activeInteractions).forEach(function (interactionId) {
-            var data = _activeInteractions[interactionId];
-            if (data.state === 'ended') return;
-            var msgType = data.state === 'wrapup' ? 'INTERACTION_WRAPUP' : 'INTERACTION_ARRIVED';
-            _relaySend({ type: msgType, interactionId: interactionId, ani: data.ani,
-              email: data.email, customerId: data.customerId, displayUrl: data.displayUrl, title: data.title, state: data.state });
-            if (data.title) {
-              _relaySend({ type: 'TASK_TITLE', interactionId: interactionId, title: data.title });
-            }
-          });
-        }
-
-      } catch (e) { /* ignore malformed messages */ }
+      try { _handleRelayMessage(JSON.parse(evt.data)); }
+      catch (e) { /* ignore malformed messages */ }
     };
 
     _relayWs.onclose = function () {
@@ -755,7 +824,9 @@
     if (!_shadowRoot) return;
     var dot = _shadowRoot.getElementById('dot');
     var btn = _shadowRoot.getElementById('open-btn');
-    var connected = _relayReady && _relayWs && _relayWs.readyState === WebSocket.OPEN;
+    var connected = (_transport === 'bridge')
+      ? (_bridgeReady && _bridgePeer && !_bridgePeer.closed)
+      : (_relayReady && _relayWs && _relayWs.readyState === WebSocket.OPEN);
 
     if (dot) {
       dot.className = 'dot ' + (connected ? 'dot--connected' : 'dot--disconnected');
@@ -2316,14 +2387,43 @@
       }
       get wsurl() { return _relayWsUrl; }
 
+      // Explicit Tab Manager base URL (static host). Overrides the wsurl-derived
+      // host; lets the relay leave the serving path entirely.
+      set managerurl(value) { _managerUrl = value || null; }
+      get managerurl() { return _managerUrl; }
+
+      // Auto-close the CRM view when its interaction ends. Forwarded to the Tab
+      // Manager as ?autoclose=1|0 so it is layout-driven, not dependent on the
+      // Tab Manager origin's localStorage (which resets when the host changes).
+      set autoclose(value) {
+        if (value === null || value === undefined || value === '') { _autoCloseCrm = null; return; }
+        _autoCloseCrm = (value === true || value === 'true' || value === '1' || value === 'autoclose');
+      }
+      get autoclose() { return _autoCloseCrm; }
+
+      // Transport selector: 'relay' (default) or 'bridge' (peer-to-peer postMessage).
+      set transport(value) {
+        var v = String(value || '').toLowerCase();
+        var mode = (v === 'bridge' || v === 'postmessage' || v === 'p2p') ? 'bridge' : 'relay';
+        if (mode === _transport) return;
+        _transport = mode;
+        if (mode === 'bridge') {
+          if (_relayWs) { try { _relayWs.close(); } catch (_) {} _relayWs = null; _relayReady = false; }
+          _bridgeStart();
+          if (_autoOpenManager) _openCrmTabManager();
+        }
+        _tickStatus();
+      }
+      get transport() { return _transport; }
+
       set accesstoken(value) { this._accesstoken = value; _accessToken = value || ''; _configureActivity(); }
       get accesstoken() { return this._accesstoken; }
 
       set autoopen(value) {
         _autoOpenManager = (value === true || value === 'true' || value === '' ||
                             value === 'autoopen' || value === '1');
-        // If the relay is already connected when this is set, honour it immediately.
-        if (_autoOpenManager && _relayReady) _openCrmTabManager();
+        // If a transport is already connected when this is set, honour it immediately.
+        if (_autoOpenManager && (_relayReady || _transport === 'bridge')) _openCrmTabManager();
       }
       get autoopen() { return _autoOpenManager; }
 

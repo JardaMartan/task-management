@@ -27,8 +27,10 @@ BUCKET_NAME="${BUCKET_NAME:-${PROJECT}-relay-dist}"
 BUCKET="gs://${BUCKET_NAME}"
 MOUNT_PATH="${MOUNT_PATH:-/srv/dist}"
 ALLOWED_ORGS="${ALLOWED_ORGS:-fc5af61b-06a3-4122-be5c-bb344cffffdc}"
-# Frontend build for the fast path (the supervisor activity widget by default).
-BUILD_CMD="${BUILD_CMD:-npm run build:report:standalone}"
+# Frontend build for the fast path. The Desktop layout loads the CDN loader
+# (agent-activity-cdn-loader.js → agent-activity-cdn.js), so the CDN bundle is
+# the one that must be rebuilt; the self-contained bundle is kept current too.
+BUILD_CMD="${BUILD_CMD:-npm run build:report:cdn && npm run build:report:standalone}"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
@@ -40,10 +42,23 @@ build_frontend() {
   eval "$BUILD_CMD"
 }
 
+# Publish every static asset the relay used to serve, to the GCS bucket that
+# now fronts them over HTTPS (https://<bucket>.storage.googleapis.com/...).
+# Route → source mapping mirrors relay-server/server.js:
+#   /dist/                       ← dist/                       → bucket root
+#   /crm-tab-manager/            ← crm-tab-manager/            → /crm-tab-manager/
+#   /crm-clicktocall-extension/  ← crm-clicktocall-extension/  → /crm-clicktocall-extension/
+# rsync (no --delete) only adds/updates, so the sibling folders are never nuked.
 sync_dist() {
-  log "Syncing dist/ → ${BUCKET}"
+  log "Publishing static assets → ${BUCKET}"
   gcloud storage rsync dist "${BUCKET}" --recursive --project "${PROJECT}"
-  log "Assets published. Live within the FUSE metadata TTL (~60s); new instances are immediate."
+  gcloud storage rsync crm-tab-manager "${BUCKET}/crm-tab-manager" --recursive --project "${PROJECT}"
+  gcloud storage rsync crm-clicktocall-extension "${BUCKET}/crm-clicktocall-extension" --recursive --project "${PROJECT}"
+  # Widget JS must always revalidate on the public bucket URL — GCS otherwise
+  # defaults public objects to Cache-Control: max-age=3600, so a redeploy can be
+  # shadowed by a stale edge copy for up to an hour. no-cache still 304-caches.
+  gcloud storage objects update "${BUCKET}/*.js" --cache-control="no-cache" --project "${PROJECT}" || true
+  log "Published to https://${BUCKET_NAME}.storage.googleapis.com/ (also mounted at ${MOUNT_PATH} on ${SERVICE})."
 }
 
 full_deploy() {
@@ -77,6 +92,12 @@ setup() {
   log "Granting objectViewer on ${BUCKET} to ${sa}"
   gcloud storage buckets add-iam-policy-binding "${BUCKET}" \
     --member="serviceAccount:${sa}" --role="roles/storage.objectViewer" --project "${PROJECT}"
+
+  # Public read so browsers can load the widget assets directly from the bucket
+  # (equivalent to the relay's prior --allow-unauthenticated static serving).
+  log "Granting public read (allUsers:objectViewer) on ${BUCKET}"
+  gcloud storage buckets add-iam-policy-binding "${BUCKET}" \
+    --member="allUsers" --role="roles/storage.objectViewer" --project "${PROJECT}"
 
   build_frontend
   sync_dist
