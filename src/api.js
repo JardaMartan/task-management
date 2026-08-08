@@ -97,9 +97,11 @@ export const publishCloudEvent = async (eventPayload, accessToken, workspaceId, 
  * @returns {string} JDS REST API base URL
  */
 export const getJDSBaseURL = (datacenter) => {
-  // Use the provided datacenter or fallback to global/default
+  // JDS now shares the regional Webex CC host, e.g. https://api.wxcc-eu1.cisco.com
+  // (was api-jds.wxdap-<dc>.webex.com). searchApiHostForDatacenter maps both
+  // prodeu1 and eu1 forms to the correct region host.
   const dc = datacenter || currentDatacenter || 'produs1';
-  return `https://api-jds.wxdap-${dc}.webex.com`;
+  return searchApiHostForDatacenter(dc);
 };
 
 // Cache and workspace ID retrieval removed - workspaceId is now passed as parameter
@@ -112,7 +114,7 @@ export const getJDSBaseURL = (datacenter) => {
 const getJDSEndpoint = (datacenter) => {
   // Use the provided datacenter or fallback to global/default
   const dc = datacenter || currentDatacenter || 'produs1';
-  return `https://api-jds.wxdap-${dc}.webex.com/graphql`;
+  return `${searchApiHostForDatacenter(dc)}/graphql`;
 };
 
 /**
@@ -303,7 +305,7 @@ export const fetchTaskManagement = async (customerId, accessToken, workspaceId, 
  * @param {string} datacenter - Datacenter identifier
  * @returns {Promise<Array>} Array of events/interactions
  */
-export const fetchJourneyEvents = async (identity, accessToken, workspaceId, datacenter, additionalFilter = null, maxPages = 20) => {
+export const fetchJourneyEvents = async (identity, accessToken, workspaceId, datacenter, additionalFilter = null, maxPages = 20, sinceTs = null) => {
   // Accept a single identity string, an array, or null/[] for type-only workspace queries.
   const identities = (Array.isArray(identity) ? identity : [identity])
     .map(i => String(i || '').trim())
@@ -333,6 +335,7 @@ export const fetchJourneyEvents = async (identity, accessToken, workspaceId, dat
     let page = 1;
     const pageSize = 100;
     let hasMore = true;
+    let reachedLimit = false; // true when we stop at pageLimit (older events remain)
     const pageLimit = maxPages;
 
     // Build query string: single ?identity= for cross-identity graph lookup.
@@ -410,22 +413,36 @@ export const fetchJourneyEvents = async (identity, accessToken, workspaceId, dat
         if (pageData.length === 0) {
             hasMore = false;
         } else {
+            const rawLen = pageData.length; // raw page size before range trim
+            let crossedCutoff = false;
+            if (sinceTs != null) {
+                const kept = pageData.filter((e) => !e.timestamp || Number(e.timestamp) >= sinceTs);
+                if (kept.length < rawLen) crossedCutoff = true; // page holds events older than the range
+                pageData = kept;
+            }
             allEvents = [...allEvents, ...pageData];
-            if (pageData.length < pageSize) hasMore = false;
+            if (rawLen < pageSize) hasMore = false;      // natural end of data
+            else if (crossedCutoff) hasMore = false;     // reached the selected range boundary
             else page++;
-            
-            if (page > pageLimit) {
+
+            if (hasMore && page > pageLimit) {
                 console.warn(`fetchJourneyEvents: Reached page limit (${pageLimit})`);
                 hasMore = false;
+                reachedLimit = true; // stopped at the cap → older history still exists
             }
         }
     }
     
-    // Deduplicate events by id in case multiple identities share events
+    // Deduplicate events in case multiple linked identities return the same event.
+    // The new JDS format shares ONE CloudEvent id across an interaction's whole
+    // lifecycle (task:new/connect/connected/ended/wrapup-done), so dedup on
+    // id+type+timestamp — NOT id alone — to keep the distinct lifecycle events
+    // (otherwise every interaction collapses to a single event and never groups).
     const seen = new Set();
     allEvents = allEvents.filter(e => {
-      if (seen.has(e.id)) return false;
-      seen.add(e.id);
+      const key = `${e.id}|${e.type || ''}|${e.timestamp || e.createdAt || ''}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
       return true;
     });
 
@@ -435,6 +452,9 @@ export const fetchJourneyEvents = async (identity, accessToken, workspaceId, dat
       const distinctIds = [...new Set(allEvents.map(e => e.raw?.identity || e.identity).filter(Boolean))];
       console.log('fetchJourneyEvents: Distinct identities in response:', distinctIds);
     }
+    // Attach pagination metadata (array stays usable as a plain array).
+    allEvents.hasMore = reachedLimit;
+    allEvents.pagesFetched = Math.min(page, pageLimit);
     return allEvents;
   } catch (error) {
     console.error('fetchJourneyEvents: Error', error);
@@ -1996,6 +2016,176 @@ export const fetchCaseTaskContext = async ({
 // ─── Gmail API ────────────────────────────────────────────────────────────────
 
 const GMAIL_API_BASE = 'https://gmail.googleapis.com/gmail/v1/users/me';
+
+/**
+ * Fetch a normalized voice transcript for a task via the backend Captures proxy.
+ * The backend downloads the presigned transcript file server-side (the browser
+ * cannot — the Captures file URL is CORS-protected).
+ *
+ * @param {string} transcriptUrl - Cloud Function URL for the `transcript` endpoint
+ * @param {string} desktopToken  - Webex CI bearer token from Desktop SDK
+ * @param {string} orgId
+ * @param {string} taskId
+ * @param {string} [datacenter]
+ * @returns {Promise<{ transcript: Array, recording: Array, source: string }|null>}
+ */
+export const fetchVoiceTranscript = async (transcriptUrl, desktopToken, orgId, taskId, datacenter) => {
+  if (!transcriptUrl || !desktopToken || !orgId || !taskId) return null;
+  try {
+    const response = await fetch(transcriptUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${desktopToken}`,
+      },
+      body: JSON.stringify({ orgId, taskId, datacenter }),
+    });
+    if (!response.ok) {
+      console.warn(`[API] Voice transcript ${response.status} for ${taskId}`);
+      return null;
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('[API] Error fetching voice transcript:', error);
+    return null;
+  }
+};
+
+/**
+ * Webex CC API base (region host) derived from the JDS datacenter
+ * (prodeu1 → eu1). Used for the Search API, callable directly from the browser.
+ */
+const getWxccApiBase = (datacenter) => {
+  const region = String(datacenter || 'produs1').replace(/^prod/, '') || 'us1';
+  return `https://api.wxcc-${region}.cisco.com`;
+};
+
+/**
+ * Fetch the AI post-call summary DIRECTLY from the browser (agent token) — the
+ * AI-assistant endpoint is CORS-enabled and accepts the Desktop token (same as
+ * getTaskSummary). No backend needed.
+ *
+ * @returns {Promise<Object|null>}
+ */
+export const fetchVoiceSummary = async (accessToken, orgId, taskId, datacenter) => {
+  if (!accessToken || !orgId || !taskId) return null;
+  const url = `https://api-ai-assistant.${datacenter || 'produs1'}.ciscoccservice.com/summary/list`;
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orgId, interactionId: taskId, searchType: 'INTERACTION' }),
+    });
+    if (!response.ok) {
+      console.warn(`[API] Voice summary ${response.status} for ${taskId}`);
+      return null;
+    }
+    const data = await response.json();
+    const pc = data?.summaries?.POST_CALL;
+    const key = pc && Object.keys(pc)[0];
+    const s = key ? pc[key] : null;
+    if (!s) return null;
+    return {
+      initialContactReason: s.initialContactReason || null,
+      keyActionsTaken: s.keyActionsTaken || null,
+      nextSteps: s.nextSteps || null,
+      additionalContactReasons: s.additionalContactReasons || null,
+      chosenWrapUpCode: s.chosenWrapUpCode || null,
+      proposedWrapUpCodes: Array.isArray(s.proposedWrapUpCodes)
+        ? s.proposedWrapUpCodes.map((c) => c?.name).filter(Boolean) : [],
+    };
+  } catch (error) {
+    console.error('[API] Error fetching voice summary:', error);
+    return null;
+  }
+};
+
+/**
+ * Fetch capture metadata (duration + transcript availability) for a batch of
+ * tasks via the backend proxy — used to build the voice call list cheaply.
+ *
+ * @returns {Promise<Array<{taskId,durationSec,startTime,hasTranscript,hasRecording,languageCode}>>}
+ */
+export const fetchVoiceCaptureList = async (transcriptUrl, desktopToken, orgId, taskIds, datacenter) => {
+  if (!transcriptUrl || !desktopToken || !orgId || !Array.isArray(taskIds) || taskIds.length === 0) return [];
+  try {
+    const response = await fetch(transcriptUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${desktopToken}`,
+      },
+      body: JSON.stringify({ orgId, taskIds, datacenter }),
+    });
+    if (!response.ok) {
+      console.warn(`[API] Voice capture list ${response.status}`);
+      return [];
+    }
+    const data = await response.json();
+    return Array.isArray(data?.list) ? data.list : [];
+  } catch (error) {
+    console.error('[API] Error fetching voice capture list:', error);
+    return [];
+  }
+};
+
+/**
+ * List the customer's voice calls by phone number(s) via the backend Search API
+ * proxy (JDS omits some voice interactions). Each entry carries duration,
+ * direction and transcript/recording availability.
+ *
+ * @returns {Promise<Array>}
+ */
+export const fetchCustomerVoiceCalls = async (accessToken, orgId, phones, datacenter, limit = 100) => {
+  if (!accessToken || !orgId || !Array.isArray(phones) || phones.length === 0) return [];
+  const host = getWxccApiBase(datacenter);
+  const fromTs = Date.now() - 90 * 24 * 3600 * 1000;
+  const toTs = Date.now();
+  const orFilter = phones.slice(0, 5)
+    .map((p) => `{ origin: { equals: "${String(p).replace(/[^\d+]/g, '')}" } }`)
+    .filter((f) => !/equals: ""/.test(f))
+    .join(' ');
+  if (!orFilter) return [];
+  const query = `query T($from: Long!, $to: Long!) {
+    taskDetails(from: $from, to: $to, filter: { or: [ ${orFilter} ] }) {
+      tasks { id createdTime totalDuration connectedDuration direction origin channelType lastWrapupCodeName terminationType lastAgent { id name } lastQueue { name } lastTeam { name } lastSite { name } lastEntryPoint { name } }
+    }
+  }`;
+  try {
+    const response = await fetch(`${host}/search`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}`, TrackingId: `tm-${Date.now()}` },
+      body: JSON.stringify({ query, variables: { from: fromTs, to: toTs } }),
+    });
+    if (!response.ok) {
+      console.warn(`[API] Search calls ${response.status}`);
+      return [];
+    }
+    const body = await response.json();
+    const tasks = (body?.data?.taskDetails?.tasks || [])
+      .filter((t) => !t.channelType || String(t.channelType).toLowerCase() === 'telephony');
+    tasks.sort((a, b) => (b.createdTime || 0) - (a.createdTime || 0));
+    return tasks.slice(0, limit).map((t) => ({
+      taskId: t.id,
+      durationSec: Number.isFinite(t.totalDuration) ? Math.round(t.totalDuration / 1000) : 0,
+      connectedSec: Number.isFinite(t.connectedDuration) ? Math.round(t.connectedDuration / 1000) : 0,
+      startTime: t.createdTime || null,
+      direction: String(t.direction || '').toLowerCase() || null,
+      origin: t.origin || null,
+      wrapUpReason: t.lastWrapupCodeName || null,
+      terminationType: t.terminationType || null,
+      agentName: t.lastAgent?.name || null,
+      agentId: t.lastAgent?.id || null,
+      queueName: t.lastQueue?.name || null,
+      teamName: t.lastTeam?.name || null,
+      siteName: t.lastSite?.name || null,
+      entryPointName: t.lastEntryPoint?.name || null,
+    }));
+  } catch (error) {
+    console.error('[API] Error fetching customer voice calls:', error);
+    return [];
+  }
+};
 
 /**
  * Exchange a Desktop CI token for a Gmail service-account token via the Token Broker.

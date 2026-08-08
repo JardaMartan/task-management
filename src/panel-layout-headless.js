@@ -1373,6 +1373,1311 @@
     }
   })();
 
+  // ─── Wrap-up → CRM field transfer ─────────────────────────────────────────
+  //
+  // When the active interaction enters wrap-up (detected via the SDK), and a CRM
+  // window is open (the crm-tab-manager, reported by the browser extension), glow
+  // the Desktop's native wrap-up notes field and float a small toolbar over it:
+  //
+  //   • Settings → pick the CRM target field (extension frames candidates) and
+  //     choose Automatic / Manual mode. The choice is remembered per browser.
+  //   • Transfer → append the wrap-up text into the remembered CRM field. Enabled
+  //     only when a target is configured AND Manual mode is selected.
+  //
+  // In Automatic mode the text is transferred on wrap-up submission instead.
+  //
+  // The extension bridges the actual CRM DOM writes (the CRM is a cross-origin
+  // iframe only its content script can touch); this widget owns the SDK detection
+  // and the Desktop-side UI, talking to the extension over window.postMessage.
+
+  var _wrapCfg              = { crmOpen: false, targetConfigured: false, mode: 'manual' };
+  var _wrapField           = null;   // the native wrap-up notes element
+  var _wrapFieldSelector   = null;   // optional override via `wrapupfieldselector`
+  var _wrapInteractionId   = null;
+  var _wrapLastText        = '';
+  var _wrapToolbar         = null;
+  var _wrapReposTimer      = null;
+  var _wrapPending         = {};     // reqId → { resolve, timer }
+  var _wrapReqSeq          = 0;
+  var _wrapBridgeReady     = false;
+  var _wrapBcCrmOpen       = false;  // CRM presence learned from crm-sync BroadcastChannel
+  var _wrapBc              = null;
+  var _wrapTick            = 0;
+  var _wrapExtWarned       = false;  // throttle the "no extension reply" warning
+  var _wrapStatusStr       = '';     // throttle status logging
+  var _wrapHighlightOn     = false;  // CRM target glow state (kept in sync w/ source glow)
+
+  // Keep the CRM target glow in lock-step with the Desktop source glow so both
+  // frames light up / go dark at exactly the same moments (only during wrap-up).
+  function _wrapSetHighlight(on) {
+    on = !!on;
+    if (on === _wrapHighlightOn) return;
+    _wrapHighlightOn = on;
+    _wrapPost({ type: on ? 'HIGHLIGHT' : 'UNHIGHLIGHT' });
+  }
+
+  // Clicks on our floating toolbar/popover must NOT dismiss the native wrap-up
+  // dialog. The dialog closes via an outside-pointer detector; we register a
+  // window-capture guard (fires before any document-level listener) that stops
+  // pointer/mouse-down events targeting our UI from ever reaching that detector.
+  // Buttons still work because the synthetic `click` is generated independently.
+  var _WRAP_GUARD_EVENTS = ['pointerdown', 'mousedown', 'pointerup', 'mouseup'];
+  function _wrapSwallowGuard(e) {
+    try {
+      if (!_wrapToolbar) return;
+      var path = e.composedPath ? e.composedPath() : [];
+      var pop = _wrapToolbar._pop || null;
+      var editable = false;
+      for (var i = 0; i < path.length; i++) {
+        var n = path[i];
+        if (n && n.nodeType === 1) {
+          var tag = n.tagName;
+          if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || n.isContentEditable) editable = true;
+        }
+        if (n === _wrapToolbar || (pop && n === pop)) {
+          e.stopPropagation();
+          if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+          // Keep focus on the wrap-up field for plain controls, but let the
+          // editable content-override fields receive focus/caret normally.
+          if (e.type === 'mousedown' && !editable) e.preventDefault();
+          return;
+        }
+      }
+    } catch (err) { /* ignore */ }
+  }
+
+  var _WRAP_ICON_GEAR = '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M19.14 12.94a7.6 7.6 0 000-1.88l2.03-1.58a.5.5 0 00.12-.64l-1.92-3.32a.5.5 0 00-.6-.22l-2.39.96a7 7 0 00-1.62-.94l-.36-2.54a.5.5 0 00-.5-.42h-3.84a.5.5 0 00-.5.42l-.36 2.54c-.58.24-1.12.56-1.62.94l-2.39-.96a.5.5 0 00-.6.22L2.71 8.84a.5.5 0 00.12.64l2.03 1.58a7.6 7.6 0 000 1.88l-2.03 1.58a.5.5 0 00-.12.64l1.92 3.32c.14.24.42.32.66.22l2.39-.96c.5.38 1.04.7 1.62.94l.36 2.54c.04.24.25.42.5.42h3.84c.25 0 .46-.18.5-.42l.36-2.54c.58-.24 1.12-.56 1.62-.94l2.39.96c.24.1.52.02.66-.22l1.92-3.32a.5.5 0 00-.12-.64l-2.03-1.58zM12 15.5A3.5 3.5 0 1112 8.5a3.5 3.5 0 010 7z"/></svg>';
+  var _WRAP_ICON_ARROW = '<svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M1 8h11l-3.5-3.5L10 3l6 5-6 5-1.5-1.5L12 9H1z"/></svg>';
+  var _WRAP_ICON_COLLAPSE = '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 3 4 8 9 13"/><polyline points="13 3 8 8 13 13"/></svg>';
+  var _WRAP_ICON_EXPAND = '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="7 3 12 8 7 13"/><polyline points="3 3 8 8 3 13"/></svg>';
+  var _WRAP_GLOW_COLORS = ['#0e7fc1', '#1a6b35', '#7c35b5', '#c46c00', '#b0362c', '#2dadce'];
+  var _wrapGlowColor = '#0e7fc1';
+
+  // ── locale-aware strings (this file is copied raw, not bundled) ──────────
+  var _wrapLocaleCache = null;
+  var _WRAP_I18N = {
+    en: {
+      settings: 'Settings', transfer: 'Transfer', targetField: 'Target field',
+      pickTarget: 'Pick target field', transferMode: 'Transfer mode',
+      manual: 'Manual', automatic: 'Automatic', glowColor: 'Glow color',
+      content: 'Content to transfer', noFields: 'No editable summary fields detected.',
+      reset: 'Reset', field: 'Field', collapse: 'Collapse', expand: 'Expand', titleHint: '(no title)',
+      hint: 'Manual: press Transfer. Automatic: copies on submit.',
+      tipNoCrm: 'CRM window not detected — open the CRM Tab Manager',
+      tipNoTarget: 'Select a target field in Settings first',
+      tipAuto: 'Transfer happens automatically on submit',
+      tipTransfer: 'Copy wrap-up notes to the CRM field',
+    },
+    de: {
+      settings: 'Einstellungen', transfer: 'Übertragen', targetField: 'Zielfeld',
+      pickTarget: 'Zielfeld auswählen', transferMode: 'Übertragungsmodus',
+      manual: 'Manuell', automatic: 'Automatisch', glowColor: 'Leuchtfarbe',
+      content: 'Zu übertragender Inhalt', noFields: 'Keine bearbeitbaren Zusammenfassungsfelder erkannt.',
+      reset: 'Zurücksetzen', field: 'Feld', collapse: 'Einklappen', expand: 'Ausklappen', titleHint: '(kein Titel)',
+      hint: 'Manuell: Übertragen drücken. Automatisch: kopiert beim Absenden.',
+      tipNoCrm: 'CRM-Fenster nicht erkannt — CRM-Tab-Manager öffnen',
+      tipNoTarget: 'Zuerst ein Zielfeld in den Einstellungen wählen',
+      tipAuto: 'Übertragung erfolgt automatisch beim Absenden',
+      tipTransfer: 'Nachbearbeitungsnotizen ins CRM-Feld kopieren',
+    },
+    cs: {
+      settings: 'Nastavení', transfer: 'Přenést', targetField: 'Cílové pole',
+      pickTarget: 'Vybrat cílové pole', transferMode: 'Režim přenosu',
+      manual: 'Ručně', automatic: 'Automaticky', glowColor: 'Barva záření',
+      content: 'Obsah k přenosu', noFields: 'Nebyla zjištěna žádná upravitelná pole souhrnu.',
+      reset: 'Obnovit', field: 'Pole', collapse: 'Sbalit', expand: 'Rozbalit', titleHint: '(bez názvu)',
+      hint: 'Ručně: stiskněte Přenést. Automaticky: zkopíruje se při odeslání.',
+      tipNoCrm: 'Okno CRM nezjištěno — otevřete správce karet CRM',
+      tipNoTarget: 'Nejprve v nastavení vyberte cílové pole',
+      tipAuto: 'Přenos proběhne automaticky při odeslání',
+      tipTransfer: 'Zkopírovat poznámky uzavření do pole CRM',
+    },
+  };
+  function _wrapLocale() {
+    if (_wrapLocaleCache) return _wrapLocaleCache;
+    var lang = '';
+    try {
+      var hosts = ['panel-layout-headless', 'crm-sync-header', 'task-management'];
+      for (var i = 0; i < hosts.length && !lang; i++) {
+        var h = document.querySelector(hosts[i]);
+        if (h && h.getAttribute('locale')) lang = h.getAttribute('locale');
+      }
+      if (!lang) lang = navigator.language || navigator.userLanguage || 'en';
+    } catch (e) { lang = 'en'; }
+    var primary = String(lang).toLowerCase().split(/[-_]/)[0];
+    _wrapLocaleCache = _WRAP_I18N[primary] ? primary : 'en';
+    return _wrapLocaleCache;
+  }
+  function _wrapT(k) {
+    var d = _WRAP_I18N[_wrapLocale()] || _WRAP_I18N.en;
+    return (d && d[k] != null) ? d[k] : (_WRAP_I18N.en[k] != null ? _WRAP_I18N.en[k] : k);
+  }
+
+  // ── content transform: select/deselect fields + override values ─────────
+  var _wrapXformInc = null;   // persisted exclusions { fieldId: false }
+  var _wrapXformVal = {};     // in-memory value overrides { fieldId: string }
+  function _wrapSlug(s) {
+    return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  }
+  function _wrapLoadInc() {
+    if (_wrapXformInc) return _wrapXformInc;
+    try { _wrapXformInc = JSON.parse(localStorage.getItem('crmWrapXformInclude') || '{}') || {}; }
+    catch (e) { _wrapXformInc = {}; }
+    return _wrapXformInc;
+  }
+  function _wrapSaveInc() {
+    try { localStorage.setItem('crmWrapXformInclude', JSON.stringify(_wrapLoadInc())); } catch (e) { /* ignore */ }
+  }
+  function _wrapIncluded(id) { return _wrapLoadInc()[id] !== false; }
+  function _wrapSetIncluded(id, on) { _wrapLoadInc()[id] = !!on; _wrapSaveInc(); }
+
+  var _wrapXformLabel = null;  // persisted label overrides { fieldId: string }
+  function _wrapLoadLabels() {
+    if (_wrapXformLabel) return _wrapXformLabel;
+    try { _wrapXformLabel = JSON.parse(localStorage.getItem('crmWrapXformLabel') || '{}') || {}; }
+    catch (e) { _wrapXformLabel = {}; }
+    return _wrapXformLabel;
+  }
+  function _wrapSaveLabels() {
+    try { localStorage.setItem('crmWrapXformLabel', JSON.stringify(_wrapLoadLabels())); } catch (e) { /* ignore */ }
+  }
+  function _wrapLabelOf(id, def) {
+    var m = _wrapLoadLabels();
+    return Object.prototype.hasOwnProperty.call(m, id) ? m[id] : (def || '');
+  }
+  function _wrapSetLabel(id, val) { _wrapLoadLabels()[id] = val; _wrapSaveLabels(); }
+
+  var _wrapCollapsed = null;   // persisted toolbar collapse state
+  function _wrapLoadCollapsed() {
+    if (_wrapCollapsed !== null) return _wrapCollapsed;
+    try { _wrapCollapsed = localStorage.getItem('crmWrapCollapsed') === '1'; } catch (e) { _wrapCollapsed = false; }
+    return _wrapCollapsed;
+  }
+  function _wrapSetCollapsedState(on) {
+    _wrapCollapsed = !!on;
+    try { localStorage.setItem('crmWrapCollapsed', _wrapCollapsed ? '1' : '0'); } catch (e) { /* ignore */ }
+  }
+
+  function _wrapPost(payload) {
+    return new Promise(function (resolve) {
+      var reqId = 'w' + (++_wrapReqSeq) + '-' + Date.now();
+      var timer = setTimeout(function () {
+        if (_wrapPending[reqId]) { delete _wrapPending[reqId]; resolve(null); }
+      }, 3000);
+      _wrapPending[reqId] = { resolve: resolve, timer: timer };
+      try {
+        window.postMessage({ __crmWrap: true, reqId: reqId, payload: payload }, '*');
+      } catch (e) {
+        clearTimeout(timer); delete _wrapPending[reqId]; resolve(null);
+      }
+    });
+  }
+
+  function _wrapInitBridge() {
+    if (_wrapBridgeReady) return;
+    _wrapBridgeReady = true;
+    _wrapInitBc();
+    window.addEventListener('message', function (ev) {
+      var d = ev.data;
+      if (!d || ev.source !== window) return;
+      if (d.__crmWrapReply === true && d.reqId && _wrapPending[d.reqId]) {
+        var p = _wrapPending[d.reqId];
+        delete _wrapPending[d.reqId];
+        clearTimeout(p.timer);
+        p.resolve(d.resp || null);
+        return;
+      }
+      if (d.__crmWrapPush === true) {
+        // Target picked / cleared in the CRM frame → refresh status + re-glow.
+        _wrapRefreshStatus().then(function () {
+          if (d.event === 'PICKER_RESULT') _wrapPost({ type: 'HIGHLIGHT' });
+        });
+      }
+    });
+  }
+
+  // In-browser CRM-open signal (crm-sync-header broadcasts CRM_PRESENCE on the
+  // shared 'crm-sync' BroadcastChannel when the Tab Manager connects). This does
+  // NOT depend on the relay websocket or the extension's tab lookup.
+  function _wrapInitBc() {
+    if (_wrapBc) return;
+    try {
+      _wrapBc = new BroadcastChannel('crm-sync');
+      _wrapBc.addEventListener('message', function (ev) {
+        var d = ev.data;
+        if (d && d.type === 'CRM_PRESENCE') {
+          var was = _wrapBcCrmOpen;
+          _wrapBcCrmOpen = !!d.open;
+          if (was !== _wrapBcCrmOpen) console.log('[panel-layout] wrap-transfer: CRM presence via crm-sync →', _wrapBcCrmOpen);
+          _wrapUpdateToolbarState();
+        }
+      });
+    } catch (e) { /* BroadcastChannel unavailable */ }
+  }
+
+  function _wrapQueryCrmPresence() {
+    try { if (_wrapBc) _wrapBc.postMessage({ type: 'CRM_PRESENCE_QUERY' }); } catch (e) { /* ignore */ }
+  }
+
+  function _wrapCrmOpen() {
+    return !!(_wrapCfg.crmOpen || _wrapBcCrmOpen);
+  }
+
+  function _wrapRefreshStatus() {
+    return _wrapPost({ type: 'GET_STATUS' }).then(function (resp) {
+      if (resp) {
+        _wrapExtWarned = false;
+        _wrapCfg = {
+          crmOpen: !!resp.crmOpen,
+          targetConfigured: !!resp.targetConfigured,
+          mode: resp.mode === 'auto' ? 'auto' : 'manual',
+        };
+        if (resp.glowColor) _wrapApplyGlowColor(resp.glowColor);
+        var s = 'crmOpen=' + _wrapCfg.crmOpen + ' target=' + _wrapCfg.targetConfigured + ' mode=' + _wrapCfg.mode;
+        if (s !== _wrapStatusStr) { _wrapStatusStr = s; console.log('[panel-layout] wrap-transfer: status from extension', _wrapCfg); }
+      } else if (!_wrapExtWarned) {
+        _wrapExtWarned = true;
+        console.warn('[panel-layout] wrap-transfer: NO reply from the CRM Click-to-Contact extension. ' +
+          'RELOAD the Desktop TAB after (re)loading the extension so its content script injects here. ' +
+          '(in-browser postMessage → extension; not the relay websocket)');
+      }
+      _wrapUpdateToolbarState();
+      return _wrapCfg;
+    });
+  }
+
+  // Concrete Webex CC (agentx) wrap-up DOM identifiers, verified from a live
+  // wrap-up dialog. The dialog has TWO fields: a reason combobox
+  // (md-input inside `.wrap-up-input-wrapper`) AND an editable AI summary
+  // (`.interaction-summary > agentx-wc-interaction-summary`). The subheader tells
+  // the agent to "select a code and if needed click the summary and edit it" — so
+  // the free-text SOURCE we transfer is the summary; the reason picker is a
+  // fallback for orgs without a summary. Tried in order; heuristics are last.
+  var _WRAP_CONCRETE_SELECTORS = [
+    '.interaction-summary',
+    'agentx-wc-interaction-summary',
+    'md-input[name="wrapup-suggested-reasons-dropdown-id-input"]',
+    '.wrap-up-input-wrapper md-input',
+    '#pillSearchInput',
+    '.wrap-up-input-wrapper',
+    '.wrapup-container',
+  ];
+
+  function _wrapFindField() {
+    // 1) Explicit override from the `wrapupfieldselector` property.
+    if (_wrapFieldSelector) {
+      var elCfg = findDeep(document.body, _wrapFieldSelector);
+      if (elCfg) return elCfg;
+    }
+    // 2) Concrete agentx wrap-up identifiers.
+    for (var i = 0; i < _WRAP_CONCRETE_SELECTORS.length; i++) {
+      var el = findDeep(document.body, _WRAP_CONCRETE_SELECTORS[i]);
+      if (el) return el;
+    }
+    // 3) Heuristic last resort: a searchable input / textarea within the
+    //    interaction control area (guards against a future markup rename).
+    var scopeSelectors = [
+      'agentx-wc-control-panel',
+      'agentx-react-interaction-control-wrapper',
+      '#common-control',
+      '.call-control',
+    ];
+    for (var s = 0; s < scopeSelectors.length; s++) {
+      var sc = findDeep(document.body, scopeSelectors[s]);
+      if (sc) {
+        var h = findDeep(sc.shadowRoot || sc, 'textarea, input[type="search"], input[type="text"]');
+        if (h) return h;
+      }
+    }
+    return null;
+  }
+
+  var _wrapSdkData = null;  // last wrap-up SDK event payload (auto-mode source)
+
+  // Assemble the editable AI summary the way the card's own "Copy summary" button
+  // does. agentx-wc-interaction-summary renders a Microsoft Adaptive Card of
+  // labeled textareas (Contact reason / Details / Additional topics / Actions
+  // taken / Next steps) under #response-body-summary-sections-container.
+  function _wrapReadSummary(anchor) {
+    try {
+      var container = findDeep(anchor, '#response-body-summary-sections-container');
+      if (container && container.children && container.children.length) {
+        var lines = [];
+        var secs = container.children;
+        for (var i = 0; i < secs.length; i++) {
+          var sec = secs[i];
+          var ta = sec.querySelector('textarea, input');
+          var val = ta ? (ta.value || '').trim() : '';
+          if (val) {
+            // Edit mode: labelled <textarea>. Prefix with its label text block.
+            var labelEl = sec.querySelector('.ac-textBlock p') || sec.querySelector('.ac-textBlock');
+            var label = labelEl ? (labelEl.textContent || '').trim() : '';
+            if (label && val.indexOf(label) !== 0) val = label + ' ' + val;
+          } else {
+            // Read mode: no textarea — the value is rendered as text blocks.
+            var blocks = sec.querySelectorAll('.ac-textBlock');
+            var parts = [];
+            for (var b = 0; b < blocks.length; b++) {
+              var tx = (blocks[b].textContent || '').replace(/\s+/g, ' ').trim();
+              if (tx && parts.indexOf(tx) < 0) parts.push(tx);
+            }
+            val = parts.join(' ');
+          }
+          if (val) lines.push(val);
+        }
+        if (lines.length) {
+          var titleEl = findDeep(anchor, '.ac-textBlock p');
+          var title = titleEl ? (titleEl.textContent || '').trim() : '';
+          if (title && lines.join('\n').indexOf(title) >= 0) title = '';
+          return (title ? title + '\n' : '') + lines.join('\n');
+        }
+      }
+      // Fallback: read every Adaptive Card text/input block in document order
+      // (covers layouts without the sections container in read-only mode).
+      var root = findDeep(anchor, '.ac-adaptiveCard') || anchor;
+      var all = root.querySelectorAll ? root.querySelectorAll('.ac-textBlock, textarea, input') : [];
+      var out = []; var last = '';
+      for (var k = 0; k < all.length; k++) {
+        var el = all[k];
+        var t = (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT')
+          ? (el.value || '').trim()
+          : (el.textContent || '').replace(/\s+/g, ' ').trim();
+        if (t && t !== last && !_wrapIsNoiseLine(t)) { out.push(t); last = t; }
+      }
+      return out.join('\n');
+    } catch (e) { return ''; }
+  }
+
+  // Build the auto-mode transfer text from the SDK wrap-up payload (the summary
+  // DOM is gone by submit time, so auto mode sources the SDK event instead).
+  function _wrapBuildSdkText(d) {
+    if (!d || typeof d !== 'object') return '';
+    var out = [];
+    var reason = d.wrapUpReason || d.wrapUpAuxCodeName || d.wrapupCodeName || d.reason ||
+      (d.wrapUp && (d.wrapUp.name || d.wrapUp.reason));
+    if (reason) out.push('Wrap-up: ' + reason);
+    var summary = d.summary || d.callSummary || d.aiSummary || d.wrapUpSummary || d.conversationSummary;
+    if (summary && typeof summary === 'string') out.push(summary);
+    return out.join('\n');
+  }
+
+  // Extract the wrap-up text from the located anchor. For the summary anchor we
+  // assemble the Adaptive Card sections; otherwise fall back to an editable field
+  // (reason input incl. its shadow <input>) or a selected reason chip.
+  function _wrapReadFieldText() {
+    var el = _wrapField;
+    if (!el) return _wrapLastText || '';
+    try {
+      if (el.tagName === 'AGENTX-WC-INTERACTION-SUMMARY' ||
+          (el.className && el.className.toString().indexOf('interaction-summary') >= 0)) {
+        var sum = _wrapReadSummary(el);
+        if (sum) return sum;
+      }
+      var editable = findDeep(el, 'textarea, md-textarea, [contenteditable=""], [contenteditable="true"], md-input, input');
+      if (!editable) {
+        var t0 = el.tagName;
+        if (t0 === 'MD-INPUT' || t0 === 'INPUT' || t0 === 'TEXTAREA' || el.isContentEditable) editable = el;
+      }
+      if (editable) {
+        if (editable.isContentEditable) {
+          var ce = (editable.textContent || '').trim();
+          if (ce) return ce;
+        }
+        if (typeof editable.value === 'string' && editable.value.trim()) return editable.value;
+        var inner = editable.shadowRoot && editable.shadowRoot.querySelector('input, textarea, [contenteditable]');
+        if (inner) {
+          if (typeof inner.value === 'string' && inner.value.trim()) return inner.value;
+          var it = (inner.textContent || '').trim();
+          if (it) return it;
+        }
+      }
+      // Selected reason chip (AI-suggested variant).
+      var chipRoot = (el.closest && el.closest('.wrapup-container, .wrap-up-popover-wrapper')) || el;
+      var chips = chipRoot.querySelectorAll
+        ? chipRoot.querySelectorAll('[data-chip-interactive="true"], .suggestion-chips__chip--interactive')
+        : null;
+      if (chips && chips.length) {
+        var parts = [];
+        for (var c = 0; c < chips.length; c++) {
+          var tx = (chips[c].textContent || '').trim();
+          if (tx) parts.push(tx);
+        }
+        if (parts.length) return parts.join(', ');
+      }
+    } catch (e) { /* ignore */ }
+    return _wrapLastText || '';
+  }
+
+  // Deep querySelectorAll that descends through open shadow roots.
+  function findAllDeep(root, selector) {
+    var out = [];
+    if (!root || !root.querySelectorAll) return out;
+    try { Array.prototype.push.apply(out, root.querySelectorAll(selector)); } catch (e) { /* ignore */ }
+    var all = root.querySelectorAll('*');
+    for (var i = 0; i < all.length; i++) {
+      if (all[i].shadowRoot) out = out.concat(findAllDeep(all[i].shadowRoot, selector));
+    }
+    return out;
+  }
+
+  function _wrapControlValue(n) {
+    try {
+      if (n.isContentEditable) return (n.textContent || '').replace(/\s+/g, ' ').trim();
+      if (typeof n.value === 'string' && n.value.trim()) return n.value.trim();
+      var inner = n.shadowRoot && n.shadowRoot.querySelector('input, textarea, [contenteditable]');
+      if (inner) return (inner.value || inner.textContent || '').trim();
+      if (n.querySelector) { var q = n.querySelector('input, textarea'); if (q && q.value) return q.value.trim(); }
+    } catch (e) { /* ignore */ }
+    return '';
+  }
+
+  function _wrapLabelFor(n) {
+    try {
+      var al = n.getAttribute && (n.getAttribute('aria-label') || n.getAttribute('placeholder'));
+      if (al) return al.trim();
+      var root = n.getRootNode ? n.getRootNode() : document;
+      if (n.id && root.querySelector) {
+        var esc = (window.CSS && CSS.escape) ? CSS.escape(n.id) : n.id;
+        var lf = root.querySelector('label[for="' + esc + '"]');
+        if (lf) return (lf.textContent || '').replace(/\s+/g, ' ').trim();
+      }
+      var lab = n.closest && n.closest('label');
+      if (lab) { var t = (lab.textContent || '').replace(/\s+/g, ' ').trim(); if (t && t.length < 80) return t; }
+      var nm = n.getAttribute && n.getAttribute('name');
+      if (nm) return nm.replace(/[-_]+/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); }).trim();
+    } catch (e) { /* ignore */ }
+    return '';
+  }
+
+  // The wrap-up region that may contain several structured source elements (the
+  // reason input, the AI summary sections, chips, …). Walk up from the anchor
+  // crossing shadow boundaries; fall back to the anchor itself.
+  function _wrapRegionScope() {
+    var el = _wrapField, hop = 0;
+    var isRegion = function (n) {
+      try { return n.matches && n.matches('.wrapup-container,.wrap-up-popover-wrapper,agentx-wc-wrapup,.wrapup,agentx-wc-interaction-control'); }
+      catch (e) { return false; }
+    };
+    while (el && hop < 15) {
+      if (el.nodeType === 1 && isRegion(el)) return el;
+      var parent = el.parentElement;
+      if (!parent) {
+        var root = el.getRootNode && el.getRootNode();
+        if (root && root.host) { el = root.host; hop++; continue; }
+        break;
+      }
+      el = parent; hop++;
+    }
+    return _wrapField;
+  }
+
+  // The AI summary card — the free-text source that actually gets transferred.
+  // It is a distinct element from the reason search/combobox above it.
+  var _wrapSummaryRootCache = null;
+  function _wrapSummaryRoot() {
+    if (_wrapSummaryRootCache && _wrapSummaryRootCache.isConnected) return _wrapSummaryRootCache;
+    _wrapSummaryRootCache = null;
+    var sels = ['agentx-wc-interaction-summary', '.interaction-summary', '[class*="interaction-summary"]'];
+    for (var i = 0; i < sels.length; i++) { var e = findDeep(document.body, sels[i]); if (e) { _wrapSummaryRootCache = e; return e; } }
+    var card = findDeep(document.body, '#response-body-summary-sections-container') || findDeep(document.body, '.ac-adaptiveCard');
+    if (card) { _wrapSummaryRootCache = card; return card; }
+    var f = _wrapField;
+    if (f && (f.tagName === 'AGENTX-WC-INTERACTION-SUMMARY' ||
+        (f.className && String(f.className).indexOf('interaction-summary') >= 0))) { _wrapSummaryRootCache = f; return f; }
+    return null;
+  }
+
+  // Split an assembled summary string into labelled fields on "Label:" markers
+  // (works when the DOM structure is opaque). A label is a short, non-sentence
+  // segment before a colon; its value is the remainder + following non-label lines.
+  // Summary-card chrome that is NOT wrap-up data (footer badge, feedback icons).
+  function _wrapIsNoiseLine(s) {
+    var t = String(s || '').replace(/[·•|]+/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+    if (!t) return true;
+    return /^(ai[-\s]?generated|generated by ai|ai summary|vygenerov)\b/.test(t);
+  }
+
+  function _wrapSplitLabeled(text) {
+    var lines = String(text || '').split(/\r?\n/).map(function (s) { return s.replace(/\s+/g, ' ').trim(); })
+      .filter(function (s) { return s && !_wrapIsNoiseLine(s); });
+    var fields = [], cur = null;
+    for (var i = 0; i < lines.length; i++) {
+      var ln = lines[i];
+      var m = ln.match(/^([^:：]{1,34})[:：]\s*(.*)$/);
+      var isLabel = m && !/[.!?]$/.test(m[1]) && m[1].split(' ').length <= 6;
+      if (isLabel) {
+        if (cur) fields.push(cur);
+        cur = { label: m[1].trim(), value: (m[2] || '').trim() };
+      } else if (cur) {
+        cur.value += (cur.value ? ' ' : '') + ln;
+      } else {
+        fields.push({ label: '', value: ln });   // preamble / title
+      }
+    }
+    if (cur) fields.push(cur);
+    // Drop a leading title-only field when real labelled fields follow.
+    while (fields.length > 1 && !fields[0].label && fields.some(function (f, ix) { return ix > 0 && f.label; })) fields.shift();
+    return fields;
+  }
+
+  // The reason picker / suggestion search must never be treated as source text.
+  function _wrapIsReasonPicker(n) {
+    try {
+      var name = (n.getAttribute && n.getAttribute('name')) || '';
+      var ph = (n.getAttribute && n.getAttribute('placeholder')) || '';
+      var role = (n.getAttribute && n.getAttribute('role')) || '';
+      var type = ((n.getAttribute && n.getAttribute('type')) || '').toLowerCase();
+      if (/reason|dropdown|suggest/i.test(name)) return true;
+      if (n.id && /pillsearch|reason|suggest/i.test(n.id)) return true;
+      if (role === 'combobox' || role === 'searchbox') return true;
+      if (type === 'search') return true;
+      if (/hledat|search|suchen|rechercher|buscar|szukaj|ara/i.test(ph)) return true;
+      if (n.closest && n.closest('.wrap-up-input-wrapper, .suggestion-chips, [role="combobox"], .md-combobox, .searchable-dropdown, .select-search')) return true;
+    } catch (e) { /* ignore */ }
+    return false;
+  }
+
+  // Parse the summary card into labelled fields, trying (in order): the
+  // adaptive-card sections container, editable textareas, read-mode text-block
+  // pairs, then an innerText line-pairing fallback.
+  function _wrapParseSummary(root, push) {
+    // 1) Adaptive Card sections container (cleanest — edit or read mode).
+    var container = findDeep(root, '#response-body-summary-sections-container');
+    if (container && container.children && container.children.length) {
+      var secs = container.children;
+      for (var i = 0; i < secs.length; i++) {
+        var sec = secs[i];
+        var labelEl = sec.querySelector('.ac-textBlock p') || sec.querySelector('.ac-textBlock');
+        var label = labelEl ? (labelEl.textContent || '').replace(/\s+/g, ' ').trim() : '';
+        var ta = sec.querySelector('textarea, input');
+        var val;
+        if (ta) { val = (ta.value || '').trim(); }
+        else {
+          var blks = sec.querySelectorAll('.ac-textBlock');
+          var parts = [];
+          for (var b = 0; b < blks.length; b++) {
+            var tx = (blks[b].textContent || '').replace(/\s+/g, ' ').trim();
+            if (tx) parts.push(tx);
+          }
+          if (parts.length && parts[0] === label) parts.shift();
+          val = parts.join(' ');
+        }
+        push(sec.id || label, label, val);
+      }
+      return;
+    }
+    // 2) Editable textareas / contenteditable inside the summary.
+    var tas = findAllDeep(root, 'textarea, [contenteditable=""], [contenteditable="true"]');
+    var got = false;
+    for (var t = 0; t < tas.length; t++) {
+      var e = tas[t];
+      if (_wrapIsReasonPicker(e)) continue;
+      var v = e.isContentEditable ? (e.textContent || '').replace(/\s+/g, ' ').trim() : (e.value || '').trim();
+      var host = (e.closest && e.closest('[id]')) || e.parentElement;
+      var lEl = host && (host.querySelector('.ac-textBlock p') || host.querySelector('.ac-textBlock') || host.querySelector('label'));
+      var lbl = lEl ? (lEl.textContent || '').replace(/\s+/g, ' ').trim() : '';
+      push((host && host.id) || lbl, lbl, v);
+      got = true;
+    }
+    if (got) return;
+    // 3) Read-mode adaptive-card text blocks: pair bold label + following value.
+    var allBlocks = findAllDeep(root, '.ac-textBlock');
+    var blocks = [];
+    for (var bi = 0; bi < allBlocks.length; bi++) {
+      var bs = (allBlocks[bi].textContent || '').replace(/\s+/g, ' ').trim();
+      if (bs && !_wrapIsNoiseLine(bs)) blocks.push(allBlocks[bi]);
+    }
+    if (blocks.length) {
+      for (var k = 0; k < blocks.length; k++) {
+        var el = blocks[k];
+        var s = (el.textContent || '').replace(/\s+/g, ' ').trim();
+        if (!s) continue;
+        var bold = false;
+        try { var w = window.getComputedStyle(el).fontWeight || ''; bold = (parseInt(w, 10) >= 600) || /bold/i.test(w); } catch (e2) { /* ignore */ }
+        if (bold && k + 1 < blocks.length) {
+          var nv = (blocks[k + 1].textContent || '').replace(/\s+/g, ' ').trim();
+          push(_wrapSlug(s), s.replace(/[:：]\s*$/, ''), nv);
+          k++;
+        } else {
+          push('line-' + k, '', s);
+        }
+      }
+      return;
+    }
+    // 4) innerText line pairing (label ends with ":" → next line is its value).
+    var raw = (root.innerText || root.textContent || '');
+    var lines = raw.split(/\r?\n/).map(function (x) { return x.replace(/\s+/g, ' ').trim(); })
+      .filter(function (x) { return x && !_wrapIsNoiseLine(x); });
+    for (var m = 0; m < lines.length; m++) {
+      var ln = lines[m];
+      if (/[:：]$/.test(ln) && m + 1 < lines.length) { push(_wrapSlug(ln), ln.replace(/[:：]\s*$/, ''), lines[++m]); }
+      else {
+        var mm = ln.match(/^(.{1,40}?)[:：]\s+(.+)$/);
+        if (mm) push(_wrapSlug(mm[1]), mm[1], mm[2]);
+        else push('line-' + m, '', ln);
+      }
+    }
+  }
+
+  // Collect the structured source elements the transfer text is assembled from,
+  // so the agent can select/deselect or rewrite each. Prefers the AI summary
+  // card; only if there is none does it look at other editable region controls
+  // (never the reason picker). Returns [{ id, label, value }].
+  function _wrapReadSummaryFields() {
+    if (!_wrapField) return [];
+    function mkPush(arr, seen) {
+      return function (id, label, value) {
+        label = (label == null ? '' : String(label)).trim();
+        value = (value == null ? '' : String(value)).trim();
+        if (!label && !value) return;
+        id = _wrapSlug(id) || _wrapSlug(label) || ('f' + arr.length);
+        var base = id, k = 1;
+        while (seen[id]) id = base + '-' + (k++);
+        seen[id] = 1;
+        arr.push({ id: id, label: label, value: value });
+      };
+    }
+    function labeled(arr) { return arr.filter(function (f) { return f.label; }).length; }
+    function inOurUI(n) { return !!(n.closest && n.closest('.crm-wrap-pop, .crm-wrap-toolbar')); }
+    try {
+      var summaryRoot = _wrapSummaryRoot() || _wrapField;
+
+      // (a) Structured DOM parse of the summary card.
+      var domFields = [];
+      if (summaryRoot) _wrapParseSummary(summaryRoot, mkPush(domFields, {}));
+
+      // (b) Label-split of the assembled summary text.
+      var text = '';
+      try { text = _wrapReadSummary(summaryRoot || _wrapField) || ''; } catch (e2) { text = ''; }
+      if (!text) text = _wrapReadFieldText();
+      var txtFields = [], tp = mkPush(txtFields, {});
+      _wrapSplitLabeled(text).forEach(function (f) { if (f.value) tp(f.label, f.label, f.value); });
+
+      // Pick the richer structured result (prefer more labelled fields).
+      var chosen = null;
+      if (labeled(txtFields) >= 2 && labeled(txtFields) >= labeled(domFields)) chosen = txtFields;
+      else if (domFields.length) chosen = domFields;
+      else if (txtFields.length) chosen = txtFields;
+      if (chosen && chosen.length) return chosen;
+
+      // (c) No summary → other editable region controls (excluding reason picker).
+      var out = [], op = mkPush(out, {});
+      var scope = _wrapRegionScope();
+      if (scope) {
+        var nodes = findAllDeep(scope, 'textarea, input, md-input, [contenteditable=""], [contenteditable="true"]');
+        for (var m = 0; m < nodes.length; m++) {
+          var n = nodes[m];
+          if (inOurUI(n) || !_wrapVisible(n) || _wrapIsReasonPicker(n)) continue;
+          var type = ((n.getAttribute && n.getAttribute('type')) || '').toLowerCase();
+          if (n.tagName === 'INPUT' && /^(hidden|checkbox|radio|button|submit|range|color|file)$/.test(type)) continue;
+          var v = _wrapControlValue(n);
+          if (!v) continue;
+          op(n.id || (n.getAttribute && n.getAttribute('name')), _wrapLabelFor(n), v);
+        }
+        if (out.length) return out;
+      }
+      // (d) Fallback: the whole transferable text as a single editable field.
+      var whole = _wrapReadFieldText();
+      if (whole) op('all', '', whole);
+      return out;
+    } catch (e) { /* ignore */ }
+    return [];
+  }
+
+  // Build the transfer text honouring the content transform: included fields
+  // only, using the agent's value overrides. Falls back to the raw reader when
+  // there are no structured summary fields (e.g. a reason-only wrap-up).
+  function _wrapBuildTransformedText() {
+    var fields = _wrapReadSummaryFields();
+    if (fields.length) {
+      var lines = [];
+      for (var i = 0; i < fields.length; i++) {
+        var f = fields[i];
+        if (!_wrapIncluded(f.id)) continue;
+        var v = (_wrapXformVal[f.id] != null) ? _wrapXformVal[f.id] : f.value;
+        v = (v == null ? '' : String(v)).trim();
+        if (!v) continue;
+        var label = _wrapLabelOf(f.id, f.label).replace(/[:：]\s*$/, '').trim();
+        lines.push(label ? (label + ': ' + v) : v);
+      }
+      if (lines.length) return lines.join('\n');
+    }
+    return _wrapReadFieldText();
+  }
+
+  function _wrapInjectGlowInto(root) {
+    var container = (root && root.nodeType === 11) ? root : document.head;
+    if (!container || (container.querySelector && container.querySelector('style[data-crm-wrap-glow]'))) return;
+    var st = document.createElement('style');
+    st.setAttribute('data-crm-wrap-glow', '1');
+    st.textContent =
+      '@keyframes crmWrapSourceGlow{' +
+      '0%,100%{box-shadow:0 0 0 3px color-mix(in srgb,var(--crm-wrap-glow,#0e7fc1) 45%,transparent),' +
+      '0 0 10px 2px color-mix(in srgb,var(--crm-wrap-glow,#0e7fc1) 22%,transparent)}' +
+      '50%{box-shadow:0 0 0 5px color-mix(in srgb,var(--crm-wrap-glow,#0e7fc1) 70%,transparent),' +
+      '0 0 20px 7px color-mix(in srgb,var(--crm-wrap-glow,#0e7fc1) 42%,transparent)}}' +
+      '.crm-wrap-source-glow{outline:2px solid var(--crm-wrap-glow,#0e7fc1) !important;outline-offset:2px !important;' +
+      'border-radius:6px;animation:crmWrapSourceGlow 1.4s ease-in-out infinite !important;}';
+    container.appendChild(st);
+  }
+
+  function _wrapEnsureDocStyle() {
+    if (document.getElementById('crm-wrap-doc-style')) return;
+    var font = 'var(--md-font-family,"CiscoSansTT Regular","CiscoSansTT",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif)';
+    var st = document.createElement('style');
+    st.id = 'crm-wrap-doc-style';
+    st.textContent = [
+      '.crm-wrap-toolbar,.crm-wrap-pop{--w-panel:#fff;--w-border:#dbe3ec;--w-text:#0a2236;',
+      '--w-text2:#5b6b7b;--w-accent:#0e7fc1;--w-accent-strong:#0b6ca6;--w-bg:#f4f7fa;--w-active:#cfe0ee;',
+      'font-family:' + font + ';}',
+      '.crm-wrap-toolbar.md--dark,.crm-wrap-pop.md--dark{--w-panel:#17242f;--w-border:rgba(255,255,255,.08);',
+      '--w-text:rgba(255,255,255,.88);--w-text2:rgba(255,255,255,.5);--w-accent:#2dadce;--w-accent-strong:#3bbfe0;',
+      '--w-bg:#0f1b26;--w-active:rgba(45,173,206,.16);}',
+      '.crm-wrap-toolbar{position:fixed;z-index:2147483000;display:inline-flex;align-items:center;gap:4px;',
+      'padding:4px;border-radius:20px;background:var(--w-panel);border:1px solid var(--w-border);',
+      'box-shadow:0 6px 20px rgba(10,34,54,.16);}',
+      '.crm-wrap-btn{all:unset;box-sizing:border-box;display:inline-flex;align-items:center;gap:6px;',
+      'padding:6px 12px;border-radius:16px;font-size:12px;font-weight:600;cursor:pointer;color:var(--w-text2);',
+      'font-family:inherit;transition:background .12s,color .12s;}',
+      '.crm-wrap-btn:hover{background:var(--w-bg);color:var(--w-text);}',
+      '.crm-wrap-btn svg{display:block;}',
+      '.crm-wrap-btn--primary{background:var(--w-accent);color:#fff;}',
+      '.crm-wrap-btn--primary:hover{background:var(--w-accent-strong);color:#fff;}',
+      '.crm-wrap-btn[disabled]{opacity:.45;cursor:default;}',
+      '.crm-wrap-btn[disabled]:hover{background:transparent;color:var(--w-text2);}',
+      '.crm-wrap-btn--primary[disabled]:hover{background:var(--w-accent);color:#fff;}',
+      '.crm-wrap-toggle{padding:6px;border-radius:50%;color:var(--w-text2);}',
+      '.crm-wrap-toggle:hover{background:var(--w-bg);color:var(--w-accent);}',
+      '.crm-wrap-toolbar.is-collapsed{padding:3px;gap:0;}',
+      '.crm-wrap-toolbar.is-collapsed .crm-wrap-btn:not(.crm-wrap-toggle){display:none;}',
+      '.crm-wrap-toolbar.is-collapsed .crm-wrap-toggle{color:var(--w-accent);}',
+      '.crm-wrap-pop{position:fixed;z-index:2147483001;min-width:236px;max-width:300px;padding:14px;',
+      'border-radius:12px;background:var(--w-panel);border:1px solid var(--w-border);color:var(--w-text);',
+      'box-shadow:0 12px 32px rgba(10,34,54,.22);}',
+      '.crm-wrap-pop__label{font-size:10px;text-transform:uppercase;letter-spacing:.05em;font-weight:700;',
+      'color:var(--w-text2);margin:14px 0 6px;}',
+      '.crm-wrap-pop__label:first-child{margin-top:0;}',
+      '.crm-wrap-pop__pick{all:unset;box-sizing:border-box;display:block;width:100%;text-align:center;',
+      'padding:9px 10px;border-radius:16px;background:var(--w-accent);color:#fff;font-size:12px;font-weight:600;',
+      'cursor:pointer;font-family:inherit;transition:background .12s;}',
+      '.crm-wrap-pop__pick:hover{background:var(--w-accent-strong);}',
+      '.crm-wrap-seg{display:flex;gap:3px;background:var(--w-bg);border:1px solid var(--w-border);',
+      'border-radius:18px;padding:3px;}',
+      '.crm-wrap-seg__btn{all:unset;box-sizing:border-box;flex:1 1 0;text-align:center;padding:6px 10px;',
+      'border-radius:15px;font-size:12px;font-weight:600;cursor:pointer;color:var(--w-text2);font-family:inherit;',
+      'transition:background .12s,color .12s;}',
+      '.crm-wrap-seg__btn:hover{color:var(--w-text);}',
+      '.crm-wrap-seg__btn.is-active{background:var(--w-panel);color:var(--w-accent);box-shadow:0 1px 3px rgba(10,34,54,.16);}',
+      '.crm-wrap-swatches{display:flex;flex-wrap:wrap;gap:8px;}',
+      '.crm-wrap-swatch{all:unset;box-sizing:border-box;width:22px;height:22px;border-radius:50%;cursor:pointer;',
+      'border:2px solid var(--w-panel);box-shadow:0 0 0 1px var(--w-border);transition:transform .1s;}',
+      '.crm-wrap-swatch:hover{transform:scale(1.12);}',
+      '.crm-wrap-swatch.is-active{box-shadow:0 0 0 2px var(--w-accent);}',
+      '.crm-wrap-pop__row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:14px 0 6px;}',
+      '.crm-wrap-pop__reset{all:unset;box-sizing:border-box;cursor:pointer;font-size:10px;font-weight:700;',
+      'text-transform:uppercase;letter-spacing:.05em;color:var(--w-accent);}',
+      '.crm-wrap-pop__reset:hover{color:var(--w-accent-strong);text-decoration:underline;}',
+      '.crm-wrap-fields{display:flex;flex-direction:column;gap:8px;max-height:230px;overflow:auto;}',
+      '.crm-wrap-field{border:1px solid var(--w-border);border-radius:10px;padding:8px;background:var(--w-bg);}',
+      '.crm-wrap-field__head{display:flex;align-items:center;gap:7px;cursor:pointer;}',
+      '.crm-wrap-field__cb{width:15px;height:15px;accent-color:var(--w-accent);cursor:pointer;margin:0;flex:0 0 auto;}',
+      '.crm-wrap-field__label{font-size:11px;font-weight:700;color:var(--w-text);}',
+      '.crm-wrap-field__title{all:unset;box-sizing:border-box;flex:1 1 auto;min-width:0;font-size:11px;',
+      'font-weight:700;color:var(--w-text);padding:2px 4px;border-radius:5px;border:1px solid transparent;',
+      'font-family:inherit;cursor:text;}',
+      '.crm-wrap-field__title:hover{border-color:var(--w-border);}',
+      '.crm-wrap-field__title:focus{border-color:var(--w-accent);box-shadow:0 0 0 2px var(--w-active);}',
+      '.crm-wrap-field__title::placeholder{color:var(--w-text2);font-weight:400;font-style:italic;}',
+      '.crm-wrap-field__val{box-sizing:border-box;width:100%;margin-top:6px;padding:6px 8px;border-radius:8px;',
+      'border:1px solid var(--w-border);background:var(--w-panel);color:var(--w-text);font-family:inherit;',
+      'font-size:12px;line-height:1.35;resize:vertical;min-height:32px;}',
+      '.crm-wrap-field__val:focus{outline:none;border-color:var(--w-accent);box-shadow:0 0 0 2px var(--w-active);}',
+      '.crm-wrap-field.is-off{opacity:.5;}',
+      '.crm-wrap-field.is-off .crm-wrap-field__val{background:var(--w-bg);}',
+      '.crm-wrap-pop__empty{font-size:11px;color:var(--w-text2);margin:6px 0 0;}',
+      '.crm-wrap-pop__hint{font-size:11px;color:var(--w-text2);margin:12px 0 0;line-height:1.4;}',
+    ].join('');
+    document.head.appendChild(st);
+  }
+
+  // Apply the chosen glow colour to the live source field + reflect the swatch.
+  function _wrapApplyGlowColor(color) {
+    if (color) _wrapGlowColor = color;
+    if (_wrapField) { try { _wrapField.style.setProperty('--crm-wrap-glow', _wrapGlowColor); } catch (e) { /* ignore */ } }
+    var pop = _wrapToolbar && _wrapToolbar._pop;
+    if (pop) {
+      var sw = pop.querySelectorAll('.crm-wrap-swatch');
+      for (var i = 0; i < sw.length; i++) sw[i].classList.toggle('is-active', sw[i].getAttribute('data-color') === _wrapGlowColor);
+    }
+  }
+
+  // True only while the wrap-up field is actually on screen. The Desktop often
+  // leaves the field detached/hidden when the panel is dismissed, so a mere
+  // "element exists" test isn't enough to keep the toolbar attached to it.
+  function _wrapVisible(el) {
+    if (!el || !el.isConnected) return false;
+    try {
+      if (typeof el.checkVisibility === 'function' &&
+          !el.checkVisibility({ checkOpacity: false, checkVisibilityCSS: true })) return false;
+      var r = el.getBoundingClientRect();
+      if (!r || (r.width === 0 && r.height === 0)) return false;
+    } catch (e) { return false; }
+    return true;
+  }
+
+  function _wrapPositionUI() {
+    if (!_wrapToolbar || !_wrapField) return;
+    // If the wrap-up panel has gone (field detached/hidden), tear the toolbar
+    // down immediately instead of leaving it hovering over unrelated content.
+    if (!_wrapVisible(_wrapField)) { _wrapSetHighlight(false); _wrapHideUI(); return; }
+    var r;
+    try { r = _wrapField.getBoundingClientRect(); } catch (e) { return; }
+    if (!r || (r.width === 0 && r.height === 0)) return;
+    var tw = _wrapToolbar.offsetWidth || 0;
+    var th = _wrapToolbar.offsetHeight || 0;
+    // Dock onto the frame's top-right corner, straddling the border so the
+    // toolbar reads as part of the glowing frame (not floating over other UI).
+    var top = r.top - Math.round(th / 2);
+    if (top < 4) top = r.bottom - Math.round(th / 2);
+    var left = r.right - tw - 8;
+    if (left < 4) left = 4;
+    _wrapToolbar.style.top = top + 'px';
+    _wrapToolbar.style.left = left + 'px';
+    var pop = _wrapToolbar._pop;
+    if (pop && pop.parentNode) {
+      pop.style.top = (top + (_wrapToolbar.offsetHeight || 0) + 6) + 'px';
+      pop.style.left = Math.max(4, r.right - (pop.offsetWidth || 0)) + 'px';
+    }
+  }
+
+  function _wrapUpdateToolbarState() {
+    if (!_wrapToolbar) return;
+    var transferBtn = _wrapToolbar._transferBtn;
+    if (transferBtn) {
+      var open = _wrapCrmOpen();
+      var enabled = open && _wrapCfg.targetConfigured && _wrapCfg.mode === 'manual';
+      if (enabled) transferBtn.removeAttribute('disabled');
+      else transferBtn.setAttribute('disabled', 'disabled');
+      transferBtn.title = !open
+        ? _wrapT('tipNoCrm')
+        : !_wrapCfg.targetConfigured
+          ? _wrapT('tipNoTarget')
+          : (_wrapCfg.mode !== 'manual' ? _wrapT('tipAuto') : _wrapT('tipTransfer'));
+    }
+    var pop = _wrapToolbar._pop;
+    if (pop) {
+      var segs = pop.querySelectorAll('.crm-wrap-seg__btn');
+      for (var i = 0; i < segs.length; i++) {
+        segs[i].classList.toggle('is-active', segs[i].getAttribute('data-mode') === _wrapCfg.mode);
+      }
+    }
+  }
+
+  function _wrapClosePopover() {
+    if (_wrapToolbar && _wrapToolbar._pop && _wrapToolbar._pop.parentNode) {
+      _wrapToolbar._pop.parentNode.removeChild(_wrapToolbar._pop);
+    }
+    if (_wrapToolbar) _wrapToolbar._pop = null;
+  }
+
+  function _wrapBuildPopover() {
+    var pop = document.createElement('div');
+    pop.className = 'crm-wrap-pop' + (_darkMode ? ' md--dark' : '');
+    // A bubble-phase guard so a click inside the popover never reaches the host
+    // desktop's outside-click detector that would dismiss the wrap-up dialog.
+    pop.addEventListener('click', function (e) { e.stopPropagation(); });
+
+    var targetLabel = document.createElement('p');
+    targetLabel.className = 'crm-wrap-pop__label';
+    targetLabel.textContent = _wrapT('targetField');
+
+    var pick = document.createElement('button');
+    pick.type = 'button';
+    pick.className = 'crm-wrap-pop__pick';
+    pick.textContent = _wrapT('pickTarget');
+    pick.addEventListener('click', function () {
+      _wrapPost({ type: 'PICKER_START' }).then(function (r) {
+        if (!r) console.warn('[panel-layout] wrap-transfer: PICKER_START got NO reply — the CRM extension is not responding in this tab. HARD-RELOAD this Desktop tab (its content script was orphaned by an extension reload).');
+        else if (!r.ok) console.warn('[panel-layout] wrap-transfer: PICKER_START ok=false frames=' + (r.frames || 0) + ' — open the CRM Tab Manager so a CRM frame can receive the picker.');
+        else console.log('[panel-layout] wrap-transfer: PICKER_START delivered to', r.frames, 'frame(s)');
+      });
+      _wrapClosePopover();
+    });
+
+    var modeLabel = document.createElement('p');
+    modeLabel.className = 'crm-wrap-pop__label';
+    modeLabel.textContent = _wrapT('transferMode');
+    var seg = document.createElement('div');
+    seg.className = 'crm-wrap-seg';
+    [['manual', _wrapT('manual')], ['auto', _wrapT('automatic')]].forEach(function (m) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'crm-wrap-seg__btn';
+      b.setAttribute('data-mode', m[0]);
+      b.textContent = m[1];
+      b.addEventListener('click', function () {
+        _wrapPost({ type: 'SET_MODE', mode: m[0] }).then(function () { _wrapRefreshStatus(); });
+      });
+      seg.appendChild(b);
+    });
+
+    // Content transform — select/deselect summary fields and edit their values.
+    var fields = _wrapReadSummaryFields();
+    var contentRow = document.createElement('div');
+    contentRow.className = 'crm-wrap-pop__row';
+    var contentLabel = document.createElement('span');
+    contentLabel.className = 'crm-wrap-pop__label';
+    contentLabel.style.margin = '0';
+    contentLabel.textContent = _wrapT('content');
+    contentRow.appendChild(contentLabel);
+    if (fields.length) {
+      var reset = document.createElement('button');
+      reset.type = 'button';
+      reset.className = 'crm-wrap-pop__reset';
+      reset.textContent = _wrapT('reset');
+      reset.addEventListener('click', function () {
+        _wrapXformVal = {};
+        _wrapXformInc = {};
+        _wrapXformLabel = {};
+        _wrapSaveInc();
+        _wrapSaveLabels();
+        _wrapLastText = _wrapBuildTransformedText();
+        _wrapClosePopover();
+        var np = _wrapBuildPopover();
+        document.body.appendChild(np);
+        _wrapToolbar._pop = np;
+        _wrapPositionUI();
+        _wrapUpdateToolbarState();
+      });
+      contentRow.appendChild(reset);
+    }
+    var fieldsWrap = document.createElement('div');
+    fieldsWrap.className = 'crm-wrap-fields';
+    if (!fields.length) {
+      var empty = document.createElement('p');
+      empty.className = 'crm-wrap-pop__empty';
+      empty.textContent = _wrapT('noFields');
+      fieldsWrap.appendChild(empty);
+    } else {
+      fields.forEach(function (f, idx) {
+        var row = document.createElement('div');
+        var on = _wrapIncluded(f.id);
+        row.className = 'crm-wrap-field' + (on ? '' : ' is-off');
+        var head = document.createElement('div');
+        head.className = 'crm-wrap-field__head';
+        var cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.className = 'crm-wrap-field__cb';
+        cb.checked = on;
+        var title = document.createElement('input');
+        title.type = 'text';
+        title.className = 'crm-wrap-field__title';
+        title.value = _wrapLabelOf(f.id, f.label);
+        title.placeholder = _wrapT('titleHint');
+        head.appendChild(cb);
+        head.appendChild(title);
+        var val = document.createElement('textarea');
+        val.className = 'crm-wrap-field__val';
+        val.rows = 2;
+        val.value = (_wrapXformVal[f.id] != null) ? _wrapXformVal[f.id] : f.value;
+        val.disabled = !on;
+        cb.addEventListener('change', function () {
+          _wrapSetIncluded(f.id, cb.checked);
+          row.classList.toggle('is-off', !cb.checked);
+          val.disabled = !cb.checked;
+          _wrapLastText = _wrapBuildTransformedText();
+        });
+        title.addEventListener('input', function () {
+          _wrapSetLabel(f.id, title.value);
+          _wrapLastText = _wrapBuildTransformedText();
+        });
+        val.addEventListener('input', function () {
+          _wrapXformVal[f.id] = val.value;
+          _wrapLastText = _wrapBuildTransformedText();
+        });
+        row.appendChild(head);
+        row.appendChild(val);
+        fieldsWrap.appendChild(row);
+      });
+    }
+
+    var glowLabel = document.createElement('p');
+    glowLabel.className = 'crm-wrap-pop__label';
+    glowLabel.textContent = _wrapT('glowColor');
+    var swatches = document.createElement('div');
+    swatches.className = 'crm-wrap-swatches';
+    _WRAP_GLOW_COLORS.forEach(function (c) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'crm-wrap-swatch' + (c === _wrapGlowColor ? ' is-active' : '');
+      b.setAttribute('data-color', c);
+      b.style.background = c;
+      b.title = c;
+      b.addEventListener('click', function () {
+        _wrapApplyGlowColor(c);
+        _wrapPost({ type: 'SET_GLOW_COLOR', color: c });
+      });
+      swatches.appendChild(b);
+    });
+
+    var hint = document.createElement('p');
+    hint.className = 'crm-wrap-pop__hint';
+    hint.textContent = _wrapT('hint');
+
+    pop.appendChild(targetLabel);
+    pop.appendChild(pick);
+    pop.appendChild(modeLabel);
+    pop.appendChild(seg);
+    pop.appendChild(contentRow);
+    pop.appendChild(fieldsWrap);
+    pop.appendChild(glowLabel);
+    pop.appendChild(swatches);
+    pop.appendChild(hint);
+    return pop;
+  }
+
+  function _wrapApplyCollapsed(bar) {
+    if (!bar) return;
+    var collapsed = _wrapLoadCollapsed();
+    bar.classList.toggle('is-collapsed', collapsed);
+    var t = bar.querySelector('.crm-wrap-toggle');
+    if (t) {
+      // Chevron points the way it moves: » folds into the frame corner, « unfolds.
+      t.innerHTML = collapsed ? _WRAP_ICON_COLLAPSE : _WRAP_ICON_EXPAND;
+      t.title = collapsed ? _wrapT('expand') : _wrapT('collapse');
+      if (collapsed) { t.style.setProperty('background', _wrapGlowColor, 'important'); t.style.setProperty('color', '#fff', 'important'); }
+      else { t.style.removeProperty('background'); t.style.removeProperty('color'); }
+    }
+    // Tie the toolbar to the glow frame it belongs to.
+    try { bar.style.setProperty('border-color', _wrapGlowColor); } catch (e) { /* ignore */ }
+  }
+
+  function _wrapShowUI(field) {
+    _wrapHideUI();
+    _wrapField = field;
+    try {
+      var _dbgEd = findDeep(field, 'textarea, md-textarea, [contenteditable=""], [contenteditable="true"], md-input, input');
+      console.log('[panel-layout] wrap-transfer: source anchor <' + (field.tagName || '').toLowerCase() + '> ' +
+        (field.className && field.className.toString ? field.className.toString().split(/\s+/)[0] : '') +
+        ' | editable:', _dbgEd ? ((_dbgEd.tagName || '').toLowerCase() + ' name=' + (_dbgEd.getAttribute && _dbgEd.getAttribute('name'))) : 'none');
+    } catch (e) { /* ignore */ }
+    _wrapEnsureDocStyle();
+    var root = field.getRootNode ? field.getRootNode() : document;
+    _wrapInjectGlowInto(root && root.nodeType === 11 ? root : document);
+    field.classList.add('crm-wrap-source-glow');
+    try { field.style.setProperty('--crm-wrap-glow', _wrapGlowColor); } catch (e) { /* ignore */ }
+
+    _wrapLastText = _wrapBuildTransformedText();
+    field._wrapInputHandler = function () { _wrapLastText = _wrapBuildTransformedText(); };
+    field.addEventListener('input', field._wrapInputHandler);
+
+    var bar = document.createElement('div');
+    bar.className = 'crm-wrap-toolbar' + (_darkMode ? ' md--dark' : '');
+    // Bubble-phase guard: a click on the toolbar must not reach the host
+    // desktop's outside-click detector that dismisses the wrap-up dialog.
+    bar.addEventListener('click', function (e) { e.stopPropagation(); });
+
+    var toggleBtn = document.createElement('button');
+    toggleBtn.type = 'button';
+    toggleBtn.className = 'crm-wrap-btn crm-wrap-toggle';
+    toggleBtn.addEventListener('click', function () {
+      _wrapSetCollapsedState(!_wrapLoadCollapsed());
+      if (_wrapLoadCollapsed()) _wrapClosePopover();
+      _wrapApplyCollapsed(bar);
+      _wrapPositionUI();
+    });
+
+    var settingsBtn = document.createElement('button');
+    settingsBtn.type = 'button';
+    settingsBtn.className = 'crm-wrap-btn';
+    settingsBtn.innerHTML = _WRAP_ICON_GEAR + '<span></span>';
+    settingsBtn.querySelector('span').textContent = _wrapT('settings');
+    settingsBtn.addEventListener('click', function () {
+      if (bar._pop) { _wrapClosePopover(); return; }
+      var pop = _wrapBuildPopover();
+      document.body.appendChild(pop);
+      bar._pop = pop;
+      _wrapPositionUI();
+      _wrapUpdateToolbarState();
+    });
+
+    var transferBtn = document.createElement('button');
+    transferBtn.type = 'button';
+    transferBtn.className = 'crm-wrap-btn crm-wrap-btn--primary';
+    transferBtn.setAttribute('disabled', 'disabled');
+    transferBtn.innerHTML = _WRAP_ICON_ARROW + '<span></span>';
+    transferBtn.querySelector('span').textContent = _wrapT('transfer');
+    transferBtn.addEventListener('click', function () {
+      if (transferBtn.hasAttribute('disabled')) return;
+      var text = _wrapBuildTransformedText();
+      if (!text) return;
+      _wrapPost({ type: 'WRITE_WRAPUP_TEXT', text: text });
+    });
+
+    bar.appendChild(settingsBtn);
+    bar.appendChild(transferBtn);
+    bar._transferBtn = transferBtn;
+    bar._pop = null;
+    bar.appendChild(toggleBtn);
+    _wrapApplyCollapsed(bar);
+    document.body.appendChild(bar);
+    _wrapToolbar = bar;
+
+    _wrapPositionUI();
+    window.addEventListener('scroll', _wrapPositionUI, true);
+    window.addEventListener('resize', _wrapPositionUI, true);
+    _WRAP_GUARD_EVENTS.forEach(function (t) { window.addEventListener(t, _wrapSwallowGuard, true); });
+    _wrapReposTimer = setInterval(_wrapPositionUI, 500);
+    _wrapUpdateToolbarState();
+    console.log('[panel-layout] wrap-transfer: UI shown over wrap-up field');
+  }
+
+  function _wrapHideUI() {
+    _wrapClosePopover();
+    if (_wrapReposTimer) { clearInterval(_wrapReposTimer); _wrapReposTimer = null; }
+    window.removeEventListener('scroll', _wrapPositionUI, true);
+    window.removeEventListener('resize', _wrapPositionUI, true);
+    _WRAP_GUARD_EVENTS.forEach(function (t) { window.removeEventListener(t, _wrapSwallowGuard, true); });
+    if (_wrapField) {
+      _wrapField.classList.remove('crm-wrap-source-glow');
+      if (_wrapField._wrapInputHandler) {
+        _wrapField.removeEventListener('input', _wrapField._wrapInputHandler);
+        _wrapField._wrapInputHandler = null;
+      }
+    }
+    if (_wrapToolbar && _wrapToolbar.parentNode) _wrapToolbar.parentNode.removeChild(_wrapToolbar);
+    _wrapToolbar = null;
+    _wrapField = null;
+  }
+
+  // The native wrap-up dialog only renders after the agent clicks the wrap-up
+  // button (#wrapup-button-id) — it is NOT in the DOM when eAgentWrapup fires.
+  // So we watch for the field to appear/disappear for the whole wrap-up state.
+  var _wrapWatchTimer = null;
+
+  function _wrapStartWatch() {
+    if (_wrapWatchTimer) return;
+    _wrapCheckField();
+    _wrapWatchTimer = setInterval(_wrapCheckField, 500);
+  }
+
+  function _wrapStopWatch() {
+    if (_wrapWatchTimer) { clearInterval(_wrapWatchTimer); _wrapWatchTimer = null; }
+  }
+
+  function _wrapCheckField() {
+    if (_wrapInteractionId === null) { _wrapStopWatch(); return; }
+    // Re-poll CRM-open status roughly every 3s so Transfer enables if the agent
+    // opens the CRM after entering wrap-up.
+    if ((_wrapTick++ % 6) === 0) { _wrapRefreshStatus(); _wrapQueryCrmPresence(); }
+    var field = _wrapFindField();
+    if (field && _wrapVisible(field)) {
+      if (_wrapField !== field || !_wrapToolbar) {
+        _wrapShowUI(field);
+      }
+      _wrapSetHighlight(true);
+      // Continuously capture the transformed text so auto-transfer works even if
+      // the popover has closed by the time the wrap-up submit event fires.
+      var t = _wrapBuildTransformedText();
+      if (t) _wrapLastText = t;
+    } else {
+      if (_wrapToolbar) _wrapHideUI();
+      _wrapSetHighlight(false);
+      if ((_wrapTick % 10) === 1) {
+        console.log('[panel-layout] wrap-transfer: field NOT found yet — open the wrap-up dialog (click the wrap-up button) so the summary renders');
+      }
+    }
+  }
+
+  function _wrapOnEnter(interactionId) {
+    if (!interactionId) return;
+    _wrapInteractionId = interactionId;
+    _wrapLastText = '';
+    _wrapTick = 0;
+    _wrapHighlightOn = false;
+    // Show the glow/toolbar as soon as the wrap-up field appears; CRM-open only
+    // gates the Transfer button (queried async from the extension + crm-sync).
+    _wrapRefreshStatus();
+    _wrapQueryCrmPresence();
+    _wrapStartWatch();
+  }
+
+  function _wrapOnSubmit() {
+    if (_wrapCrmOpen() && _wrapCfg.targetConfigured && _wrapCfg.mode === 'auto') {
+      var text = _wrapLastText || _wrapBuildSdkText(_wrapSdkData);
+      if (text) {
+        _wrapPost({ type: 'WRITE_WRAPUP_TEXT', text: text });
+        console.log('[panel-layout] wrap-transfer: auto-transferred on submit (SDK)');
+      }
+    }
+    _wrapSetHighlight(false);
+    _wrapStopWatch();
+    _wrapHideUI();
+    _wrapInteractionId = null;
+    _wrapSdkData = null;
+  }
+
+  function _initWrapTransfer() {
+    _wrapInitBridge();
+    var svc;
+    try { svc = (typeof AGENTX_SERVICE !== 'undefined') ? AGENTX_SERVICE : null; } catch (e) { svc = null; }
+    svc = svc || window.AGENTX_SERVICE || null;
+    var aqmContact = svc && svc.aqm && svc.aqm.contact;
+    if (!svc || !svc.isInited || !aqmContact ||
+        !aqmContact.eAgentWrapup || typeof aqmContact.eAgentWrapup.listen !== 'function') {
+      setTimeout(_initWrapTransfer, 2000);
+      return;
+    }
+    aqmContact.eAgentWrapup.listen(function (msg) {
+      try {
+        if (msg && msg.data) _wrapSdkData = msg.data;
+        _wrapOnEnter(msg && msg.data && msg.data.interactionId);
+      } catch (e) { /* ignore */ }
+    });
+    if (aqmContact.eAgentContactWrappedUp && typeof aqmContact.eAgentContactWrappedUp.listen === 'function') {
+      aqmContact.eAgentContactWrappedUp.listen(function (msg) {
+        try {
+          if (msg && msg.data) { _wrapSdkData = msg.data; console.log('[panel-layout] wrap-transfer: wrapup SDK data', msg.data); }
+          _wrapOnSubmit();
+        } catch (e) { /* ignore */ }
+      });
+    }
+    if (aqmContact.eAgentContactEnded && typeof aqmContact.eAgentContactEnded.listen === 'function') {
+      aqmContact.eAgentContactEnded.listen(function () {
+        try { _wrapSetHighlight(false); _wrapStopWatch(); _wrapHideUI(); _wrapInteractionId = null; } catch (e) { /* ignore */ }
+      });
+    }
+    console.log('[panel-layout] wrap-transfer: SDK listeners registered');
+  }
+
+  // Console diagnostic: run __wrapDiag() in the Desktop console during wrap-up to
+  // see the wrap-transfer state (field found, toolbar, CRM-open sources).
+  try {
+    window.__wrapDiag = function () {
+      var field = null;
+      try { field = _wrapFindField(); } catch (e) { /* ignore */ }
+      var rect = null;
+      if (field) { try { var r = field.getBoundingClientRect(); rect = { w: Math.round(r.width), h: Math.round(r.height), x: Math.round(r.x), y: Math.round(r.y) }; } catch (e) { /* ignore */ } }
+      var info = {
+        interactionId: _wrapInteractionId,
+        watching: !!_wrapWatchTimer,
+        fieldFound: field ? ((field.tagName || '').toLowerCase() + '.' + (field.className && field.className.toString ? field.className.toString().split(/\s+/)[0] : '')) : null,
+        fieldRect: rect,
+        toolbarShown: !!_wrapToolbar,
+        crmOpen: _wrapCrmOpen(),
+        extCrmOpen: _wrapCfg.crmOpen,
+        bcCrmOpen: _wrapBcCrmOpen,
+        targetConfigured: _wrapCfg.targetConfigured,
+        mode: _wrapCfg.mode,
+        lastText: (_wrapLastText || '').slice(0, 160),
+      };
+      console.log('[panel-layout] __wrapDiag', info);
+      return info;
+    };
+  } catch (e) { /* ignore */ }
+
+  _initWrapTransfer();
+
   if (!customElements.get('panel-layout-headless')) {
     customElements.define('panel-layout-headless', class extends HTMLElement {
       static get observedAttributes() {
@@ -1455,6 +2760,12 @@
         console.log('[panel-layout] offerVariables set:', value, '→', _offerVariables);
       }
       get offerVariables() { return this._offerVariables; }
+
+      set wrapupfieldselector(value) {
+        _wrapFieldSelector = value && String(value).trim() ? String(value).trim() : null;
+        console.log('[panel-layout] wrapupfieldselector set:', _wrapFieldSelector);
+      }
+      get wrapupfieldselector() { return _wrapFieldSelector; }
     });
   }
 

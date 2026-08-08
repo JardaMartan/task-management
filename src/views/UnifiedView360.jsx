@@ -114,6 +114,17 @@ const UnifiedView360 = ({ darkMode, mockMode, navPanel, task }) => {
   // In nav-panel live mode, only reveal the 360 tabs once a customer is resolved.
   const hasResolvedCustomer = Boolean(resolvedProfile) || manualStatus === 'searching';
 
+  // Searched customer's email (nav-panel read-only email browse). Mirrors the
+  // voice selector but is not gated on a task — the resolved profile is enough.
+  const navCustomerEmail = useSelector((s) => {
+    const email = s.email?.customerEmail;
+    if (email && String(email).includes('@')) return email;
+    const emails = s.email?.customerProfile?.email;
+    if (Array.isArray(emails)) return emails.find((e) => String(e).includes('@')) || null;
+    if (typeof emails === 'string' && emails.includes('@')) return emails;
+    return null;
+  });
+
   // Back / forward navigation stacks — each entry: { tab, params }
   const [histStack, setHistStack] = useState([]);
   const [fwdStack,  setFwdStack]  = useState([]);
@@ -352,7 +363,9 @@ const UnifiedView360 = ({ darkMode, mockMode, navPanel, task }) => {
       {isNavPanel && !demoMode && (
         <form className="unified-360__search" onSubmit={handleCustomerSearch} role="search">
           <div className="unified-360__search-field">
-            <Icon name="search_16" className="unified-360__search-icon" />
+            <svg className="unified-360__search-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+              <path fill="currentColor" d="M11.74 10.34l2.96 2.96a1 1 0 0 1-1.41 1.41l-2.96-2.96a5.5 5.5 0 1 1 1.41-1.41zM7 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z" />
+            </svg>
             <input
               type="text"
               className="unified-360__search-input"
@@ -386,7 +399,7 @@ const UnifiedView360 = ({ darkMode, mockMode, navPanel, task }) => {
             onClick={handleToggleDemo}
             title={t('analytics.demo')}
           >
-            {t('analytics.demo')}
+            {t('analytics.live')}
           </button>
         </form>
       )}
@@ -500,6 +513,10 @@ const UnifiedView360 = ({ darkMode, mockMode, navPanel, task }) => {
             mockMode={demoMode}
             initialTaskId={navParams.taskId}
             onNavigate={navigate}
+            currentTaskId={isVoiceTask ? task?.interactionId : undefined}
+            currentCustomer={[task?.callAssociatedData?.FirstName?.value, task?.callAssociatedData?.LastName?.value].filter(Boolean).join(' ') || undefined}
+            currentPhone={task?.ani || task?.callAssociatedData?.MobilePhone?.value || undefined}
+            currentDirection={task?.contactDirection ? String(task.contactDirection).toLowerCase() : undefined}
           />
         )}
         {activeTab === 'email' && (
@@ -514,6 +531,25 @@ const UnifiedView360 = ({ darkMode, mockMode, navPanel, task }) => {
                 composeMode={Boolean(navParams.composeMode)}
                 composeTo={navParams.composeTo || ''}
               />
+            : isNavPanel && !task
+              // Nav-panel customer browse: read-only email history for the searched
+              // customer. Loads threads by resolved email; no compose/reply/send.
+              ? (navCustomerEmail
+                  ? <EmailWidget
+                      key={`email-nav-${navCustomerEmail}`}
+                      interactionId=""
+                      callAssociatedDetails={{ fromAddress: navCustomerEmail, customerEmail: navCustomerEmail }}
+                      darkMode={darkMode}
+                      onNavigate={navigate}
+                      readOnly
+                    />
+                  : <div className={`email-widget widget-shell${darkMode ? ' md--dark' : ''}`}>
+                      <div className="widget-state">
+                        <span className="md-h4 widget-state__text">
+                          {t('email.noCustomerEmail')}
+                        </span>
+                      </div>
+                    </div>)
             : isVoiceTask && voiceCustomerEmail
               // Voice call: open the customer's email history using the JDS-resolved email.
               // No gmailThreadId — EmailWidget will load all threads for that address.

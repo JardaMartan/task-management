@@ -1,7 +1,7 @@
 import React from 'react';
 import PropTypes from 'prop-types';
 import { useSelector, useDispatch } from 'react-redux';
-import { Button, Badge, Spinner, Card, CardSection } from '@momentum-ui/react';
+import { Button, Badge, Card, CardSection } from '@momentum-ui/react';
 import { useI18n } from '../i18n/I18nContext';
 import {
   refreshAiEnrichment,
@@ -63,7 +63,7 @@ const AiPanel = ({ darkMode, onSeedReply }) => {
                 color="none"
                 onClick={handleRefresh}
               >
-                {isFetchingEmail ? <Spinner size={16} /> : t('email.ai.refresh')}
+                {isFetchingEmail ? <span className="widget-spinner widget-spinner--sm widget-spinner--inherit" /> : t('email.ai.refresh')}
               </Button>
             )}
           </div>

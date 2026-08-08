@@ -260,6 +260,21 @@
 
   /* ── Inbound message handling (shared by relay + bridge transports) ──────── */
 
+  // In-browser CRM-open signal for the wrap-up transfer feature (panel-layout-
+  // headless) — broadcast presence on 'crm-sync' so it never needs the websocket.
+  var _crmConnected = false;
+  function _isCrmPresent() {
+    try { if (_crmTabManagerWindow && _crmTabManagerWindow.closed) return false; } catch (e) { /* cross-origin */ }
+    return !!_crmConnected;
+  }
+  function _broadcastCrmPresence() {
+    try {
+      var bc = new BroadcastChannel('crm-sync');
+      bc.postMessage({ type: 'CRM_PRESENCE', open: _isCrmPresent() });
+      bc.close();
+    } catch (e) { /* ignore */ }
+  }
+
   function _handleRelayMessage(msg) {
     if (msg && msg.type === 'CRM_TAB_SELECTED' && msg.interactionId) {
       // The agent focused a CRM tab → ask panel-layout-headless to click the
@@ -285,6 +300,8 @@
     if (msg && msg.type === 'CRM_CLIENT_CONNECTED') {
       // Tab Manager just (re)connected — re-send all active interactions so it
       // can rebuild its state without a full page reload.
+      _crmConnected = true;
+      _broadcastCrmPresence();
       console.log('[crm-sync-header] CRM client connected — flushing', Object.keys(_activeInteractions).length, 'active interactions');
       // Also flush the current theme so the Tab Manager adopts the right mode.
       if (_darkMode !== null) {
@@ -570,8 +587,8 @@
       cb(_emailCache[identity] || null, _nameCache[identity] || null); return;
     }
     if (!_accessToken || !_jdsWorkspaceId || !_jdsDataCenter) { cb(null, null); return; }
-    var url = 'https://api-jds.wxdap-' + _jdsDataCenter +
-              '.webex.com/admin/v1/api/person/workspace-id/' + _jdsWorkspaceId +
+    var url = _configBase() +
+              '/admin/v1/api/person/workspace-id/' + _jdsWorkspaceId +
               '/aliases/' + encodeURIComponent(identity);
     fetch(url, { headers: { Authorization: 'Bearer ' + _accessToken } })
       .then(function (r) { return r.ok ? r.json() : null; })
@@ -1031,6 +1048,7 @@
       _syncListenBc.onmessage = function (e) {
         var d = e && e.data;
         if (!d) return;
+        if (d.type === 'CRM_PRESENCE_QUERY') { _broadcastCrmPresence(); return; }
         if (d.type === 'EMAIL_TOUCHED' && d.interactionId) { _markEmailTouched(d.interactionId); return; }
         if (d.type === 'TASK_MAP' && d.tasks) { _mergeTaskMap(d.tasks); return; }
         if (d.type === 'CATALOG_UPDATED') {

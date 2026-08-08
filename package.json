@@ -6,7 +6,7 @@
     "scripts": {
         "build": "rollup -c && node scripts/inline-fonts.js && cp src/panel-layout-headless.js dist/panel-layout-headless.js && cp src/crm-sync-header.js dist/crm-sync-header.js && cp src/activity-emitter.js dist/activity-emitter.js",
         "build:standalone": "BUILD_MODE=self-contained rollup -c && node scripts/inline-fonts.js && cp src/panel-layout-headless.js dist/panel-layout-headless.js && cp src/crm-sync-header.js dist/crm-sync-header.js && cp src/activity-emitter.js dist/activity-emitter.js",
-        "build:cdn": "BUILD_MODE=cdn-libs rollup -c && cp src/cdn-loader.js dist/task-management-cdn-loader.js",
+        "build:cdn": "BUILD_MODE=cdn-libs rollup -c && node -e \"const fs=require('fs');const v=Date.now().toString(36);fs.writeFileSync('dist/task-management-cdn-loader.js',fs.readFileSync('src/cdn-loader.js','utf8').replace(/__BUILDV__/g,v))\"",
         "build:clean": "rm -rf dist && npm run build",
         "start": "webpack serve --mode development",
         "preview": "npm run build && npx http-server -p 4133 -o index.html --cors",
@@ -26,6 +26,7 @@
         "deploy:sync": "bash scripts/deploy.sh sync",
         "deploy:full": "bash scripts/deploy.sh full",
         "deploy:setup": "bash scripts/deploy.sh setup",
+        "deploy:widgets": "cp src/panel-layout-headless.js src/crm-sync-header.js src/activity-emitter.js dist/ && bash scripts/deploy-widget.sh",
         "test": "jest"
     },
     "jest": {

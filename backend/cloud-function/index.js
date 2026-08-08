@@ -5,6 +5,7 @@ const functions = require('@google-cloud/functions-framework');
 const { fetchInboundEmail, watchGmailInbox } = require('./gmail');
 const { enrichEmailWithAi } = require('./ai');
 const { mintGmailToken, mintGeminiToken, verifyWebexIdentity } = require('./token-broker');
+const { fetchVoiceTranscript } = require('./transcript');
 const { ingestEvents, queryAgentEvents, queryTeamEvents, queryAgents } = require('./activity');
 const { queryAgentState, queryTeamState, queryAgentRoster, queryTaskContacts } = require('./agent-state');
 const { queryTeams, queryUsers, loadDirectory, canonicalUser, resolveAgentIds } = require('./config-api');
@@ -165,12 +166,62 @@ functions.http('auth', async (req, res) => {
   }
 });
 
+// ─── Voice transcript proxy (Webex CC Captures API) ───────────────────────────
+/**
+ * Returns a normalized voice transcript for a task. The browser can't download
+ * the presigned Captures file (CORS), so this runs server-side.
+ * Header: Authorization: Bearer <webex-ci-token>
+ * Query/body: { orgId, taskId, datacenter }
+ * Returns: { transcript: [{id,role,speaker,text,time}], recording: [], source }
+ */
+functions.http('transcript', async (req, res) => {
+  res.set('Access-Control-Allow-Origin', process.env.CORS_ORIGIN || '*');
+  res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(204).send('');
+  }
+
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Missing or invalid Authorization header' });
+  }
+  const desktopToken = authHeader.slice('Bearer '.length).trim();
+
+  const src = req.method === 'POST' ? (req.body || {}) : (req.query || {});
+  const orgId = src.orgId;
+  const taskId = src.taskId;
+  const datacenter = src.datacenter;
+  if (!orgId || !taskId) {
+    return res.status(400).json({ error: 'orgId and taskId are required' });
+  }
+
+  try {
+    const identity = await verifyWebexIdentity(desktopToken);
+    if (!identity) {
+      return res.status(401).json({ error: 'Invalid Webex token' });
+    }
+
+    // Voice transcript via Captures — the only step that needs the backend
+    // (Captures rejects the agent token + the transcript file is CORS-protected).
+    // The call list (Search API) and AI summary are fetched directly by the widget.
+    const result = await fetchVoiceTranscript({ orgId, taskId, accessToken: desktopToken, datacenter });
+    if (!result) {
+      return res.status(502).json({ error: 'Transcript retrieval failed' });
+    }
+    return sendJson(req, res, result);
+  } catch (err) {
+    console.error('[transcript] error:', err);
+    return res.status(500).json({ error: 'Transcript retrieval failed' });
+  }
+});
+
 // ─── Watch renewal: keep Gmail push subscription alive ────────────────────────
 /**
  * Called by Cloud Scheduler daily to renew Gmail watch() subscription.
  */
-functions.http('renewWatch', async (req, res) => {
-  try {
+functions.http('renewWatch', async (req, res) => {  try {
     const emailAddress = process.env.SUPPORT_EMAIL;
     if (!emailAddress) throw new Error('SUPPORT_EMAIL env var not set');
 

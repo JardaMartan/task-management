@@ -89,6 +89,9 @@ const widgetSlice = createSlice({
         isStreamingActive: false,
         analyticsOpen: _initOpen,
         analyticsTrendDays: _initDays,
+        // Per-tab UI state (filters, last-selected item, sub-view) persisted across
+        // tab switches so revisiting a panel restores its previous state.
+        panelUi: {},
         widgetConfig: {
             workspaceOverrideTaskTypes: DEFAULT_WORKSPACE_OVERRIDE_TASK_TYPES,
             outdialEntryPointId: null,
@@ -199,6 +202,11 @@ const widgetSlice = createSlice({
         },
         setStreamingActive: (state, action) => {
             state.isStreamingActive = action.payload;
+        },
+        setPanelUiState: (state, action) => {
+            const { panel, patch } = action.payload || {};
+            if (!panel || !patch || typeof patch !== 'object') return;
+            state.panelUi[panel] = { ...(state.panelUi[panel] || {}), ...patch };
         },
         setWidgetConfig: (state, action) => {
             if (!action.payload || typeof action.payload !== 'object') return;
@@ -378,6 +386,7 @@ export const {
     setDatacenter,
     setWorkspaceId,
     setStreamingActive,
+    setPanelUiState,
     setWidgetConfig,
     setEmailConfig,
     setCaseTaskPayload,

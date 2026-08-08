@@ -38,11 +38,16 @@ import emailReducer, {
 
 import settingsReducer from './store/slices/settingsSlice';
 
+import voiceReducer, {
+  fetchLiveVoiceTranscript, fetchVoiceSummaryFor, fetchVoiceCaptures, fetchVoiceCallsForCustomer,
+} from './store/slices/voiceSlice';
+
 const store = configureStore({
     reducer: {
         widget: widgetReducer,
         email: emailReducer,
         settings: settingsReducer,
+        voice: voiceReducer,
     },
 });
 
@@ -70,4 +75,6 @@ export {
   searchCustomerByIdentityManual, clearManualCustomerSearch,
   // Email helpers
   parseGmailMessage, decodeBase64Url, extractEmailFromTask,
+  // Voice thunks
+  fetchLiveVoiceTranscript, fetchVoiceSummaryFor, fetchVoiceCaptures, fetchVoiceCallsForCustomer,
 };

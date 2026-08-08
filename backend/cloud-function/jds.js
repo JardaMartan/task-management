@@ -13,17 +13,15 @@ const _nameCache = new Map();
 const NAME_TTL_MS = 5 * 60 * 1000;
 const CONCURRENCY = 6;
 
-// JDS host wants a "prodXX1" datacenter token (e.g. prodeu1). Accept prodeu1 /
-// eu1 / wxcc-eu1 and normalise.
+// JDS now shares the regional Webex CC host (was api-jds.wxdap-<dc>.webex.com).
+// Accept prodeu1 / eu1 / wxcc-eu1 and resolve to https://api.wxcc-<region>.cisco.com.
 function jdsBaseUrl(datacenter) {
   const s = String(datacenter || '').toLowerCase();
   if (!s) return null;
-  let dc = s;
-  if (!s.startsWith('prod')) {
-    const m = s.match(/(us1|us2|eu1|eu2|anz1|ca1|jp1)/);
-    dc = m ? `prod${m[1]}` : s;
-  }
-  return `https://api-jds.wxdap-${dc}.webex.com`;
+  const m = s.match(/(us1|us2|eu1|eu2|anz1|ca1|jp1|in1|sg1)/);
+  const region = m ? m[1] : s.replace(/^prod/, '');
+  if (!region) return null;
+  return `https://api.wxcc-${region}.cisco.com`;
 }
 
 async function _lookupName(identity, accessToken, workspaceId, base) {

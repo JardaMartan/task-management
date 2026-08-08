@@ -47,12 +47,26 @@
     </div>
 
     <div class="field">
+      <label for="crmManagerUrlPattern">CRM Tab Manager URL pattern</label>
+      <input type="text" id="crmManagerUrlPattern" placeholder="crm-tab-manager" />
+      <small>Identifies the Tab Manager window whose embedded CRM receives wrap-up notes.</small>
+    </div>
+
+    <div class="field">
       <label>Channels</label>
       <div class="channels">
         <span class="row"><input type="checkbox" id="ch-call" /><label for="ch-call" style="margin:0;">Call</label></span>
         <span class="row"><input type="checkbox" id="ch-sms" /><label for="ch-sms" style="margin:0;">SMS</label></span>
         <span class="row"><input type="checkbox" id="ch-email" /><label for="ch-email" style="margin:0;">Email</label></span>
       </div>
+    </div>
+
+    <div class="field">
+      <label>Wrap-up notes transfer</label>
+      <div class="row"><span id="wrap-target">Target field: <em>none selected</em></span></div>
+      <div class="row"><span id="wrap-mode">Mode: manual</span></div>
+      <button id="wrap-clear" type="button" style="background:#5a2c2c;">Clear remembered target</button>
+      <small>The target field is chosen from the wrap-up panel in the Desktop. Clearing forgets it.</small>
     </div>
 
     <div class="field">

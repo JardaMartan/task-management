@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import PropTypes from 'prop-types';
 import { useDispatch, useSelector } from 'react-redux';
-import { Spinner, Alert } from '@momentum-ui/react';
-import { initEmailTask, resetEmail, resetEmailContent, setMockEmailData, checkGmailThreadUpdates, loadEmailSla } from '../store/slices/emailSlice';
+import { Alert } from '@momentum-ui/react';
+import { initEmailTask, resetEmail, resetEmailContent, setMockEmailData, checkGmailThreadUpdates, loadEmailSla, loadCustomerEmailThreads } from '../store/slices/emailSlice';
 import { toggleAnalyticsOpen } from '../store/slices/widgetSlice';
 import { useI18n } from '../i18n/I18nContext';
 import EmailTaskHeader from './EmailTaskHeader';
@@ -14,10 +14,11 @@ import ReplyComposer from './ReplyComposer';
 import OutboundEmailComposer from './OutboundEmailComposer';
 import './email.css';
 
-const EmailWidget = ({ interactionId, callAssociatedDetails, darkMode, mockMode, initialTaskId, onNavigate, composeMode, composeTo }) => {
-  // Local state: agent may dismiss compose mode even while `composeMode` prop stays true
-  const [showCompose, setShowCompose] = React.useState(Boolean(composeMode));
-  React.useEffect(() => { setShowCompose(Boolean(composeMode)); }, [composeMode]);
+const EmailWidget = ({ interactionId, callAssociatedDetails, darkMode, mockMode, initialTaskId, onNavigate, composeMode, composeTo, readOnly }) => {
+  // Local state: agent may dismiss compose mode even while `composeMode` prop stays true.
+  // Read-only mode (e.g. nav-panel customer browse) never composes.
+  const [showCompose, setShowCompose] = React.useState(Boolean(composeMode) && !readOnly);
+  React.useEffect(() => { setShowCompose(Boolean(composeMode) && !readOnly); }, [composeMode, readOnly]);
   const dispatch = useDispatch();
   const { locale, t } = useI18n();
   const analyticsOpen = useSelector((state) => state.widget.analyticsOpen);
@@ -48,7 +49,14 @@ const EmailWidget = ({ interactionId, callAssociatedDetails, darkMode, mockMode,
     // Wait until tokenBrokerUrl is available before starting the Gmail flow.
     // The effect re-runs automatically when tokenBrokerUrl arrives in state,
     // so no separate retry effect is needed.
-    if (interactionId && tokenBrokerUrl) {
+    if (readOnly) {
+      // Nav-panel customer browse: load the searched customer's Gmail threads by
+      // address only (read-only). No task init / no JDS-profile mutation.
+      const browseEmail = callAssociatedDetails?.customerEmail || callAssociatedDetails?.fromAddress || null;
+      if (browseEmail && tokenBrokerUrl) {
+        dispatch(loadCustomerEmailThreads(browseEmail));
+      }
+    } else if (interactionId && tokenBrokerUrl) {
       dispatch(initEmailTask(interactionId, callAssociatedDetails));
     }
     return () => {
@@ -57,7 +65,7 @@ const EmailWidget = ({ interactionId, callAssociatedDetails, darkMode, mockMode,
       // resetEmail (full reset) is only used in demo mode above.
       dispatch(resetEmailContent());
     };
-  }, [interactionId, isDemoMode, locale, initialTaskId, tokenBrokerUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [interactionId, isDemoMode, locale, initialTaskId, tokenBrokerUrl, readOnly]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Poll Gmail for new messages every 60s while the Email tab is visible.
   // Uses the History API — only re-fetches the thread when there are actual changes.
@@ -133,9 +141,9 @@ const EmailWidget = ({ interactionId, callAssociatedDetails, darkMode, mockMode,
     return (
       <div className={`email-widget widget-shell${darkMode ? ' md--dark' : ''}`}>
         {analyticsHeader}
-        <div className="email-widget__state-center">
-          <Spinner />
-          <span className="md-h4 email-widget__state-text email-widget__state-text--spaced">
+        <div className="widget-state">
+          <div className="widget-spinner" />
+          <span className="md-h4 widget-state__text widget-state__text--spaced">
             {t('email.loading')}
           </span>
         </div>
@@ -147,7 +155,7 @@ const EmailWidget = ({ interactionId, callAssociatedDetails, darkMode, mockMode,
     return (
       <div className={`email-widget widget-shell${darkMode ? ' md--dark' : ''}`}>
         {analyticsHeader}
-        <div className="email-widget__state-center">
+        <div className="widget-state">
           <Alert type="error" message={t(error) || error} />
         </div>
       </div>
@@ -181,8 +189,8 @@ const EmailWidget = ({ interactionId, callAssociatedDetails, darkMode, mockMode,
               <ThreadPanel darkMode={darkMode} isDemoMode={isDemoMode} locale={locale} activeFilters={activeFilters} />
             </aside>
             <main className="email-widget__col email-widget__col--center widget-panel">
-              <div className="email-widget__state-center">
-                <span className="md-h4 email-widget__state-text">
+              <div className="widget-state">
+                <span className="md-h4 widget-state__text">
                   {t('email.selectThread') || 'Select a thread to view'}
                 </span>
               </div>
@@ -197,8 +205,8 @@ const EmailWidget = ({ interactionId, callAssociatedDetails, darkMode, mockMode,
     return (
       <div className={`email-widget widget-shell${darkMode ? ' md--dark' : ''}`}>
         {analyticsHeader}
-        <div className="email-widget__state-center">
-          <span className="md-h4" style={{ color: 'var(--md-color-gray-60)' }}>
+        <div className="widget-state">
+          <span className="md-h4 widget-state__text">
             {t('email.noTask')}
           </span>
         </div>
@@ -217,11 +225,13 @@ const EmailWidget = ({ interactionId, callAssociatedDetails, darkMode, mockMode,
         </aside>
         <main className="email-widget__col email-widget__col--center widget-panel">
           <ConversationView darkMode={darkMode} />
-          <ReplyComposer
-            interactionId={interactionId}
-            callAssociatedDetails={callAssociatedDetails}
-            darkMode={darkMode}
-          />
+          {!readOnly && (
+            <ReplyComposer
+              interactionId={interactionId}
+              callAssociatedDetails={callAssociatedDetails}
+              darkMode={darkMode}
+            />
+          )}
         </main>
         <aside className="email-widget__col email-widget__col--rail" aria-label="AI assist">
           <AiPanel darkMode={darkMode} />
@@ -239,6 +249,7 @@ EmailWidget.propTypes = {
   onNavigate: PropTypes.func,
   composeMode: PropTypes.bool,
   composeTo: PropTypes.string,
+  readOnly: PropTypes.bool,
 };
 
 EmailWidget.defaultProps = {
@@ -248,6 +259,7 @@ EmailWidget.defaultProps = {
   mockMode: false,
   composeMode: false,
   composeTo: '',
+  readOnly: false,
 };
 
 export default EmailWidget;

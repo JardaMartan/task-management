@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
 import { useSelector, useDispatch } from 'react-redux';
-import { Button, Spinner, Card, CardSection } from '@momentum-ui/react';
+import { Button, Card, CardSection } from '@momentum-ui/react';
 import { useI18n } from '../i18n/I18nContext';
 import {
   sendEmailReply,
@@ -490,7 +490,7 @@ const ReplyComposer = ({ interactionId, callAssociatedDetails, darkMode, outboun
               disabled={isDraftEmpty || isAiBusy}
               title={t('email.reply.fixGrammar')}
             >
-              {isCorrectingGrammar ? <Spinner size={12} /> : <span aria-hidden="true">✓</span>}
+              {isCorrectingGrammar ? <span className="widget-spinner widget-spinner--xs widget-spinner--inherit" /> : <span aria-hidden="true">✓</span>}
               {t('email.reply.fixGrammar')}
             </button>
 
@@ -570,7 +570,7 @@ const ReplyComposer = ({ interactionId, callAssociatedDetails, darkMode, outboun
               ref={fileInputRef}
               type="file"
               multiple
-              style={{ display: 'none' }}
+              className="widget-hidden"
               onChange={handleFileChange}
               aria-label={t('email.reply.attachLabel')}
             />
@@ -630,7 +630,7 @@ const ReplyComposer = ({ interactionId, callAssociatedDetails, darkMode, outboun
           >
             {isSending ? (
               <>
-                <Spinner size={16} />
+                <span className="widget-spinner widget-spinner--sm widget-spinner--inherit" />
                 <span>{t('email.reply.sending')}</span>
               </>
             ) : isNote ? (

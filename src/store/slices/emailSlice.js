@@ -142,6 +142,8 @@ const initialState = {
   thread: [],
   customerThreads: [],
   customerHistory: [],
+  // JDS history pagination/time-window meta (JDS gives no total count).
+  customerHistoryMeta: { count: 0, hasMore: false, maxPages: 5, identities: [], oldestTs: null, newestTs: null, loading: false },
   customerIdentities: [],    // All known identity values for the current customer (phone + email + JDS aliases)
   customerProfile: null,     // Normalised JDS person record { id, name, firstName, lastName, email, phone } for the active task
   interactionSummaries: {}, // { [taskId]: { initialContactReason, keyActionsTaken, nextSteps, ... } }
@@ -200,6 +202,9 @@ const emailSlice = createSlice({
     },
     setCustomerHistory: (state, action) => {
       state.customerHistory = action.payload;
+    },
+    setCustomerHistoryMeta: (state, action) => {
+      state.customerHistoryMeta = { ...state.customerHistoryMeta, ...(action.payload || {}) };
     },
     setCustomerIdentities: (state, action) => {
       state.customerIdentities = action.payload;
@@ -361,6 +366,7 @@ export const {
   setThread,
   setCustomerThreads,
   setCustomerHistory,
+  setCustomerHistoryMeta,
   appendCustomerHistoryEvent,
   setCustomerIdentities,
   setCustomerProfile,
@@ -837,23 +843,57 @@ export const fetchCustomerThreads = (customerEmail) => async (dispatch) => {
   }
 };
 
+/**
+ * Read-only customer email browse (nav-panel Customer360).
+ * Loads the searched customer's Gmail thread list by address only — no task
+ * init, no JDS/profile mutation, no active-interaction bookkeeping. The 360
+ * profile/history are already populated by the manual-search flow, so this must
+ * NOT touch them. Threads are shown read-only (compose/reply disabled in UI).
+ */
+export const loadCustomerEmailThreads = (customerEmail) => async (dispatch, getState) => {
+  if (!customerEmail) return;
+  const { emailConfig } = getState().widget;
+  dispatch(setError(null));
+  if (!emailConfig?.tokenBrokerUrl) {
+    dispatch(setError('email.error.notConfigured'));
+    return;
+  }
+  dispatch(setCustomerEmail(customerEmail));
+  dispatch(setIsFetchingEmail(true));
+  try {
+    const token = await dispatch(ensureGmailToken());
+    if (!token) {
+      dispatch(setError('email.error.notConfigured'));
+      return;
+    }
+    await dispatch(fetchCustomerThreads(customerEmail));
+  } finally {
+    dispatch(setIsFetchingEmail(false));
+  }
+};
+
 // Guard against concurrent fetches for the same identity (e.g. TaskManagement
 // and initEmailTask both triggering JDS at the same time).
 const jdsInFlight = new Set();
 
 export const fetchCustomerJdsHistory =
-  (identity, accessToken, workspaceId, datacenter, maxPages = 5, expectedInteractionId = null) => async (dispatch, getState) => {
+  (identity, accessToken, workspaceId, datacenter, maxPages = 5, expectedInteractionId = null, rangeDays = null) => async (dispatch, getState) => {
     // Normalise to array so the rest of the function is uniform.
     const identities = (Array.isArray(identity) ? identity : [identity]).filter(Boolean);
     if (!identities.length) return;
-    // Stable cache key works for both single and multi-identity queries.
-    const cacheKey = [...identities].sort().join('|');
+    // Cache key includes the range so a range-scoped fetch isn't blocked by a
+    // concurrent default (task-context) fetch for the same identities.
+    const cacheKey = [...identities].sort().join('|') + '|' + (rangeDays || 'all');
     if (jdsInFlight.has(cacheKey)) return;
     jdsInFlight.add(cacheKey);
+    // Show the loading indicator for range-scoped fetches (History range selector).
+    if (rangeDays) dispatch(setCustomerHistoryMeta({ loading: true }));
     try {
-      // JDS optimization: cap at maxPages (default 5 = 500 events) — more than enough
-      // for the history timeline. Full 20-page fetch (2000 events) is wasteful.
-      const events = await fetchJourneyEvents(identities, accessToken, workspaceId, datacenter, null, maxPages);
+      // Time-bounded fetch when rangeDays is set (stops at the range boundary);
+      // otherwise cap at maxPages. Range fetches get a generous page safety cap.
+      const sinceTs = rangeDays ? Date.now() - rangeDays * 86400000 : null;
+      const cap = rangeDays ? 50 : maxPages;
+      const events = await fetchJourneyEvents(identities, accessToken, workspaceId, datacenter, null, cap, sinceTs);
       // Staleness guard: discard results if the agent switched to a different task
       // while this fetch was in-flight.
       if (expectedInteractionId && getState().email.activeInteractionId !== expectedInteractionId) {
@@ -861,6 +901,24 @@ export const fetchCustomerJdsHistory =
         return;
       }
       dispatch(setCustomerHistory(events || []));
+      // Record the time window covered + the selected range (JDS has no total count).
+      let oldestTs = null, newestTs = null;
+      for (const e of (events || [])) {
+        const n = Number(e.timestamp || e.createdAt || 0);
+        if (n > 0) {
+          if (oldestTs === null || n < oldestTs) oldestTs = n;
+          if (newestTs === null || n > newestTs) newestTs = n;
+        }
+      }
+      dispatch(setCustomerHistoryMeta({
+        count: (events || []).length,
+        hasMore: Boolean(events && events.hasMore),
+        maxPages,
+        rangeDays: rangeDays || null,
+        identities,
+        oldestTs,
+        newestTs,
+      }));
       // After history loads, scan it for a cached ai-summary event and apply it to
       // aiEnrichment so the AiPanel shows the summary without a separate JDS query
       // (covers the case where fetchJdsAiSummary was called before the event was written).
@@ -869,8 +927,25 @@ export const fetchCustomerJdsHistory =
       console.error('[EmailSlice] fetchCustomerJdsHistory error:', err);
     } finally {
       jdsInFlight.delete(cacheKey);
+      if (rangeDays) dispatch(setCustomerHistoryMeta({ loading: false }));
     }
   };
+
+/**
+ * Load the customer's JDS history for a specific rolling time range (in days).
+ * Used by the History range selector; re-fetches with a time-bounded window.
+ */
+export const loadCustomerJdsHistoryForRange = (rangeDays) => async (dispatch, getState) => {
+  const { email, widget } = getState();
+  const meta = email.customerHistoryMeta || {};
+  const identities = (email.customerIdentities && email.customerIdentities.length)
+    ? email.customerIdentities
+    : (meta.identities || []);
+  const { accesstoken, workspaceid, datacenter } = widget;
+  if (!identities.length || !accesstoken || !workspaceid) return;
+  // fetchCustomerJdsHistory owns the loading flag for range fetches.
+  await dispatch(fetchCustomerJdsHistory(identities, accesstoken, workspaceid, datacenter, 5, null, rangeDays));
+};
 
 /**
  * Extract the customer email address from a Webex CC task payload.

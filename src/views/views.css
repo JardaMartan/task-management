@@ -281,31 +281,109 @@
   display: flex;
   flex-direction: row;
   overflow: hidden;
-  gap: 0;
+  gap: 8px;
+  padding: 8px 6px 8px 6px;
+  position: relative;
 }
 
 .history-view__timeline-col {
   flex: 1 1 0;
   min-width: 0;
   overflow-y: auto;
-  padding: 8px 4px 16px 4px;
-  border-right: 1px solid var(--md-color-gray-20, #e8ebee);
+  padding: 0;
+}
+/* First event aligns with the calendar card's top edge. */
+.history-view__timeline > div:first-child .history-view__item {
+  padding-top: 0;
 }
 
 .history-view__calendar-col {
-  flex: 0 0 260px;
-  width: 260px;
+  flex: 0 0 248px;
+  width: 248px;
   overflow-y: auto;
-  padding: 8px 6px 16px 6px;
-  background: var(--md-color-gray-05, #fafbfc);
+  padding: 8px;
+  border: 1px solid var(--md-color-gray-20, #e8ebee);
+  border-radius: 12px;
+  background: var(--md-color-white-100, #fff);
 }
 .md--dark .history-view__calendar-col {
+  background: var(--md-color-gray-80, #2d2d2d);
+  border-color: rgba(255,255,255,.08);
+}
+
+/* ── History time-range selector (compact, top of the calendar card) ── */
+.history-view__range {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  padding: 0 0 8px 0;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--md-color-gray-20, #dbe3ec);
+}
+.history-view__range-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--md-color-gray-60, #5b6b7b);
+}
+.history-view__range-seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  margin-left: auto;
+  border-radius: 16px;
+  background: var(--md-color-gray-05, #f4f7fa);
+  border: 1px solid var(--md-color-gray-20, #dbe3ec);
+}
+.history-view__range-btn {
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--md-color-gray-60, #5b6b7b);
+  background: transparent;
+  border: none;
+  border-radius: 12px;
+  padding: 2px 9px;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.history-view__range-btn:hover { color: var(--md-color-blue-60, #0e7fc1); }
+.history-view__range-btn--active {
+  background: var(--md-color-blue-60, #0e7fc1);
+  color: #fff;
+}
+.history-view__range-loading {
+  font-size: 12px;
+  color: var(--md-color-gray-50, #7a8794);
+}
+/* Loading overlay: a centered spinner over the dimmed events list on range reload.
+   The spinner itself uses the shared .widget-spinner (widget-layout.css). */
+.history-view__timeline-col--loading { opacity: .45; pointer-events: none; transition: opacity .15s; }
+.history-view__loading-overlay {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  right: 262px; /* exclude the calendar column so the spinner centers over the events list */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+  pointer-events: none;
+}
+.md--dark .history-view__range {
   background: var(--md-color-gray-90, #1c1c1c);
-  border-left: 1px solid rgba(255,255,255,.08);
+  border-bottom-color: rgba(255,255,255,.08);
 }
-.md--dark .history-view__timeline-col {
-  border-right-color: rgba(255,255,255,.08);
+.md--dark .history-view__range-label { color: rgba(255,255,255,.55); }
+.md--dark .history-view__range-seg {
+  background: rgba(255,255,255,.05);
+  border-color: rgba(255,255,255,.1);
 }
+.md--dark .history-view__range-btn { color: rgba(255,255,255,.55); }
+.md--dark .history-view__range-btn--active { background: #2dadce; color: #06222c; }
 
 .history-view__empty--cal {
   font-size: 12px;
@@ -446,6 +524,11 @@
   gap: 8px;
   flex-wrap: wrap;
 }
+.history-view__row--clickable { cursor: pointer; user-select: none; }
+.history-view__count-badge { margin-left: 4px; }
+.history-view__short-id { color: var(--md-color-gray-50, #767676); font-size: 0.75rem; }
+.history-view__chip--sm { font-size: 0.7rem; }
+.history-view__sub-timeline { margin-top: 8px; padding-left: 0; }
 
 .history-view__item-chevron {
   font-size: 10px;
@@ -677,6 +760,86 @@
   border-color: rgba(168, 85, 247, 0.6);
 }
 
+/* ── Interaction meta: extra chip variants ── */
+.history-view__chip--origin {
+  background: var(--md-color-gray-10, #f5f6f7);
+  border-color: var(--md-color-gray-30, #d0d4d9);
+  color: var(--md-color-gray-80, #1a2a38);
+  font-variant-numeric: tabular-nums;
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.history-view__chip--wrapup {
+  background: rgba(14, 127, 193, 0.08);
+  border-color: rgba(14, 127, 193, 0.28);
+  color: #0e7fc1;
+  max-width: 210px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.history-view__chip--score {
+  background: rgba(245, 158, 11, 0.10);
+  border-color: rgba(245, 158, 11, 0.32);
+  color: #a16207;
+  font-variant-numeric: tabular-nums;
+}
+.md--dark .history-view__chip--origin { color: rgba(255,255,255,.82); }
+.md--dark .history-view__chip--wrapup { color: #58b6e6; }
+.md--dark .history-view__chip--score { color: #e0a52b; }
+
+/* ── Collapsible Variables / Details panels (interaction expanded view) ── */
+.history-view__kv {
+  margin: 6px 0 0;
+  border: 1px solid var(--md-color-gray-20, #e8ebee);
+  border-radius: 8px;
+  background: var(--md-color-white-100, #fff);
+  overflow: hidden;
+}
+.history-view__kv-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 10px;
+  background: var(--md-color-gray-05, #f4f7fa);
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--md-color-gray-70, #364a5e);
+}
+.history-view__kv-toggle:hover { background: var(--md-color-gray-10, #eef1f4); }
+.history-view__kv-icon { font-size: 12px; }
+.history-view__kv-label { flex: 1; text-align: left; }
+.history-view__kv-count {
+  font-weight: 700;
+  font-size: 10px;
+  background: var(--md-color-gray-20, #e1e6eb);
+  color: var(--md-color-gray-70, #364a5e);
+  border-radius: 8px;
+  padding: 0 6px;
+}
+.history-view__kv-chevron { font-size: 9px; color: var(--md-color-gray-50, #7a8794); }
+.history-view__kv-grid { margin: 0; padding: 6px 10px; }
+
+.md--dark .history-view__kv {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.09);
+}
+.md--dark .history-view__kv-toggle {
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.72);
+}
+.md--dark .history-view__kv-toggle:hover { background: rgba(255, 255, 255, 0.09); }
+.md--dark .history-view__kv-count {
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.75);
+}
+
 /* ── Interaction business metrics bar ── */
 .history-view__metrics {
   display: flex;
@@ -906,6 +1069,7 @@
   color: var(--md-color-gray-60, #52575d);
   margin-bottom: 2px;
 }
+.history-view__case-panel-meta--muted { font-style: italic; opacity: 0.6; }
 .history-view__case-panel-desc {
   font-size: 0.75rem;
   color: var(--md-color-gray-70, #2d2d2d);
@@ -2766,9 +2930,11 @@
 .unified-360__search-icon {
   position: absolute;
   left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: block;
   color: var(--md-color-gray-50, #8a9199);
   pointer-events: none;
-  font-size: 16px;
 }
 .unified-360__search-input {
   width: 100%;

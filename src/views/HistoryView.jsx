@@ -5,8 +5,15 @@ import { Badge, Card, CardSection, Icon } from '@momentum-ui/react';
 import { useI18n } from '../i18n/I18nContext';
 import HistoryAnalyticsBar from './HistoryAnalyticsBar';
 import { getMockData } from '../mock/mockData';
-import { fetchInteractionSummary, fetchCustomerJdsHistory } from '../store/slices/emailSlice';
+import { fetchInteractionSummary, fetchCustomerJdsHistory, loadCustomerJdsHistoryForRange } from '../store/slices/emailSlice';
 import { toggleAnalyticsOpen } from '../store/slices/widgetSlice';
+import { usePanelUiState } from '../ui/usePanelUiState';
+
+// Stable default so the filtered-list memo isn't invalidated every render.
+const DEFAULT_HISTORY_FILTERS = { channel: null, sentiment: null };
+// History time-range presets (rolling days) for the range selector.
+const HISTORY_RANGES = [{ days: 7, label: '7d' }, { days: 30, label: '30d' }, { days: 90, label: '90d' }, { days: 365, label: '1y' }];
+const DEFAULT_RANGE_DAYS = 7;
 
 // ─── Analytics computation from live JDS events ───────────────────────────
 
@@ -55,12 +62,14 @@ function normalizeChannel(raw) {
 const computeHistoryAnalytics = (rawEvents, t) => {
   if (!rawEvents || rawEvents.length === 0) return null;
 
-  // Group events by taskId → one entry per interaction
+  // Group events by interaction. Telephony/email/chat/social carry data.interactionId;
+  // workItem carries data.taskId — match the same key used by the timeline grouping.
   const interactions = new Map();
   rawEvents.forEach((e) => {
     const taskId =
       e.taskId ||
       (e.data && e.data.taskId) ||
+      (e.data && e.data.interactionId) ||
       null;
     if (!taskId) return;
 
@@ -115,14 +124,14 @@ const computeHistoryAnalytics = (rawEvents, t) => {
 
   interactions.forEach(({ events }) => {
     const types = new Set(events.map((e) => e.type || ''));
-    const hasEnded = types.has('task:ended') || types.has('task:wrapup') || types.has('task:closed');
+    const hasEnded = types.has('task:ended') || types.has('task:wrapup') || types.has('task:wrapup-done') || types.has('task:closed');
     const hasParked = types.has('task:parked');
 
     if (hasEnded) {
       resolved++;
       // AHT: time from task:connect (or task:connected) to task:ended
       const connectEvt = events.find((e) => e.type === 'task:connect' || e.type === 'task:connected');
-      const endEvt = events.find((e) => e.type === 'task:ended' || e.type === 'task:wrapup' || e.type === 'task:closed');
+      const endEvt = events.find((e) => e.type === 'task:ended' || e.type === 'task:wrapup' || e.type === 'task:wrapup-done' || e.type === 'task:closed');
       if (connectEvt && endEvt) {
         const ms = Number(endEvt.timestamp) - Number(connectEvt.timestamp);
         if (ms > 0) handleTimesMs.push(ms);
@@ -172,7 +181,7 @@ const computeHistoryAnalytics = (rawEvents, t) => {
     volumeTrend[idx]++;
 
     const connectEvt = events.find((e) => e.type === 'task:connect' || e.type === 'task:connected');
-    const endEvt = events.find((e) => e.type === 'task:ended' || e.type === 'task:wrapup');
+    const endEvt = events.find((e) => e.type === 'task:ended' || e.type === 'task:wrapup' || e.type === 'task:wrapup-done');
     if (connectEvt && endEvt) {
       const ms = Number(endEvt.timestamp) - Number(connectEvt.timestamp);
       if (ms > 0) ahtByDay[idx].push(ms);
@@ -243,7 +252,7 @@ const CHANNEL_ICONS = {
   // Web / browser
   web: 'cursor_16',
   // Work-item / system
-  task: 'tasks_16',
+  task: 'custom-task-ind-regular',
   case: 'tasks_16',
   system: 'workflows_16',
 };
@@ -361,6 +370,16 @@ const resolveEventIcon = (channel, eventType, uiIconType) => {
   return { icon: 'event_16', src: null, color: 'gray' };
 };
 
+// Inline SVGs for icons not in the classic @momentum-ui/icons set (newer
+// @momentum-design/icons names). Inlined to render reliably in the shadow root.
+const CUSTOM_SVG_ICONS = {
+  'custom-task-ind-regular': (
+    <svg viewBox="0 0 32 32" width="16" height="16" fill="currentColor" aria-hidden="true">
+      <path d="M12.103 5.005A1 1 0 0 1 13 6v8l-.005.102a1 1 0 0 1-.893.893L12 15H8.75v6.25H19V18a1 1 0 0 1 1-1h8l.102.005A1 1 0 0 1 29 18v8l-.005.102a1 1 0 0 1-.893.893L28 27h-8a1 1 0 0 1-.995-.898L19 26v-3.25H8a.75.75 0 0 1-.75-.75v-7H4a1 1 0 0 1-.995-.898L3 14V6a1 1 0 0 1 1-1h8zM20.5 25.5h7v-7h-7zm-16-12h7v-7h-7z" />
+    </svg>
+  ),
+};
+
 /** Dot indicator beside each timeline event. Supports Momentum icons and custom images. */
 const EventDot = ({ channel, icon, src, color }) => {
   const hexColor = color ? (BADGE_COLOR_HEX[color] || color) : null;
@@ -371,7 +390,7 @@ const EventDot = ({ channel, icon, src, color }) => {
     >
       {src
         ? <img src={src} alt="" className="history-view__dot-img" />
-        : <Icon name={icon} />
+        : (CUSTOM_SVG_ICONS[icon] || <Icon name={icon} />)
       }
     </div>
   );
@@ -407,6 +426,7 @@ const EVENT_TYPE_LABELS = {
   'task:hold':          'history.eventType.onHold',
   'task:unhold':        'history.eventType.resumed',
   'task:wrapup':        'history.eventType.wrapup',
+  'task:wrapup-done':   'history.eventType.wrapup',
   'task:ended':         'history.eventType.ended',
   'task:closed':        'history.eventType.closed',
   'task:transferred':   'history.eventType.transferred',
@@ -418,7 +438,48 @@ const EVENT_TYPE_LABELS = {
   'email:reply-sent':   'history.eventType.replySent',
 };
 
+// Webex CC global / additional variable arrays (each item = {name, value}).
+const VAR_ARRAY_KEYS = [
+  'stringGlobalVariables', 'integerGlobalVariables', 'booleanGlobalVariables',
+  'doubleGlobalVariables', 'longGlobalVariables',
+  'stringAdditionalVariables', 'integerAdditionalVariables', 'booleanAdditionalVariables',
+  'doubleAdditionalVariables', 'longAdditionalVariables',
+];
 
+/**
+ * Flatten Webex CC global/additional variable arrays + CAD + flow attributes
+ * from an event's `data` payload into a de-duplicated [{name, value}] list.
+ * Empty values are dropped.
+ */
+const flattenVariables = (d) => {
+  const out = [];
+  const push = (name, value) => {
+    if (name == null || name === '') return;
+    const v = value == null ? '' : (typeof value === 'object' ? JSON.stringify(value) : String(value));
+    if (v === '' || v === '{}' || v === '[]') return;
+    out.push({ name: String(name), value: v });
+  };
+  VAR_ARRAY_KEYS.forEach((k) => {
+    if (Array.isArray(d[k])) d[k].forEach((it) => push(it?.name, it?.value));
+  });
+  ['cad', 'flowAttributes'].forEach((k) => {
+    const obj = d[k];
+    if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+      Object.entries(obj).forEach(([name, value]) => push(name, value));
+    }
+  });
+  return out;
+};
+
+// data.* keys already surfaced via structured fields — excluded from the raw panel.
+const RENDERED_DATA_KEYS = new Set([
+  ...VAR_ARRAY_KEYS, 'cad', 'flowAttributes', 'uiData', 'additionalFields', 'transientFields',
+  'interactionId', 'channelType', 'channel', 'direction', 'contactDirection',
+  'queueName', 'agentName', 'teamName', 'siteName', 'origin', 'destination',
+  'entrypointName', 'wrapupName', 'wrapupId', 'wrapUpName', 'wrapUpCode',
+  'terminationReason', 'terminationType', 'reason', 'contactReason', 'customerName',
+  'customerSentimentScore', 'csatScore', 'outcome',
+]);
 
 /**
  * Normalise a raw JDS event (from fetchJourneyEvents) or a case-history item
@@ -437,10 +498,12 @@ const normalizeEvent = (e, source) => {
   ).toLowerCase();
   const channel = normalizeChannel(rawChannel);
 
-  // taskId can live in multiple places depending on the event source
+  // Grouping key: interactionId is the canonical Webex CC task/interaction id in
+  // the richer JDS event format; fall back to the legacy taskId locations.
   const taskId =
     e.taskId ||
     d.taskId ||
+    d.interactionId ||
     (e.raw && e.raw.data && e.raw.data.taskId) ||
     null;
 
@@ -482,13 +545,26 @@ const normalizeEvent = (e, source) => {
   const uiListItems = Array.isArray(d.uiData?.listItem) ? d.uiData.listItem : null;
   const uiIconType  = d.uiData?.iconType  || null;
 
-  // Exclude uiData from the raw data panel — rendered separately via the fields above.
+  // Exclude uiData + already-rendered keys from the raw data panel, and drop
+  // empty values so the per-event panel stays readable (the new format ships ~200 keys).
   const dataForPanel = Object.fromEntries(
-    Object.entries(d).filter(([k]) => k !== 'uiData')
+    Object.entries(d).filter(([k, v]) =>
+      !RENDERED_DATA_KEYS.has(k) &&
+      v != null && v !== '' &&
+      !(Array.isArray(v) && v.length === 0) &&
+      !(typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === 0)
+    )
   );
 
+  // Global / CAD / flow variables surfaced by the richer JDS format.
+  const variables = flattenVariables(d);
+  const additionalFields = (d.additionalFields && typeof d.additionalFields === 'object' && !Array.isArray(d.additionalFields))
+    ? d.additionalFields : null;
+
   return {
-    id: e.id || `${e.timestamp || e.ts}-${e.type || channel}`,
+    id: e.id
+      ? `${e.id}-${e.type || ''}-${e.timestamp || e.createdAt || e.time || e.ts || ''}`
+      : `${e.timestamp || e.ts}-${e.type || channel}`,
     ts: e.timestamp || e.createdAt || e.time || e.ts,
     channel,
     title,
@@ -512,10 +588,26 @@ const normalizeEvent = (e, source) => {
     // ── Business/timing fields ────────────────────────────────────────────
     ivrDuration:  e.ivrDuration  ?? d.ivrDuration  ?? null,
     holdDuration: e.holdDuration ?? d.holdDuration ?? null,
-    wrapUpCode:   e.wrapUpCode   ?? d.wrapUpCode   ?? d.wrapUpAuxCode       ?? null,
-    wrapUpName:   e.wrapUpName   ?? d.wrapUpName   ?? d.wrapUpAuxCodeName   ?? null,
-    endReason:    d.reason       ?? d.endReason    ?? null,
-    // Raw data section — uiData key excluded (rendered via structured fields above)
+    wrapUpCode:   e.wrapUpCode   ?? d.wrapUpCode   ?? d.wrapupId          ?? d.wrapUpAuxCode     ?? null,
+    wrapUpName:   e.wrapUpName   ?? d.wrapUpName   ?? d.wrapupName        ?? d.wrapUpAuxCodeName ?? null,
+    endReason:    d.reason       ?? d.endReason    ?? d.terminationReason ?? null,
+    // ── Richer JDS business + diagnostic fields ───────────────────────────
+    interactionId:   d.interactionId || null,
+    contactReason:   d.contactReason || null,
+    terminationType: d.terminationType || null,
+    outcome:         d.outcome || null,
+    csatScore:       (d.csatScore ?? null),
+    sentimentScore:  (d.customerSentimentScore ?? null),
+    entrypointName:  d.entrypointName || null,
+    teamName:        d.teamName || null,
+    siteName:        d.siteName || null,
+    customerName:    d.customerName || null,
+    agentSessionId:  d.agentSessionId || null,
+    callLegId:       d.callLegId || null,
+    channelId:       d.channelId || null,
+    variables,
+    additionalFields,
+    // Raw data section — uiData + already-rendered keys excluded
     rawData: Object.keys(dataForPanel).length > 0 ? dataForPanel : null,
   };
 };
@@ -599,6 +691,59 @@ const deriveInteractionMetrics = (events) => {
   if (!hasData) return null;
 
   return { ivrSec, queueSec, talkSec, holdSec, wrapupDurSec, wrapUpName };
+};
+
+/**
+ * Aggregate business, variable and diagnostic data across a group of normalized
+ * events that share one interactionId. Fields spread over the interaction
+ * lifecycle (queue/agent on connect, wrap-up on wrapup-done, end reason on
+ * ended) are collapsed into a single interaction summary.
+ */
+const deriveInteractionInfo = (events) => {
+  const sorted = [...events].sort((a, b) => new Date(a.ts || 0) - new Date(b.ts || 0));
+  const pick = (key) => { for (const e of sorted) { if (e[key] != null && e[key] !== '') return e[key]; } return null; };
+
+  // Variables: merge across events, last non-empty value per name wins.
+  const varMap = new Map();
+  sorted.forEach((e) => (e.variables || []).forEach((v) => { if (v.value) varMap.set(v.name, v.value); }));
+  const variables = Array.from(varMap, ([name, value]) => ({ name, value }));
+
+  // Diagnostics: interaction/session/leg ids + routing ids from additionalFields.
+  const diagnostics = {};
+  const addDiag = (k, v) => { if (v != null && v !== '' && diagnostics[k] == null) diagnostics[k] = String(v); };
+  addDiag('interactionId', pick('interactionId') || pick('taskId'));
+  addDiag('agentSessionId', pick('agentSessionId'));
+  addDiag('callLegId', pick('callLegId'));
+  addDiag('channelId', pick('channelId'));
+  sorted.forEach((e) => {
+    const af = e.additionalFields || {};
+    ['queueId', 'agentId', 'teamId', 'siteId', 'epId', 'wrapupCodeId'].forEach((k) => addDiag(k, af[k]));
+  });
+
+  return {
+    interactionId: pick('interactionId') || pick('taskId'),
+    channel: sorted[0]?.channel || null,
+    direction: pick('direction'),
+    origin: pick('origin'),
+    destination: pick('destination'),
+    entrypointName: pick('entrypointName'),
+    queueName: pick('queueName'),
+    agentName: pick('agentName'),
+    teamName: pick('teamName'),
+    siteName: pick('siteName'),
+    customerName: pick('customerName'),
+    contactReason: pick('contactReason'),
+    wrapUpName: pick('wrapUpName'),
+    endReason: pick('endReason'),
+    terminationType: pick('terminationType'),
+    outcome: pick('outcome'),
+    csatScore: pick('csatScore'),
+    sentimentScore: pick('sentimentScore'),
+    variables,
+    diagnostics,
+    startTs: sorted[0]?.ts || null,
+    endTs: sorted[sorted.length - 1]?.ts || null,
+  };
 };
 
 // ─── InteractionMetrics component ────────────────────────────────────────────
@@ -922,7 +1067,46 @@ const EventRow = ({ ev }) => {
   );
 };
 
-const InteractionGroup = ({ taskId, events, darkMode, defaultOpen = false, casesMap, onNavigate, mockSummary }) => {
+/**
+ * Collapsible key/value block used for interaction Variables and Diagnostics.
+ * Renders nothing when there are no non-empty rows.
+ */
+const CollapsibleData = ({ label, icon, entries, tone }) => {
+  const [open, setOpen] = useState(false);
+  const rows = (entries || []).filter((r) => r && r.value != null && r.value !== '');
+  if (rows.length === 0) return null;
+  return (
+    <div className={`history-view__kv${tone ? ` history-view__kv--${tone}` : ''}`}>
+      <button
+        type="button"
+        className="history-view__kv-toggle"
+        aria-expanded={open}
+        onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}
+      >
+        {icon && <span className="history-view__kv-icon" aria-hidden="true">{icon}</span>}
+        <span className="history-view__kv-label">{label}</span>
+        <span className="history-view__kv-count">{rows.length}</span>
+        <span className="history-view__kv-chevron" aria-hidden="true">{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <dl className="history-view__data-grid history-view__kv-grid">
+          {rows.map(({ key, value }, i) => {
+            const display = renderDataValue(value);
+            if (!display) return null;
+            return (
+              <div key={`${key}-${i}`} className="history-view__data-row">
+                <dt className="history-view__data-key">{key}</dt>
+                <dd className="history-view__data-val">{display}</dd>
+              </div>
+            );
+          })}
+        </dl>
+      )}
+    </div>
+  );
+};
+
+const InteractionGroup = ({ taskId, events, darkMode, defaultOpen = false, casesMap, onNavigate, mockSummary, onSelect }) => {
   const [open, setOpen] = useState(defaultOpen);
   const [caseExpanded, setCaseExpanded] = useState(false);
   const dispatch = useDispatch();
@@ -944,18 +1128,43 @@ const InteractionGroup = ({ taskId, events, darkMode, defaultOpen = false, cases
   const badgeColor = CHANNEL_COLOR[first.channel] || 'pastel';
   const shortId = taskId.length > 12 ? `${taskId.substring(0, 8)}…` : taskId;
 
-  // Derive best label — prefer a meaningful title over bare channel/type strings;
-  // titles that are i18n keys (e.g. 'history.eventType.replySent') are translated via t()
-  const rawLabel = events.find(
-    (e) => e.title && e.title !== e.channel && e.title !== e.eventType
-  )?.title;
-  const label = rawLabel ? t(rawLabel) : `${first.channel} interaction`;
+  // Aggregate business / variable / diagnostic data across the interaction lifecycle.
+  const info = deriveInteractionInfo(events);
+  const { direction, queueName, agentName } = info;
 
-  // Aggregate handling metadata across all events in this interaction
-  const queueName = events.find((e) => e.queueName)?.queueName;
-  const agentName = events.find((e) => e.agentName)?.agentName;
-  const direction = events.find((e) => e.direction)?.direction;
-  const showMeta = direction || queueName || agentName;
+  // Card title — prefer a meaningful business label (contact reason / wrap-up), then
+  // a non-type event title, else a localized "<channel> interaction".
+  const channelLabel = t(`analytics.channel.${first.channel}`);
+  const channelDisplay = (channelLabel && !channelLabel.startsWith('analytics.')) ? channelLabel : first.channel;
+  const namedTitle = events.find(
+    (e) => e.title && e.title !== e.channel && e.title !== e.eventType && !/^[a-z]+:[a-z-]+$/i.test(e.title)
+  )?.title;
+  const label = info.contactReason
+    || info.wrapUpName
+    || (namedTitle ? t(namedTitle) : null)
+    || `${channelDisplay} ${t('history.interaction')}`;
+
+  const showMeta = direction || info.origin || queueName || agentName || info.wrapUpName
+    || info.sentimentScore != null || info.csatScore != null;
+
+  // Rows for the expandable Variables + Details panels.
+  const variableEntries = info.variables.map((v) => ({ key: v.name, value: v.value }));
+  const detailEntries = [
+    { key: t('history.biz.customer'),        value: info.customerName },
+    { key: t('history.biz.contactReason'),   value: info.contactReason },
+    { key: t('history.biz.entrypoint'),      value: info.entrypointName },
+    { key: t('history.biz.queue'),           value: queueName },
+    { key: t('history.biz.agent'),           value: agentName },
+    { key: t('history.biz.team'),            value: info.teamName },
+    { key: t('history.biz.site'),            value: info.siteName },
+    { key: t('history.biz.wrapUp'),          value: info.wrapUpName },
+    { key: t('history.biz.outcome'),         value: info.outcome },
+    { key: t('history.biz.endReason'),       value: info.endReason },
+    { key: t('history.biz.terminationType'), value: info.terminationType },
+    { key: t('history.biz.csat'),            value: info.csatScore },
+    { key: t('history.biz.sentiment'),       value: info.sentimentScore },
+    ...Object.entries(info.diagnostics).map(([k, v]) => ({ key: k, value: v })),
+  ];
 
   // Case linkage — take the first caseId found across events
   const caseId = events.find((e) => e.caseId)?.caseId || null;
@@ -964,22 +1173,21 @@ const InteractionGroup = ({ taskId, events, darkMode, defaultOpen = false, cases
   return (
     <li className="history-view__item history-view__item--group">
       <EventDot channel={first.channel} icon={firstIcon} src={firstSrc} color={firstDotColor} />
-      <div className="history-view__body" style={{ flex: 1 }}>
+      <div className="history-view__body">
         <div
           className="history-view__row history-view__row--clickable"
           role="button"
           tabIndex={0}
-          onClick={() => setOpen((o) => !o)}
-          onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setOpen((o) => !o)}
+          onClick={() => { setOpen((o) => !o); onSelect?.(taskId); }}
+          onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (setOpen((o) => !o), onSelect?.(taskId))}
           aria-expanded={open}
-          style={{ cursor: 'pointer', userSelect: 'none' }}
         >
           <Badge color={badgeColor} rounded>{first.channel}</Badge>
           <span className="history-view__title">{label}</span>
           <span className="history-view__when" title={formatDateTime(first.ts)}>
             {formatRelative(first.ts)}
           </span>
-          <Badge color="pastel" rounded style={{ marginLeft: 4 }}>{events.length}</Badge>
+          <Badge color="pastel" rounded className="history-view__count-badge">{events.length}</Badge>
           <span className="history-view__item-chevron">{open ? '▲' : '▼'}</span>
         </div>
         {showMeta && (
@@ -989,14 +1197,34 @@ const InteractionGroup = ({ taskId, events, darkMode, defaultOpen = false, cases
                 {direction === 'inbound' ? '↓' : '↑'} {t(direction === 'inbound' ? 'history.directionInbound' : 'history.directionOutbound')}
               </span>
             )}
+            {info.origin && (
+              <span className="history-view__chip history-view__chip--origin" title={info.origin}>
+                {info.origin}
+              </span>
+            )}
             {queueName && (
               <span className="history-view__chip history-view__chip--queue">
                 {queueName}
               </span>
             )}
             {agentName && (
-              <span className="history-view__chip history-view__chip--agent">
+              <span className="history-view__chip history-view__chip--agent" title={info.teamName || undefined}>
                 {agentName}
+              </span>
+            )}
+            {info.wrapUpName && (
+              <span className="history-view__chip history-view__chip--wrapup" title={t('history.biz.wrapUp')}>
+                🏷️ {info.wrapUpName}
+              </span>
+            )}
+            {info.csatScore != null && (
+              <span className="history-view__chip history-view__chip--score" title={t('history.biz.csat')}>
+                ★ {info.csatScore}
+              </span>
+            )}
+            {info.sentimentScore != null && (
+              <span className="history-view__chip history-view__chip--score" title={t('history.biz.sentiment')}>
+                {Number(info.sentimentScore) < 0 ? '🙁' : '🙂'} {info.sentimentScore}
               </span>
             )}
             {caseId && (
@@ -1019,7 +1247,7 @@ const InteractionGroup = ({ taskId, events, darkMode, defaultOpen = false, cases
           </div>
         )}
         <InteractionMetrics metrics={metrics} channel={first.channel} />
-        <div style={{ color: 'var(--md-color-gray-50)', fontSize: '0.75rem' }}>
+        <div className="history-view__short-id">
           {shortId}
         </div>
         {/* ── Channel jump CTA — shown only in 360-mode (onNavigate present) ── */}
@@ -1049,7 +1277,7 @@ const InteractionGroup = ({ taskId, events, darkMode, defaultOpen = false, cases
                 </span>
               )}
               {caseData?.priority && (
-                <span className="history-view__chip history-view__chip--queue" style={{ fontSize: '0.7rem' }}>
+                <span className="history-view__chip history-view__chip--queue history-view__chip--sm">
                   {caseData.priority}
                 </span>
               )}
@@ -1065,15 +1293,17 @@ const InteractionGroup = ({ taskId, events, darkMode, defaultOpen = false, cases
               </div>
             )}
             {!caseData && (
-              <div className="history-view__case-panel-meta" style={{ fontStyle: 'italic', opacity: 0.6 }}>
+              <div className="history-view__case-panel-meta history-view__case-panel-meta--muted">
                 {t('history.dataPanel.caseDetailsNotAvailable')}
               </div>
             )}
           </div>
         )}
         {open && (
-          <ol className="history-view__sub-timeline" style={{ marginTop: 8, paddingLeft: 0 }}>
+          <ol className="history-view__sub-timeline">
             <InteractionSummary summary={summary} />
+            <CollapsibleData label={t('history.details')} icon="🗂️" entries={detailEntries} tone="diag" />
+            <CollapsibleData label={t('history.variables')} icon="🔧" entries={variableEntries} tone="vars" />
             {events.map((ev) => (
               <EventRow key={ev.id} ev={ev} />
             ))}
@@ -1438,7 +1668,9 @@ const HistoryView = ({ darkMode, mockMode, onNavigate }) => {
   const { locale, t } = useI18n();
   const analyticsOpen = useSelector((s) => s.widget.analyticsOpen);
   const isDemoMode = Boolean(mockMode);
-  const [highlightedTask, setHighlightedTask] = useState(null);
+  // Persisted per-tab UI state (filters + last-selected item) — restored on revisit.
+  const [panelUi, patchPanelUi] = usePanelUiState('history');
+  const [highlightedTask, setHighlightedTask] = useState(() => panelUi.selectedTaskId || null);
   const highlightedRef = useRef(null);
 
   // Mock data (locale-aware)
@@ -1458,24 +1690,33 @@ const HistoryView = ({ darkMode, mockMode, onNavigate }) => {
   const dispatch     = useDispatch();
   const caseHistory  = useSelector((s) => s.widget.caseWorkflow?.visibleHistory) || [];
   const emailHistory = useSelector((s) => s.email?.customerHistory) || [];
+  const historyMeta  = useSelector((s) => s.email?.customerHistoryMeta) || {};
+  const customerIdentities = useSelector((s) => s.email?.customerIdentities) || [];
   const reduxSummary = useSelector((s) => s.email?.aiEnrichment?.summary);
   const widgetState  = useSelector((s) => s.widget);
 
-  // Fetch JDS history when the History tab is shown and customerHistory is empty.
-  // This covers the case where the tab is the initial/only view (no EmailWidget mounted).
+  // Selected history time range (rolling days) — persisted per tab, default 7 days.
+  const rangeDays = panelUi.rangeDays || DEFAULT_RANGE_DAYS;
+  const handleRangeChange = useCallback((days) => {
+    if (days === (panelUi.rangeDays || DEFAULT_RANGE_DAYS)) return;
+    patchPanelUi({ rangeDays: days });
+    dispatch(loadCustomerJdsHistoryForRange(days));
+  }, [panelUi.rangeDays, patchPanelUi, dispatch]);
+
+  // Fetch JDS history for the selected range when the tab is shown or the range
+  // changes. Uses the resolved customer identities (or the active task's ANI).
   useEffect(() => {
     if (isDemoMode) return;
-    if (emailHistory.length > 0) return; // already loaded
     const { accesstoken, workspaceid, datacenter, task } = widgetState;
-    const identity =
-      task?.ani ||
-      task?.displayAni ||
-      task?.phoneNumber ||
-      null;
-    if (!identity || !accesstoken || !workspaceid) return;
-    dispatch(fetchCustomerJdsHistory(identity, accesstoken, workspaceid, datacenter));
+    const identities = customerIdentities.length
+      ? customerIdentities
+      : [task?.ani || task?.displayAni || task?.phoneNumber].filter(Boolean);
+    if (!identities.length || !accesstoken || !workspaceid) return;
+    // Skip if the currently loaded data already matches this range.
+    if (historyMeta.rangeDays === rangeDays && emailHistory.length) return;
+    dispatch(fetchCustomerJdsHistory(identities, accesstoken, workspaceid, datacenter, 5, null, rangeDays));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isDemoMode, widgetState.accesstoken, widgetState.workspaceid, widgetState.task?.interactionId]);
+  }, [isDemoMode, rangeDays, customerIdentities.length, widgetState.accesstoken, widgetState.workspaceid, widgetState.task?.interactionId]);
 
   // Choose data source
   const aiSummary = isDemoMode ? MOCK_AI_SUMMARY : reduxSummary;
@@ -1510,11 +1751,11 @@ const HistoryView = ({ darkMode, mockMode, onNavigate }) => {
     return items;
   }, [groups, standalone]);
 
-  const [activeFilters, setActiveFilters] = useState({ channel: null, sentiment: null });
+  const activeFilters = panelUi.filters || DEFAULT_HISTORY_FILTERS;
   const analyticsRef = useRef(null);
   const handleFilterChange = useCallback(({ type, key }) => {
-    setActiveFilters((f) => ({ ...f, [type]: key }));
-  }, []);
+    patchPanelUi({ filters: { ...(panelUi.filters || DEFAULT_HISTORY_FILTERS), [type]: key } });
+  }, [panelUi.filters, patchPanelUi]);
 
   const filteredTimelineItems = useMemo(() => {
     if (!activeFilters.channel && !activeFilters.sentiment) return timelineItems;
@@ -1535,10 +1776,16 @@ const HistoryView = ({ darkMode, mockMode, onNavigate }) => {
     });
   }, [timelineItems, activeFilters]);
 
-  // Called from CalendarView when user clicks "Open in Timeline" — just highlight
+  // Called from CalendarView when user clicks "Open in Timeline" — highlight + persist.
   const handleOpenTimeline = useCallback((taskId) => {
     setHighlightedTask(taskId);
-  }, []);
+    patchPanelUi({ selectedTaskId: taskId });
+  }, [patchPanelUi]);
+
+  // Persist the last interaction the user expanded so it re-opens on revisit.
+  const handleSelectInteraction = useCallback((taskId) => {
+    patchPanelUi({ selectedTaskId: taskId });
+  }, [patchPanelUi]);
 
   // Scroll highlighted item into view
   useEffect(() => {
@@ -1594,46 +1841,12 @@ const HistoryView = ({ darkMode, mockMode, onNavigate }) => {
           </Card>
         )}
 
-        {/* ── Active filter indicator ── */}
-        {(activeFilters.channel || activeFilters.sentiment) && (
-          <div className="history-view__filter-bar">
-            <span className="history-view__filter-bar__label">{t('history.filterActive') || 'Filtered:'}</span>
-            {activeFilters.channel && (
-              <button
-                type="button"
-                className="history-view__filter-chip"
-                onClick={() => handleFilterChange({ type: 'channel', key: null })}
-              >
-                {t(`analytics.channel.${activeFilters.channel}`) || activeFilters.channel} ×
-              </button>
-            )}
-            {activeFilters.sentiment && (
-              <button
-                type="button"
-                className="history-view__filter-chip"
-                onClick={() => handleFilterChange({ type: 'sentiment', key: null })}
-              >
-                {t(`analytics.sentimentLabels.${activeFilters.sentiment}`) || activeFilters.sentiment} ×
-              </button>
-            )}
-            {activeFilters.channel && activeFilters.sentiment && (
-              <button
-                type="button"
-                className="history-view__filter-chip history-view__filter-chip--clear"
-                onClick={() => setActiveFilters({ channel: null, sentiment: null })}
-              >
-                {t('history.clearAll') || 'Clear all'}
-              </button>
-            )}
-          </div>
-        )}
-
       </div>
 
       {/* ── Split body: timeline left, calendar right ── */}
       <div className="history-view__split-body">
         {/* ── Timeline column ── */}
-        <div className="history-view__timeline-col">
+        <div className={`history-view__timeline-col${historyMeta.loading ? ' history-view__timeline-col--loading' : ''}`}>
           {filteredTimelineItems.length === 0 ? (
             <Card><CardSection full>
               <div className="history-view__empty">
@@ -1664,9 +1877,10 @@ const HistoryView = ({ darkMode, mockMode, onNavigate }) => {
                         taskId={item.taskId}
                         events={item.events}
                         darkMode={darkMode}
-                        defaultOpen={isHighlighted}
+                        defaultOpen={isHighlighted || item.taskId === panelUi.selectedTaskId}
                         casesMap={casesMap}
                         onNavigate={onNavigate}
+                        onSelect={handleSelectInteraction}
                         mockSummary={isDemoMode ? (MOCK_INTERACTION_SUMMARIES[item.taskId] || null) : null}
                       />
                     </div>
@@ -1684,6 +1898,25 @@ const HistoryView = ({ darkMode, mockMode, onNavigate }) => {
 
         {/* ── Calendar column ── */}
         <div className="history-view__calendar-col">
+          {!isDemoMode && (
+            <div className="history-view__range">
+              <span className="history-view__range-label">{t('history.range')}</span>
+              <div className="history-view__range-seg" role="tablist" aria-label={t('history.range')}>
+                {HISTORY_RANGES.map((r) => (
+                  <button
+                    key={r.days}
+                    type="button"
+                    role="tab"
+                    aria-selected={rangeDays === r.days}
+                    className={`history-view__range-btn${rangeDays === r.days ? ' history-view__range-btn--active' : ''}`}
+                    onClick={() => handleRangeChange(r.days)}
+                  >
+                    {r.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           {filteredTimelineItems.length === 0 ? (
             <div className="history-view__empty history-view__empty--cal">
               {t('history.empty') || 'No interaction history yet.'}
@@ -1699,6 +1932,13 @@ const HistoryView = ({ darkMode, mockMode, onNavigate }) => {
             />
           )}
         </div>
+
+        {/* Loading overlay — last child so it paints above the dimmed columns. */}
+        {historyMeta.loading && (
+          <div className="history-view__loading-overlay" role="status" aria-label={t('history.loading')}>
+            <div className="widget-spinner" />
+          </div>
+        )}
       </div>
     </div>
   );

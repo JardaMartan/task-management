@@ -174,8 +174,8 @@
 .voice__call-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 8px;
+  gap: 5px;
+  padding: 6px;
   overflow-y: auto;
 }
 /* Combined selector beats .widget-panel (overflow:hidden) regardless of CSS load order */
@@ -183,7 +183,7 @@
   overflow-y: auto;
 }
 .voice__call-item {
-  padding: 10px 12px;
+  padding: 6px 10px;
   border: 1px solid var(--md-color-gray-20, #e8ebee);
   border-radius: 8px;
   background: var(--md-color-white-100, #fff);
@@ -211,11 +211,11 @@
 .voice__call-item-top {
   display: flex;
   align-items: center;
-  gap: 4px;
-  margin-bottom: 3px;
+  gap: 6px;
+  margin-bottom: 0;
 }
 .voice__call-item-dir {
-  font-size: 11px;
+  font-size: 12px;
   color: #888;
 }
 .voice__call-item-time {
@@ -233,15 +233,176 @@
   font-size: 13px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  margin-bottom: 2px;
 }
-.voice__call-item-queue {
+.voice__call-item-wrapup {
+  margin-top: 4px;
+  max-width: 100%;
+  display: inline-block;
+  font-size: 10px;
+  color: #6b21a8;
+  background: rgba(124,58,237,.08);
+  border-radius: 6px;
+  padding: 1px 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.md--dark .voice__call-item-wrapup { color: #c4b5fd; background: rgba(124,58,237,.16); }
+
+/* Agent + team line in a call-list item */
+.voice__call-item-agent {
+  margin-top: 3px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 6px;
+  min-width: 0;
+}
+.voice__call-item-agent-name {
   font-size: 11px;
-  color: #777;
+  font-weight: 600;
+  color: var(--md-color-gray-80, #17242f);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
 }
-.md--dark .voice__call-item-queue {
-  color: rgba(255,255,255,.38);
+.voice__call-item-team {
+  font-size: 10px;
+  color: var(--md-color-gray-60, #5b6b7b);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
 }
+.md--dark .voice__call-item-agent-name { color: rgba(255,255,255,.88); }
+.md--dark .voice__call-item-team { color: rgba(255,255,255,.5); }
+
+/* ── Transcript detail top bar (recording metadata) ─────────────────────── */
+.voice__detail-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--md-color-gray-20, #dbe3ec);
+  background: var(--md-color-gray-05, #f4f7fa);
+}
+.voice__detail-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 100%;
+  padding: 2px 8px;
+  border-radius: 11px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--md-color-gray-80, #17242f);
+  background: var(--md-color-white-100, #fff);
+  border: 1px solid var(--md-color-gray-20, #dbe3ec);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.voice__detail-chip--time { color: var(--md-color-gray-60, #5b6b7b); }
+.voice__detail-chip--agent {
+  font-weight: 700;
+  color: #0e7fc1;
+  border-color: rgba(14,127,193,.28);
+  background: rgba(14,127,193,.07);
+}
+.voice__detail-chip--wrapup {
+  color: #6b21a8;
+  border-color: rgba(124,58,237,.28);
+  background: rgba(124,58,237,.08);
+}
+.md--dark .voice__detail-bar {
+  background: var(--md-color-gray-95, #0f1b26);
+  border-bottom-color: rgba(255,255,255,.08);
+}
+.md--dark .voice__detail-chip {
+  color: rgba(255,255,255,.85);
+  background: rgba(255,255,255,.05);
+  border-color: rgba(255,255,255,.1);
+}
+.md--dark .voice__detail-chip--time { color: rgba(255,255,255,.5); }
+.md--dark .voice__detail-chip--agent { color: #58b6e6; background: rgba(45,173,206,.14); border-color: rgba(45,173,206,.3); }
+.md--dark .voice__detail-chip--wrapup { color: #c4b5fd; background: rgba(124,58,237,.16); border-color: rgba(124,58,237,.3); }
+
+.voice__call-empty {
+  padding: 16px 12px;
+  text-align: center;
+  font-size: 12px;
+  color: #7a8794;
+}
+.md--dark .voice__call-empty { color: rgba(255,255,255,.45); }
+
+/* ── AI post-call summary (top of transcript detail) ─────────────────────── */
+.voice__summary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  border-radius: 10px;
+  border-left: 3px solid #818cf8;
+  background: rgba(99,102,241,.06);
+}
+.md--dark .voice__summary { background: rgba(99,102,241,.12); border-left-color: #a5b4fc; }
+.voice__summary-header {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  color: #4f46e5;
+}
+.md--dark .voice__summary-header { color: #a5b4fc; }
+.voice__summary-icon { font-size: 13px; }
+.voice__summary-wrapup {
+  margin-left: auto; font-weight: 700; font-size: 10px; text-transform: none; letter-spacing: 0;
+  padding: 1px 7px; border-radius: 8px; background: rgba(14,127,193,.12); color: #0e7fc1;
+}
+.md--dark .voice__summary-wrapup { background: rgba(45,173,206,.16); color: #40c4f0; }
+.voice__summary-row { display: flex; flex-direction: column; gap: 1px; }
+.voice__summary-label {
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: #6366f1;
+}
+.md--dark .voice__summary-label { color: #a5b4fc; }
+.voice__summary-text { font-size: 12.5px; line-height: 1.45; color: #1a1a2e; }
+.md--dark .voice__summary-text { color: rgba(255,255,255,.85); }
+.voice__summary-text--multiline { white-space: pre-line; }
+/* In the right rail the summary is a standalone card, not inline above a transcript. */
+.voice__summary--rail { margin-bottom: 0; }
+.voice__summary-empty-text {
+  font-size: 12px;
+  color: #7a8794;
+  line-height: 1.45;
+}
+.md--dark .voice__summary-empty-text { color: rgba(255,255,255,.45); }
+
+/* ── Transcript refresh button ───────────────────────────────────────────── */
+.voice__transcript .widget-panel__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.voice__refresh-btn {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px; height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--md-color-gray-60, #5b6b7b);
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.voice__refresh-btn:hover { background: var(--md-color-gray-20, #e8ebee); color: var(--md-color-blue-50, #0e7fc1); }
+.voice__refresh-btn:disabled { cursor: default; opacity: .6; }
+.md--dark .voice__refresh-btn { color: rgba(255,255,255,.55); }
+.md--dark .voice__refresh-btn:hover { background: rgba(255,255,255,.08); color: #40c4f0; }
+.voice__refresh-btn--spin svg { animation: voiceSpin .8s linear infinite; }
+@keyframes voiceSpin { to { transform: rotate(360deg); } }
 
 .voice__live-badge {
   font-size: 10px;
@@ -297,6 +458,15 @@
   color: #40c4f0;
   background: rgba(0,160,209,.12);
 }
+
+.voice__transcript-status {
+  text-align: center;
+  font-size: 12px;
+  color: var(--md-color-gray-50, #8a9199);
+  padding: 24px 12px;
+  font-style: italic;
+}
+.md--dark .voice__transcript-status { color: rgba(255,255,255,.45); }
 
 .voice__utterance {
   display: flex;
@@ -487,6 +657,11 @@
 
 /* AI rail (right column): uses .widget-rail (flex col, gap 8px,
    padding 8px, overflow-y auto) from widget-layout.css. */
+/* Drop the rail's top padding so the first card's top aligns with the
+   sibling call-list / transcript panels instead of sitting 8px lower.
+   Higher specificity (+ !important) beats .widget-rail's later `padding`
+   shorthand in the concatenated stylesheet. */
+.voice__body .voice__ai-rail { padding-top: 0 !important; }
 
 /* Shared card style for all three AI rail sections: uses
    .widget-rail-card from widget-layout.css.

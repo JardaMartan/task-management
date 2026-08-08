@@ -6,26 +6,14 @@
 
 /* ── Widget shell ─────────────────────────────────── */
 /* .email-widget uses .widget-shell (widget-layout.css) for
-   shell structure (padding, gap, background, flex column). */
-
-.email-widget__state-center {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  gap: 12px;
-  padding: 24px;
-}
+   shell structure (padding, gap, background, flex column).
+   Centered loading/empty states use the shared .widget-state /
+   .widget-spinner utilities from widget-layout.css. */
 
 /* Compose mode: allow the whole shell to scroll so Send is always reachable */
 .email-widget--compose {
   overflow-y: auto;
 }
-
-/* Centered state text (loading / empty prompts) */
-.email-widget__state-text { color: var(--md-color-gray-60, #767676); }
-.email-widget__state-text--spaced { margin-top: 12px; }
 
 /* Two-column body (legacy) — .widget-body provides display:grid,
    gap, padding, flex:1, min-height:0, overflow:hidden */

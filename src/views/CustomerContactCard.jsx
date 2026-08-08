@@ -23,7 +23,7 @@ const SmsIcon = () => (
     fill="currentColor"
     aria-hidden="true"
     focusable="false"
-    style={{ display: 'inline-block', verticalAlign: 'middle' }}
+    className="widget-inline-icon"
   >
     <path
       fillRule="evenodd"

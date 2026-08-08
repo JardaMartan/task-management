@@ -24,7 +24,10 @@
 
   var me = document.currentScript;
   var base = (me && me.src) ? me.src.replace(/[^/]*$/, '') : '';
-  var WIDGET_URL = base + 'task-management-cdn.js';
+  // Cache-bust the widget bundle per build (__BUILDV__ is replaced at build time)
+  // so a redeploy is never shadowed by a stale Desktop-cached copy. The loader
+  // itself is served no-cache and revalidates, so the new ?v= always takes effect.
+  var WIDGET_URL = base + 'task-management-cdn.js?v=__BUILDV__';
 
   function loadScript(url, cb) {
     var s = document.createElement('script');
