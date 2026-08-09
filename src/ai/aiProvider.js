@@ -8,6 +8,120 @@
 
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 
+// ─── Proofread / reply-review prompt ─────────────────────────────────────────
+// Editable by supervisors/admins via the Desktop layout config field
+// `proofreadPrompt`. Placeholders {{language}}, {{customerMessage}}, {{draft}}
+// are substituted at runtime. The template MUST instruct the model to return the
+// JSON shape consumed by ProofreadPanel (correctedHtml, answersOriginal,
+// coverageSummary, missingPoints, suggestedAdditions, issues).
+export const DEFAULT_PROOFREAD_PROMPT = `You are a senior customer-support quality reviewer.
+Review the AGENT DRAFT reply against the original CUSTOMER MESSAGE and do BOTH of the following:
+
+1. Proofread: find grammar, spelling, punctuation, style and tone problems in the draft.
+2. Coverage check: decide whether the draft actually answers everything the customer asked.
+   List any questions or requests that are not addressed and propose concrete additions.
+
+Language: Detect the language of the AGENT DRAFT and write EVERY piece of output text —
+correctedHtml, coverageSummary, missingPoints, suggestedAdditions, and each issue's "original"
+and "suggestion" — in that SAME language. Never mix languages. If the draft language is unclear, use {{language}}.
+
+CUSTOMER MESSAGE:
+{{customerMessage}}
+
+AGENT DRAFT (HTML):
+{{draft}}
+
+Respond with JSON only (no markdown, no commentary):
+{
+  "correctedHtml": "<p>the draft with grammar/spelling/style fixes applied; preserve all HTML tags</p>",
+  "answersOriginal": true,
+  "coverageSummary": "one or two sentences assessing how well the draft answers the customer",
+  "missingPoints": ["a specific question or request the draft does not address"],
+  "suggestedAdditions": ["a ready-to-paste sentence the agent could add to cover a missing point"],
+  "issues": [
+    { "type": "grammar|spelling|style|tone|coverage", "original": "phrase in the draft (or the missing topic)", "suggestion": "the correction or the addition" }
+  ]
+}
+Rules: preserve the author's voice and meaning; do not invent facts, policies, prices or commitments; if a point needs information you do not have, phrase the suggested addition as a placeholder the agent must fill in. Each issue.original MUST be an exact, verbatim substring copied character-for-character from the AGENT DRAFT text so it can be located and highlighted inline (do not paraphrase it, do not include HTML tags).`;
+
+// Per-locale proofreading guidance substituted into {{language}}.
+const PROOFREAD_LANG = {
+  cs: 'Czech — check Vykání forms, grammar cases, diacritics',
+  de: 'German — check Sie forms, declension, umlauts',
+  es: 'Spanish — check usted forms, accents, punctuation',
+  en: 'English — check grammar, spelling, punctuation',
+};
+
+const fillPromptTemplate = (tpl, vars) =>
+  String(tpl || '').replace(/\{\{(\w+)\}\}/g, (m, k) => (vars[k] != null ? String(vars[k]) : ''));
+
+// Build the final proofread prompt from the (optionally admin-overridden) template.
+const buildProofreadPrompt = (html, locale, options = {}) => {
+  const { customerMessage = '', promptTemplate = null } = options;
+  const language = PROOFREAD_LANG[locale] || PROOFREAD_LANG.en;
+  const template = promptTemplate || DEFAULT_PROOFREAD_PROMPT;
+  return fillPromptTemplate(template, {
+    language,
+    customerMessage: customerMessage || '(original customer message unavailable)',
+    draft: html || '',
+  });
+};
+
+// Normalise the model's JSON into the shape ProofreadPanel expects.
+const parseProofreadResult = (raw, fallbackHtml) => {
+  try {
+    const match = String(raw).match(/\{[\s\S]*\}/);
+    const o = match ? JSON.parse(match[0]) : {};
+    return {
+      correctedHtml: o.correctedHtml || fallbackHtml,
+      answersOriginal: o.answersOriginal !== false,
+      coverageSummary: o.coverageSummary || '',
+      missingPoints: Array.isArray(o.missingPoints) ? o.missingPoints.filter(Boolean) : [],
+      suggestedAdditions: Array.isArray(o.suggestedAdditions) ? o.suggestedAdditions.filter(Boolean) : [],
+      issues: Array.isArray(o.issues) ? o.issues : [],
+    };
+  } catch {
+    return { correctedHtml: fallbackHtml, answersOriginal: true, coverageSummary: '', missingPoints: [], suggestedAdditions: [], issues: [] };
+  }
+};
+
+// ─── Wrap-up summary (structured, concise — fills the native wrap-up card) ─────
+export const WRAP_UP_SECTION_KEYS = [
+  'initialContactReason', 'additionalContext', 'additionalContactReasons', 'keyActionsTaken', 'nextSteps',
+];
+
+const buildWrapUpPrompt = (incomingSummary, responseText, language) => `You are filling a structured wrap-up form for a customer-support email interaction.
+Detect the language of the content and write EVERY field in that SAME language (guide: ${language}).
+Be VERY concise: each field at most one short sentence (a few words is ideal). Use "" for any field that is not clearly known. Do not repeat the same content across fields.
+Fields:
+- initialContactReason: the core reason the customer contacted
+- additionalContext: key specifics/details
+- additionalContactReasons: any secondary topic ("" if none)
+- keyActionsTaken: what the agent did or answered in the reply
+- nextSteps: any follow-up or promised action ("" if none)
+
+CUSTOMER ISSUE SUMMARY:
+${incomingSummary || '(none)'}
+
+AGENT RESPONSE:
+${responseText || '(none)'}
+
+Respond with JSON only:
+{ "initialContactReason": "", "additionalContext": "", "additionalContactReasons": "", "keyActionsTaken": "", "nextSteps": "" }`;
+
+const parseWrapUpSections = (raw) => {
+  const empty = () => WRAP_UP_SECTION_KEYS.reduce((a, k) => { a[k] = ''; return a; }, {});
+  try {
+    const m = String(raw).match(/\{[\s\S]*\}/);
+    const o = m ? JSON.parse(m[0]) : {};
+    const out = empty();
+    WRAP_UP_SECTION_KEYS.forEach((k) => { out[k] = typeof o[k] === 'string' ? o[k].trim() : ''; });
+    return out;
+  } catch {
+    return empty();
+  }
+};
+
 /**
  * Low-level Gemini generateContent call.
  * Supports two auth modes:
@@ -191,38 +305,24 @@ ${html}`;
   }
 
   /**
-   * Proofread and return a list of specific issues for the agent to review.
+   * Proofread the draft AND check whether it answers the original customer
+   * message. Returns grammar/style issues plus a coverage assessment and
+   * suggested additions. The prompt is admin-overridable via options.promptTemplate.
    */
-  async proofread(html, locale) {
-    const langMap = {
-      cs: 'Czech — check Vykání forms, grammar cases, diacritics',
-      de: 'German — check Sie forms, declension, umlauts',
-      es: 'Spanish — check usted forms, accents, punctuation',
-      en: 'English — check grammar, spelling, punctuation',
-    };
-    const langGuide = langMap[locale] || langMap.en;
-
-    const prompt = `You are a professional proofreader. Analyze the following email draft and identify specific issues.
-Language: ${langGuide}
-
-Respond with JSON only:
-{
-  "correctedHtml": "<p>fully corrected HTML</p>",
-  "issues": [
-    { "type": "grammar|spelling|style|tone", "original": "incorrect phrase", "suggestion": "correct phrase" }
-  ]
-}
-
-Draft HTML:
-${html}`;
-
+  async proofread(html, locale, options = {}) {
+    const prompt = buildProofreadPrompt(html, locale, options);
     const result = await geminiGenerate(this.model, this.auth, prompt);
-    try {
-      const jsonMatch = result.match(/\{[\s\S]*\}/);
-      return jsonMatch ? JSON.parse(jsonMatch[0]) : { correctedHtml: html, issues: [] };
-    } catch {
-      return { correctedHtml: html, issues: [] };
-    }
+    return parseProofreadResult(result, html);
+  }
+
+  /**
+   * Combine the customer's issue summary and the agent's response into a concise
+   * wrap-up note, in the same language as the content.
+   */
+  async wrapUpSummary(incomingSummary, responseText, locale) {
+    const language = PROOFREAD_LANG[locale] || PROOFREAD_LANG.en;
+    const result = await geminiGenerate(this.model, this.auth, buildWrapUpPrompt(incomingSummary, responseText, language));
+    return { sections: parseWrapUpSections(result) };
   }
 
   /**
@@ -411,14 +511,21 @@ Return JSON: { "correctedHtml": "...", "changesDescription": "..." }`
     try { return JSON.parse(result); } catch { return { correctedHtml: html, changesDescription: '' }; }
   }
 
-  async proofread(html) {
+  async proofread(html, locale, options = {}) {
     const result = await this._chat(
-      'You are a proofreader. Always respond with valid JSON.',
-      `List grammar/spelling/style issues in this draft.
-Draft: ${html}
-Return JSON: { "correctedHtml": "...", "issues": [{"type":"grammar","original":"...","suggestion":"..."}] }`
+      'You are a customer-support quality reviewer. Always respond with valid JSON.',
+      buildProofreadPrompt(html, locale, options),
     );
-    try { return JSON.parse(result); } catch { return { correctedHtml: html, issues: [] }; }
+    return parseProofreadResult(result, html);
+  }
+
+  async wrapUpSummary(incomingSummary, responseText, locale) {
+    const language = PROOFREAD_LANG[locale] || PROOFREAD_LANG.en;
+    const result = await this._chat(
+      'You fill structured customer-support wrap-up forms. Always respond with valid JSON.',
+      buildWrapUpPrompt(incomingSummary, responseText, language),
+    );
+    return { sections: parseWrapUpSections(result) };
   }
 
   async generateGroundedReply(context, kbConfig, instruction, tone) {
@@ -459,12 +566,19 @@ class MockProvider {
     return { correctedHtml: html, changesDescription: 'No issues found (demo mode)' };
   }
 
-  async proofread(html) {
+  async proofread(html, locale, options = {}) {
+    const hasCustomer = Boolean(options.customerMessage);
     return {
       correctedHtml: html,
+      answersOriginal: false,
+      coverageSummary: hasCustomer
+        ? 'The reply covers the main request but does not confirm the expected resolution time.'
+        : 'Coverage check unavailable in demo mode.',
+      missingPoints: ['The customer asked when the issue will be resolved — no timeframe is given.'],
+      suggestedAdditions: ['We expect this to be fully resolved within 2 business days and will keep you updated.'],
       issues: [
         { type: 'style', original: 'reach out', suggestion: 'contact' },
-        { type: 'grammar', original: 'me know', suggestion: 'us know' },
+        { type: 'coverage', original: 'resolution time', suggestion: 'Add an expected timeframe for the fix.' },
       ],
     };
   }
@@ -476,6 +590,16 @@ class MockProvider {
       replyHtml: `<p>${reply.replace(/\n/g, '<br>')}</p>`,
       sources: [{ title: 'Standard Policy FAQ', uri: '#' }],
     };
+  }
+
+  async wrapUpSummary(incomingSummary, responseText) {
+    return { sections: {
+      initialContactReason: incomingSummary ? incomingSummary.split(/[.!?]/)[0].trim() : 'Customer enquiry',
+      additionalContext: '',
+      additionalContactReasons: '',
+      keyActionsTaken: (responseText || '').slice(0, 120).trim() || 'Responded to the customer.',
+      nextSteps: '',
+    } };
   }
 }
 

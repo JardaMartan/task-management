@@ -2406,6 +2406,34 @@ export const fetchEmailAttachment = async (messageId, attachmentId, gmailToken) 
  * @returns {Promise<{ id: string, threadId: string, labelIds: string[] }>}
  */
 export const sendEmailViaGmail = async (gmailToken, { toAddress, subject, replyHtml, replyText, threadId, inReplyTo, references, attachments }) => {
+  const raw = await buildGmailRaw({ toAddress, subject, replyHtml, replyText, inReplyTo, references, attachments });
+
+  const requestBody = { raw };
+  if (threadId) requestBody.threadId = threadId;
+
+  const response = await fetch(`${GMAIL_API_BASE}/messages/send`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${gmailToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(requestBody),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Gmail messages.send ${response.status}: ${text}`);
+  }
+
+  return response.json(); // { id, threadId, labelIds }
+};
+
+/**
+ * Build a base64url-encoded RFC 2822 message (multipart/alternative, plus a
+ * multipart/mixed wrapper when attachments are present). Shared by send + drafts.
+ * @returns {Promise<string>} base64url raw message
+ */
+async function buildGmailRaw({ toAddress, subject, replyHtml, replyText, inReplyTo, references, attachments }) {
   const plainBody = (replyText || (replyHtml || '').replace(/<[^>]+>/g, '')).trim();
 
   const commonHeaders = [
@@ -2487,27 +2515,115 @@ export const sendEmailViaGmail = async (gmailToken, { toAddress, subject, replyH
   const bytes = new TextEncoder().encode(mime);
   let binary = '';
   for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-  const raw = btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
 
-  const requestBody = { raw };
-  if (threadId) requestBody.threadId = threadId;
+// ─── Gmail drafts (used to hand off an in-progress reply between agents) ──────
 
-  const response = await fetch(`${GMAIL_API_BASE}/messages/send`, {
+/**
+ * Create a Gmail draft in the (shared) mailbox, keyed to a thread so another
+ * agent opening the same task can resume it. Returns { id, message }.
+ */
+export const createGmailDraft = async (gmailToken, { toAddress, subject, replyHtml, replyText, threadId, inReplyTo, references }) => {
+  const raw = await buildGmailRaw({ toAddress, subject, replyHtml, replyText, inReplyTo, references });
+  const message = { raw };
+  if (threadId) message.threadId = threadId;
+  const response = await fetch(`${GMAIL_API_BASE}/drafts`, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${gmailToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(requestBody),
+    headers: { Authorization: `Bearer ${gmailToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message }),
   });
-
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(`Gmail messages.send ${response.status}: ${text}`);
+    throw new Error(`Gmail drafts.create ${response.status}: ${text}`);
   }
-
-  return response.json(); // { id, threadId, labelIds }
+  return response.json(); // { id, message: { id, threadId } }
 };
+
+/** Update an existing Gmail draft in place. */
+export const updateGmailDraft = async (gmailToken, draftId, { toAddress, subject, replyHtml, replyText, threadId, inReplyTo, references }) => {
+  const raw = await buildGmailRaw({ toAddress, subject, replyHtml, replyText, inReplyTo, references });
+  const message = { raw };
+  if (threadId) message.threadId = threadId;
+  const response = await fetch(`${GMAIL_API_BASE}/drafts/${encodeURIComponent(draftId)}`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${gmailToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message }),
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Gmail drafts.update ${response.status}: ${text}`);
+  }
+  return response.json();
+};
+
+/** Delete a Gmail draft (called after the reply is sent). */
+export const deleteGmailDraft = async (gmailToken, draftId) => {
+  const response = await fetch(`${GMAIL_API_BASE}/drafts/${encodeURIComponent(draftId)}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${gmailToken}` },
+  });
+  // 200 or 204 = deleted; 404 = already gone (treat as success)
+  if (!response.ok && response.status !== 404) {
+    const text = await response.text();
+    throw new Error(`Gmail drafts.delete ${response.status}: ${text}`);
+  }
+  return true;
+};
+
+/**
+ * Find the newest draft belonging to a given thread and return its HTML body.
+ * Returns { draftId, html, text } or null when the thread has no draft.
+ */
+export const findGmailDraftForThread = async (gmailToken, threadId) => {
+  if (!threadId) return null;
+  // drafts.list returns { drafts: [{ id, message: { id, threadId } }] }
+  const listRes = await fetch(`${GMAIL_API_BASE}/drafts?maxResults=100`, {
+    headers: { Authorization: `Bearer ${gmailToken}` },
+  });
+  if (!listRes.ok) {
+    const text = await listRes.text();
+    throw new Error(`Gmail drafts.list ${listRes.status}: ${text}`);
+  }
+  const list = await listRes.json();
+  const match = (list.drafts || []).filter((d) => d.message?.threadId === threadId).pop();
+  if (!match) return null;
+
+  const draftRes = await fetch(`${GMAIL_API_BASE}/drafts/${encodeURIComponent(match.id)}?format=full`, {
+    headers: { Authorization: `Bearer ${gmailToken}` },
+  });
+  if (!draftRes.ok) {
+    const text = await draftRes.text();
+    throw new Error(`Gmail drafts.get ${draftRes.status}: ${text}`);
+  }
+  const draft = await draftRes.json();
+  const { html, text } = extractDraftBody(draft.message?.payload);
+  return { draftId: match.id, html, text };
+};
+
+/** Walk a Gmail message payload tree and pull out the HTML (preferred) + text body. */
+function extractDraftBody(payload) {
+  let html = '';
+  let text = '';
+  const decode = (data) => {
+    try {
+      const b64 = String(data || '').replace(/-/g, '+').replace(/_/g, '/');
+      const bin = atob(b64);
+      const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+      return new TextDecoder('utf-8').decode(bytes);
+    } catch { return ''; }
+  };
+  const walk = (part) => {
+    if (!part) return;
+    const mime = part.mimeType || '';
+    if (mime === 'text/html' && part.body?.data) html = decode(part.body.data);
+    else if (mime === 'text/plain' && part.body?.data && !text) text = decode(part.body.data);
+    (part.parts || []).forEach(walk);
+  };
+  walk(payload);
+  return { html, text };
+}
+
 
 /**
  * POST an outbound email payload to a Webex Connect inbound webhook.

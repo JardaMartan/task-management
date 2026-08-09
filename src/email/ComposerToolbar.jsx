@@ -94,7 +94,7 @@ LinkPopover.defaultProps = { initialUrl: '' };
  * All buttons use onMouseDown + preventDefault to keep editor focus.
  * Pass `onAttachClick` to show the paperclip button on the right end.
  */
-const ComposerToolbar = ({ editor, onAttachClick }) => {
+const ComposerToolbar = ({ editor, onAttachClick, children }) => {
   const { t } = useI18n();
   const [showLinkPopover, setShowLinkPopover] = useState(false);
 
@@ -207,6 +207,14 @@ const ComposerToolbar = ({ editor, onAttachClick }) => {
           <span aria-hidden="true">❝</span>
         </ToolbarBtn>
 
+        {/* ── Inline AI / extra controls ── */}
+        {children && (
+          <>
+            <ToolbarDivider />
+            {children}
+          </>
+        )}
+
         {/* ── Attach (pushed right) ── */}
         {onAttachClick && (
           <>
@@ -233,11 +241,13 @@ const ComposerToolbar = ({ editor, onAttachClick }) => {
 ComposerToolbar.propTypes = {
   editor: PropTypes.object,
   onAttachClick: PropTypes.func,
+  children: PropTypes.node,
 };
 
 ComposerToolbar.defaultProps = {
   editor: null,
   onAttachClick: null,
+  children: null,
 };
 
 export default ComposerToolbar;

@@ -31,6 +31,7 @@ import emailReducer, {
   setAiEnrichment, setAiReplyDraft, setTemplates, setPendingCorrelationId,
   fetchCustomerJdsHistory, loadJdsHistoryForEmailTask, loadJdsHistoryForWorkItemTask, loadJdsHistoryForVoiceTask, loadJdsHistoryForChatTask, loadJdsHistoryForSocialTask, refreshAiEnrichment, generateAiReply, improveAiDraft,
   sendEmailReply, handleSseEvent, submitWrapUp,
+  saveEmailDraft, loadEmailDraftForThread, deleteEmailDraft, generateWrapUpSummary, setWrapUpSummary,
   searchCustomerByIdentityManual, clearManualCustomerSearch,
   // Helpers
   parseGmailMessage, decodeBase64Url, extractEmailFromTask,
@@ -72,6 +73,7 @@ export {
   setAiEnrichment, setAiReplyDraft, setTemplates, setPendingCorrelationId,
   fetchCustomerJdsHistory, loadJdsHistoryForEmailTask, loadJdsHistoryForWorkItemTask, loadJdsHistoryForVoiceTask, loadJdsHistoryForChatTask, loadJdsHistoryForSocialTask, refreshAiEnrichment, generateAiReply, improveAiDraft,
   sendEmailReply, handleSseEvent, submitWrapUp,
+  saveEmailDraft, loadEmailDraftForThread, deleteEmailDraft, generateWrapUpSummary, setWrapUpSummary,
   searchCustomerByIdentityManual, clearManualCustomerSearch,
   // Email helpers
   parseGmailMessage, decodeBase64Url, extractEmailFromTask,

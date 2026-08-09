@@ -5,13 +5,13 @@ import { Alert } from '@momentum-ui/react';
 import { initEmailTask, resetEmail, resetEmailContent, setMockEmailData, checkGmailThreadUpdates, loadEmailSla, loadCustomerEmailThreads } from '../store/slices/emailSlice';
 import { toggleAnalyticsOpen } from '../store/slices/widgetSlice';
 import { useI18n } from '../i18n/I18nContext';
-import EmailTaskHeader from './EmailTaskHeader';
 import EmailAnalyticsBar from './EmailAnalyticsBar';
 import ThreadPanel from './ThreadPanel';
 import ConversationView from './ConversationView';
 import AiPanel from './AiPanel';
 import ReplyComposer from './ReplyComposer';
 import OutboundEmailComposer from './OutboundEmailComposer';
+import WrapUpSummaryController from './WrapUpSummaryController';
 import './email.css';
 
 const EmailWidget = ({ interactionId, callAssociatedDetails, darkMode, mockMode, initialTaskId, onNavigate, composeMode, composeTo, readOnly }) => {
@@ -218,7 +218,7 @@ const EmailWidget = ({ interactionId, callAssociatedDetails, darkMode, mockMode,
     <div className={`email-widget widget-shell${darkMode ? ' md--dark' : ''}`}>
       {analyticsHeader}
       {filterChips}
-      <EmailTaskHeader darkMode={darkMode} />
+      {!readOnly && <WrapUpSummaryController interactionId={interactionId} />}
       <div className="email-widget__body email-widget__body--3col widget-body">
         <aside className="email-widget__col email-widget__col--threads widget-panel" aria-label="Thread list">
           <ThreadPanel darkMode={darkMode} isDemoMode={isDemoMode} locale={locale} activeFilters={activeFilters} />

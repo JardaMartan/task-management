@@ -10,6 +10,10 @@ import {
   findGmailThreadBySubjectAndSender as apiFindGmailThreadBySubjectAndSender,
   sendEmailViaGmail as apiSendEmailViaGmail,
   pollGmailThreadHistory as apiPollGmailThreadHistory,
+  createGmailDraft as apiCreateGmailDraft,
+  updateGmailDraft as apiUpdateGmailDraft,
+  deleteGmailDraft as apiDeleteGmailDraft,
+  findGmailDraftForThread as apiFindGmailDraftForThread,
   publishCloudEvent,
   fetchJourneyEvents,
   getTaskSummary,
@@ -138,6 +142,10 @@ const initialState = {
   activeInteractionId: null,
   customerEmail: null,          // customer email address for the active task
   resolvedThreadId: null,   // cached Gmail threadId to skip repeated searches on tab re-visits
+  gmailDraftId: null,       // Gmail draft id for the active thread (agent-to-agent handoff)
+  draftSync: { status: null, savedAt: null, resumed: false }, // status: null|saving|saved|error
+  lastSentReply: null,      // plain-text of the last reply sent (input for the wrap-up summary)
+  wrapUpSummary: { text: '', sections: null, status: 'idle' }, // status: idle|generating|ready|error
   lastHistoryId: null,      // Gmail historyId from last thread fetch — used for update polling
   thread: [],
   customerThreads: [],
@@ -149,10 +157,11 @@ const initialState = {
   interactionSummaries: {}, // { [taskId]: { initialContactReason, keyActionsTaken, nextSteps, ... } }
   aiEnrichment: null,
   aiReplyDraft: '',
+  pendingComposerInsert: null, // { html, nonce } — one-shot payload the composer inserts at the cursor
   templates: [],
   signatures: [],
   activeSignatureId: null,
-  aiProofreadResult: null,     // { correctedHtml, issues: [{type, original, suggestion}] }
+  aiProofreadResult: null,     // { correctedHtml, answersOriginal, coverageSummary, missingPoints[], suggestedAdditions[], issues: [{type, original, suggestion}] }
   isCorrectingGrammar: false,
   knowledgeSources: [],        // citations from grounded reply
   pendingCorrelationId: null,
@@ -187,6 +196,18 @@ const emailSlice = createSlice({
     },
     setResolvedThreadId: (state, action) => {
       state.resolvedThreadId = action.payload;
+    },
+    setGmailDraftId: (state, action) => {
+      state.gmailDraftId = action.payload;
+    },
+    setDraftSync: (state, action) => {
+      state.draftSync = { ...state.draftSync, ...action.payload };
+    },
+    setLastSentReply: (state, action) => {
+      state.lastSentReply = action.payload;
+    },
+    setWrapUpSummary: (state, action) => {
+      state.wrapUpSummary = { ...state.wrapUpSummary, ...action.payload };
     },
     setLastHistoryId: (state, action) => {
       state.lastHistoryId = action.payload;
@@ -236,6 +257,12 @@ const emailSlice = createSlice({
       if (String(action.payload || '').replace(/<[^>]+>/g, '').trim()) {
         state.emailTouched = true;
       }
+    },
+    setPendingComposerInsert: (state, action) => {
+      // action.payload is the HTML/text to insert at the composer cursor, or null to clear.
+      state.pendingComposerInsert = action.payload
+        ? { html: action.payload, nonce: Date.now() }
+        : null;
     },
     setTemplates: (state, action) => {
       state.templates = action.payload;
@@ -325,6 +352,13 @@ const emailSlice = createSlice({
       templates: state.templates,
       signatures: state.signatures,
       activeSignatureId: state.activeSignatureId,
+      // Preserve the in-progress reply + its Gmail draft link across tab switches
+      // (a genuine task switch clears these explicitly in initEmailTask).
+      aiReplyDraft: state.aiReplyDraft,
+      gmailDraftId: state.gmailDraftId,
+      draftSync: state.draftSync,
+      lastSentReply: state.lastSentReply,
+      wrapUpSummary: state.wrapUpSummary,
     }),
     setMockEmailData: (state, action) => {
       // payload can be a locale string (legacy) or { locale, taskId }
@@ -362,6 +396,10 @@ export const {
   setActiveInteractionId,
   setCustomerEmail,
   setResolvedThreadId,
+  setGmailDraftId,
+  setDraftSync,
+  setLastSentReply,
+  setWrapUpSummary,
   setLastHistoryId,
   setThread,
   setCustomerThreads,
@@ -372,6 +410,7 @@ export const {
   setCustomerProfile,
   setAiEnrichment,
   setAiReplyDraft,
+  setPendingComposerInsert,
   setTemplates,
   setSignatures,
   setActiveSignatureId,
@@ -536,6 +575,13 @@ export const initEmailTask =
       dispatch(setCustomerEmail(null));
       dispatch(setResolvedThreadId(null));
       dispatch(setLastHistoryId(null));
+      // Reset transfer draft + wrap-up summary state for the new task.
+      dispatch(setGmailDraftId(null));
+      dispatch(setDraftSync({ status: null, savedAt: null, resumed: false }));
+      dispatch(setLastSentReply(null));
+      dispatch(setWrapUpSummary({ status: 'idle', text: '' }));
+      dispatch(setAiReplyDraft(''));
+      dispatch(setAiProofreadResult(null));
     }
     dispatch(setActiveInteractionId(interactionId));
 
@@ -699,6 +745,11 @@ export const initEmailTask =
       resolvedThreadId ? dispatch(fetchEmailThread(resolvedThreadId)) : Promise.resolve(),
       customerEmail ? dispatch(fetchCustomerThreads(customerEmail)) : Promise.resolve(),
     ]);
+
+    // ── Resume a Gmail draft left by a previous agent (task transfer) ──────
+    if (resolvedThreadId) {
+      dispatch(loadEmailDraftForThread(resolvedThreadId));
+    }
 
     // ── Load cached AI summary from JDS ──────────────────────────────────
     // Use a targeted 1-page type query — DO NOT scan the full customerHistory
@@ -1831,11 +1882,20 @@ export const correctGrammar = (currentDraft, locale) => async (dispatch, getStat
 export const proofreadDraft = (currentDraft, locale) => async (dispatch, getState) => {
   const cfg = await resolveAiConfig(dispatch, getState);
   if (!cfg) return;
+  const { email, widget } = getState();
+  const { activeEmail, thread } = email;
+  // Supervisor/admin-editable prompt (Desktop layout config field `proofreadPrompt`).
+  const promptTemplate = widget.emailConfig?.proofreadPrompt || null;
+  // Original customer message = the email being replied to (fall back to last thread message).
+  const src = activeEmail || (Array.isArray(thread) && thread.length ? thread[thread.length - 1] : null);
+  const customerMessage = src
+    ? `Subject: ${src.subject || ''}\n\n${src.bodyText || src.snippet || (src.bodyHtml ? src.bodyHtml.replace(/<[^>]+>/g, ' ') : '')}`.trim()
+    : '';
   dispatch(setIsFetchingAiDraft(true));
   dispatch(setAiProofreadResult(null));
   try {
     const provider = createAiProvider(cfg.type || 'mock', cfg);
-    const result = await provider.proofread(currentDraft, locale);
+    const result = await provider.proofread(currentDraft, locale, { customerMessage, promptTemplate });
     dispatch(setAiProofreadResult(result));
   } catch (err) {
     console.error('[EmailSlice] proofreadDraft error:', err);
@@ -1895,10 +1955,175 @@ export const applyTemplate = (templateId) => (dispatch, getState) => {
   };
 
   const substituted = tpl.body.replace(/\{\{(\w+)\}\}/g, (match, key) => vars[key] ?? match);
-  dispatch(setAiReplyDraft(substituted));
+  // Insert at the composer cursor instead of replacing the whole draft.
+  dispatch(setPendingComposerInsert(substituted));
   if (tpl.subject) {
     // Subject override is informational — no Redux field for it yet, just log
     console.log('[EmailSlice] Template subject:', tpl.subject);
+  }
+};
+
+// ─── Gmail drafts: hand off an in-progress reply between agents ────────────────
+
+// Build the Gmail message fields for a draft from the active email + current body.
+const buildDraftMessageFields = (state) => {
+  const { activeEmail, aiReplyDraft } = state.email;
+  if (!activeEmail) return null;
+  const isSent = Array.isArray(activeEmail.labelIds) && activeEmail.labelIds.includes('SENT');
+  const toAddress = isSent ? activeEmail.to : activeEmail.from;
+  const subject = activeEmail.subject?.startsWith('Re:') ? activeEmail.subject : `Re: ${activeEmail.subject || ''}`;
+  return {
+    toAddress,
+    subject,
+    replyHtml: aiReplyDraft,
+    threadId: activeEmail.threadId,
+    inReplyTo: activeEmail.messageId,
+    references: activeEmail.references ? `${activeEmail.references} ${activeEmail.messageId}` : activeEmail.messageId,
+  };
+};
+
+// Save the current reply as a Gmail draft (create or update). The draft lives in
+// the shared mailbox keyed to the thread, so another agent who receives the
+// transferred task resumes exactly where this one left off.
+export const saveEmailDraft = () => async (dispatch, getState) => {
+  const state = getState();
+  const { activeEmail, aiReplyDraft, gmailDraftId } = state.email;
+  if (!activeEmail?.threadId) return; // only thread-bound replies are transferable
+  const bodyText = String(aiReplyDraft || '').replace(/<[^>]+>/g, '').trim();
+  if (!bodyText) return;
+  const token = await dispatch(ensureGmailToken());
+  if (!token) return;
+  const fields = buildDraftMessageFields(state);
+  if (!fields) return;
+  dispatch(setDraftSync({ status: 'saving' }));
+  try {
+    if (gmailDraftId) {
+      await apiUpdateGmailDraft(token, gmailDraftId, fields);
+    } else {
+      const created = await apiCreateGmailDraft(token, fields);
+      if (created?.id) dispatch(setGmailDraftId(created.id));
+    }
+    dispatch(setDraftSync({ status: 'saved', savedAt: Date.now() }));
+  } catch (err) {
+    console.warn('[EmailSlice] saveEmailDraft failed:', err.message);
+    dispatch(setDraftSync({ status: 'error' }));
+  }
+};
+
+// On task open, resume any Gmail draft left for this thread by a previous agent.
+export const loadEmailDraftForThread = (threadId) => async (dispatch, getState) => {
+  if (!threadId) return;
+  const { email } = getState();
+  // Never clobber an agent who has already started typing on this task.
+  if (String(email.aiReplyDraft || '').replace(/<[^>]+>/g, '').trim()) return;
+  const token = await dispatch(ensureGmailToken());
+  if (!token) return;
+  try {
+    const found = await apiFindGmailDraftForThread(token, threadId);
+    if (found?.draftId && (found.html || found.text)) {
+      if (getState().email.resolvedThreadId !== threadId) return; // task switched mid-lookup
+      dispatch(setGmailDraftId(found.draftId));
+      dispatch(setAiReplyDraft(found.html || `<p>${found.text}</p>`));
+      dispatch(setDraftSync({ status: 'saved', savedAt: Date.now(), resumed: true }));
+      console.log('[EmailSlice] Resumed Gmail draft', found.draftId, 'for thread', threadId);
+    }
+  } catch (err) {
+    console.warn('[EmailSlice] loadEmailDraftForThread failed:', err.message);
+  }
+};
+
+// Remove the Gmail draft (after the reply is sent, or when starting fresh).
+export const deleteEmailDraft = () => async (dispatch, getState) => {
+  const draftId = getState().email.gmailDraftId;
+  dispatch(setGmailDraftId(null));
+  dispatch(setDraftSync({ status: null, savedAt: null, resumed: false }));
+  if (!draftId) return;
+  const token = await dispatch(ensureGmailToken());
+  if (!token) return;
+  try { await apiDeleteGmailDraft(token, draftId); }
+  catch (err) { console.warn('[EmailSlice] deleteEmailDraft failed:', err.message); }
+};
+
+// ─── AI wrap-up summary (customer issue + agent response) ─────────────────────
+
+export const generateWrapUpSummary = (locale) => async (dispatch, getState) => {
+  const cfg = await resolveAiConfig(dispatch, getState);
+  const { email, widget } = getState();
+  const incoming = email.aiEnrichment?.summary || '';
+  const response = email.lastSentReply
+    || String(email.aiReplyDraft || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!incoming && !response) return;
+
+  dispatch(setWrapUpSummary({ status: 'generating' }));
+  // Signal the headless wrap-up handler to show a “generating summary” spinner.
+  try {
+    const pbc = new BroadcastChannel('crm-sync');
+    pbc.postMessage({ type: 'WRAP_SUMMARY_PENDING', interactionId: email.activeInteractionId });
+    pbc.close();
+  } catch { /* BroadcastChannel unavailable */ }
+  try {
+    let sections = null;
+    if (cfg) {
+      const provider = createAiProvider(cfg.type || 'mock', cfg);
+      const res = await provider.wrapUpSummary(incoming, response, locale);
+      sections = res?.sections || null;
+    }
+    if (!sections) {
+      sections = {
+        initialContactReason: incoming || '',
+        additionalContext: '',
+        additionalContactReasons: '',
+        keyActionsTaken: response ? response.slice(0, 200) : '',
+        nextSteps: '',
+      };
+    }
+    // Short "Label: value" text for JDS + any in-widget display.
+    const LABELS = {
+      initialContactReason: 'Contact reason', additionalContext: 'Details',
+      additionalContactReasons: 'Additional topics', keyActionsTaken: 'Actions taken', nextSteps: 'Next steps',
+    };
+    const text = Object.keys(LABELS)
+      .filter((k) => sections[k] && String(sections[k]).trim())
+      .map((k) => `${LABELS[k]}: ${sections[k]}`)
+      .join('\n');
+    dispatch(setWrapUpSummary({ status: 'ready', text, sections }));
+
+    // Broadcast the structured summary so the headless wrap-up handler can write
+    // it straight into the native wrap-up AdaptiveCard (contact reason / details /
+    // additional topics / actions taken / next steps).
+    try {
+      const bc = new BroadcastChannel('crm-sync');
+      bc.postMessage({ type: 'WRAP_SUMMARY', sections, text, interactionId: email.activeInteractionId });
+      bc.close();
+    } catch { /* BroadcastChannel unavailable */ }
+
+    // Persist to JDS so the summary is retrievable later.
+    const { accesstoken, workspaceid, datacenter } = widget;
+    const customerEmail = email.customerEmail;
+    if (text && customerEmail && accesstoken && workspaceid) {
+      try {
+        await publishCloudEvent({
+          id: generateCorrelationId(),
+          specversion: '1.0',
+          type: 'email:wrapup-summary',
+          source: 'task-management-widget',
+          time: new Date().toISOString(),
+          eventTime: Date.now(),
+          identity: customerEmail,
+          identitytype: 'email',
+          datacontenttype: 'application/json',
+          data: { summary: text, sections, taskId: email.activeInteractionId },
+        }, accesstoken, workspaceid, datacenter);
+      } catch (jdsErr) { console.warn('[EmailSlice] wrapup-summary JDS publish failed:', jdsErr.message); }
+    }
+  } catch (err) {
+    console.error('[EmailSlice] generateWrapUpSummary error:', err);
+    dispatch(setWrapUpSummary({ status: 'error' }));
+    try {
+      const ebc = new BroadcastChannel('crm-sync');
+      ebc.postMessage({ type: 'WRAP_SUMMARY_ERROR', interactionId: getState().email.activeInteractionId });
+      ebc.close();
+    } catch { /* ignore */ }
   }
 };
 
@@ -1923,6 +2148,11 @@ export const sendEmailReply = (payload) => async (dispatch, getState) => {
 
     dispatch(setIsSending(false));
     dispatch(setSendResult({ success: true, messageId: sentMessage.id }));
+
+    // Capture the sent reply text (input for the wrap-up summary) and remove the
+    // Gmail draft now that the reply has actually gone out.
+    dispatch(setLastSentReply(payload.replyText || String(payload.replyHtml || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()));
+    dispatch(deleteEmailDraft());
 
     // Refresh the thread so the sent reply appears immediately in the conversation.
     // Gmail needs ~1s to index the newly sent message before threads.get returns it.

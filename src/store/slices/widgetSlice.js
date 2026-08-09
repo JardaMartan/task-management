@@ -128,6 +128,10 @@ const widgetSlice = createSlice({
             signatures: [],
             defaultSignatureId: null,
             knowledgeBase: [],
+            // Supervisor/admin-editable prompt template for the reply Review/Proofread
+            // action. Placeholders: {{language}}, {{customerMessage}}, {{draft}}.
+            // When null, the built-in DEFAULT_PROOFREAD_PROMPT is used.
+            proofreadPrompt: null,
             // SLA countdown: reportable Global Variable name holding the email SLA
             // expiry (epoch-ms string) + amber-warning threshold in minutes.
             slaVariable: null,
@@ -551,6 +555,7 @@ export const hydrateWidgetContext = (props = {}) => (dispatch) => {
             aiProvider, aiApiKey,
             templatesUrl, signaturesUrl, templates, signatures, defaultSignatureId, knowledgeBase,
             slaVariable, slaThresholdMinutes,
+            proofreadPrompt,
         } = safeConfig;
         const emailCfg = {};
         if (tokenBrokerUrl) emailCfg.tokenBrokerUrl = tokenBrokerUrl;
@@ -569,6 +574,9 @@ export const hydrateWidgetContext = (props = {}) => (dispatch) => {
         if (slaVariable) emailCfg.slaVariable = slaVariable;
         if (slaThresholdMinutes != null && !Number.isNaN(Number(slaThresholdMinutes))) {
             emailCfg.slaThresholdMinutes = Number(slaThresholdMinutes);
+        }
+        if (typeof proofreadPrompt === 'string' && proofreadPrompt.trim()) {
+            emailCfg.proofreadPrompt = proofreadPrompt;
         }
         if (Object.keys(emailCfg).length > 0) {
             dispatch(setEmailConfig(emailCfg));

@@ -9,6 +9,24 @@
 (function () {
   'use strict';
 
+  // Force future shadow roots OPEN so shadow-DOM traversal can reach nested
+  // internals. The wrap-up AI-summary card (agentx-wc-interaction-summary-card /
+  // uuip-adaptive-card) attaches a CLOSED shadow root that otherwise hides its
+  // section textareas. Installed at widget load, before that card is created.
+  try {
+    var _origAttachShadow = Element.prototype.attachShadow;
+    if (_origAttachShadow && !_origAttachShadow.__plForcedOpen) {
+      var _patchedAttachShadow = function (init) {
+        var opts = init || {};
+        if (opts.mode === 'closed') opts = Object.assign({}, opts, { mode: 'open' });
+        return _origAttachShadow.call(this, opts);
+      };
+      _patchedAttachShadow.__plForcedOpen = true;
+      Element.prototype.attachShadow = _patchedAttachShadow;
+      console.log('[panel-layout] attachShadow patched → future shadow roots forced open');
+    }
+  } catch (e) { /* ignore */ }
+
   var COLUMNS       = 'var(--nav-bar-width) auto minmax(auto, 0.6fr) 1.5fr auto';
   var EMAIL_COLUMNS  = 'var(--nav-bar-width) auto 0 1.5fr auto';  // col3 collapsed; col4 gets full remaining width
   var styleObserver = null;
@@ -1611,6 +1629,21 @@
           if (was !== _wrapBcCrmOpen) console.log('[panel-layout] wrap-transfer: CRM presence via crm-sync →', _wrapBcCrmOpen);
           _wrapUpdateToolbarState();
         }
+        // AI wrap-up summary from the task-management widget → fill the native card.
+        if (d && d.type === 'WRAP_SUMMARY' && d.sections) {
+          _wrapPendingSummary = d.sections;
+          _wrapSummaryApplied = false;
+          _wrapSummaryTries = 0;
+          console.log('[panel-layout] wrap-summary: received sections; watching for the wrap-up card');
+          try { _wrapSummaryStartWatch(); } catch (e) { /* ignore */ }
+        }
+        // Show/hide the "generating AI summary" spinner over the wrap-up card.
+        if (d && d.type === 'WRAP_SUMMARY_PENDING') {
+          try { _wrapShowSummarySpinner(); } catch (e) { /* ignore */ }
+        }
+        if (d && d.type === 'WRAP_SUMMARY_ERROR') {
+          try { _wrapHideSummarySpinner(); } catch (e) { /* ignore */ }
+        }
       });
     } catch (e) { /* BroadcastChannel unavailable */ }
   }
@@ -1693,6 +1726,262 @@
   }
 
   var _wrapSdkData = null;  // last wrap-up SDK event payload (auto-mode source)
+
+  // ── AI wrap-up summary writer: fills the native interaction-summary card ─────
+  // Runs on its OWN watcher (independent of the wrap-transfer field lookup): the
+  // React widget generates a concise structured summary (5 sections) on wrap-up
+  // and broadcasts it; we find the interaction-summary AdaptiveCard, enter edit
+  // mode, and write each section.
+  var _wrapPendingSummary = null;
+  var _wrapSummaryApplied = false;
+  var _wrapSummaryTries = 0;
+  var _wrapSummaryTimer = null;
+  var _wrapEditClicks = 0;
+  var _wrapPenClicked = false;
+  var _wrapSpinnerEl = null;
+  var _wrapSpinnerPosTimer = null;
+  var _wrapSpinnerSafetyTimer = null;
+  var _WRAP_SUMMARY_KEYS = ['initialContactReason', 'additionalContext', 'additionalContactReasons', 'keyActionsTaken', 'nextSteps'];
+
+  // Floating "Generating AI summary…" spinner shown over the wrap-up card while
+  // the widget generates the summary (from WRAP_SUMMARY_PENDING until written).
+  function _wrapShowSummarySpinner() {
+    if (_wrapSpinnerEl) return;
+    if (!document.getElementById('pl-wrap-spinner-style')) {
+      var st = document.createElement('style');
+      st.id = 'pl-wrap-spinner-style';
+      st.textContent = '@keyframes plWrapSpin{to{transform:rotate(360deg)}}';
+      document.head.appendChild(st);
+    }
+    var el = document.createElement('div');
+    el.id = 'pl-wrap-summary-spinner';
+    el.setAttribute('style', 'position:fixed;z-index:2147483646;display:flex;align-items:center;gap:8px;' +
+      'background:#0353a8;color:#fff;font:600 12px/1.2 var(--brand-font-family,Inter,\'Segoe UI\',sans-serif);' +
+      'padding:7px 12px;border-radius:16px;box-shadow:0 4px 14px rgba(0,0,0,.25);pointer-events:none;');
+    el.innerHTML = '<span style="width:14px;height:14px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;' +
+      'border-radius:50%;display:inline-block;animation:plWrapSpin .8s linear infinite;"></span>' +
+      '<span>Generating AI summary…</span>';
+    document.body.appendChild(el);
+    _wrapSpinnerEl = el;
+    _wrapPositionSummarySpinner();
+    _wrapSpinnerPosTimer = setInterval(_wrapPositionSummarySpinner, 400);
+    // Safety: never leave the spinner up forever.
+    _wrapSpinnerSafetyTimer = setTimeout(_wrapHideSummarySpinner, 20000);
+  }
+  function _wrapPositionSummarySpinner() {
+    if (!_wrapSpinnerEl) return;
+    var r = null;
+    try {
+      var target = _wrapSummaryAnchor() || findDeep(document.body, '#common-control') ||
+        findDeep(document.body, 'agentx-react-interaction-control-wrapper');
+      if (target && target.getBoundingClientRect) r = target.getBoundingClientRect();
+    } catch (e) { /* ignore */ }
+    if (r && r.width) {
+      _wrapSpinnerEl.style.top = Math.max(8, r.top + 48) + 'px';
+      _wrapSpinnerEl.style.left = Math.min(window.innerWidth - 230, r.left + 12) + 'px';
+    } else {
+      _wrapSpinnerEl.style.top = '120px';
+      _wrapSpinnerEl.style.left = '120px';
+    }
+  }
+  function _wrapHideSummarySpinner() {
+    if (_wrapSpinnerPosTimer) { clearInterval(_wrapSpinnerPosTimer); _wrapSpinnerPosTimer = null; }
+    if (_wrapSpinnerSafetyTimer) { clearTimeout(_wrapSpinnerSafetyTimer); _wrapSpinnerSafetyTimer = null; }
+    if (_wrapSpinnerEl && _wrapSpinnerEl.parentNode) _wrapSpinnerEl.parentNode.removeChild(_wrapSpinnerEl);
+    _wrapSpinnerEl = null;
+  }
+
+  function _wrapSummaryAnchor() {
+    return findDeep(document.body, 'agentx-wc-interaction-summary')
+      || findDeep(document.body, '.interaction-summary')
+      || findDeep(document.body, '#response-body-summary-sections-container')
+      || findDeep(document.body, '.ac-adaptiveCard');
+  }
+
+  // Deep query that ALSO enters `root`'s OWN shadow root. Plain findDeep only
+  // recurses DESCENDANTS' shadows, so it never gets past a web component (e.g.
+  // agentx-wc-interaction-summary) into its own shadow.
+  function _wrapDeep(root, sel) {
+    if (!root) return null;
+    try { var e = root.querySelector && root.querySelector(sel); if (e) return e; } catch (x) { /* ignore */ }
+    if (root.shadowRoot) { var e2 = _wrapDeep(root.shadowRoot, sel); if (e2) return e2; }
+    var all = root.querySelectorAll ? root.querySelectorAll('*') : [];
+    for (var i = 0; i < all.length; i++) { if (all[i].shadowRoot) { var e3 = _wrapDeep(all[i].shadowRoot, sel); if (e3) return e3; } }
+    return null;
+  }
+  function _wrapDeepAll(root, sel, out) {
+    out = out || [];
+    if (!root) return out;
+    try { if (root.querySelectorAll) { var l = root.querySelectorAll(sel); for (var i = 0; i < l.length; i++) out.push(l[i]); } } catch (x) { /* ignore */ }
+    if (root.shadowRoot) _wrapDeepAll(root.shadowRoot, sel, out);
+    var all = root.querySelectorAll ? root.querySelectorAll('*') : [];
+    for (var j = 0; j < all.length; j++) { if (all[j].shadowRoot) _wrapDeepAll(all[j].shadowRoot, sel, out); }
+    return out;
+  }
+
+  // Set a native <textarea>/<input> value so the AdaptiveCard model updates
+  // (React/AdaptiveCards listen on the input event; a raw .value= is ignored).
+  function _wrapSetInputValue(el, val) {
+    try {
+      var isTA = (el.tagName || '').toUpperCase() === 'TEXTAREA';
+      var proto = isTA ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+      var desc = Object.getOwnPropertyDescriptor(proto, 'value');
+      var setter = desc && desc.set;
+      if (setter) setter.call(el, val); else el.value = val;
+      // input drives the AdaptiveCards model; NO focus()/blur() — that moved focus
+      // out of the wrap-up popover and closed it.
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      return true;
+    } catch (e) { return false; }
+  }
+
+  // Log the summary card structure so the exact edit trigger + section layout can
+  // be pinned from a live wrap-up.
+  function _wrapDumpSummaryCard(anchor) {
+    try {
+      var container = _wrapDeep(anchor, '#response-body-summary-sections-container');
+      var tas = _wrapDeepAll(anchor, 'textarea');
+      var secIds = [];
+      _WRAP_SUMMARY_KEYS.forEach(function (k) { if (_wrapDeep(anchor, '#' + k)) secIds.push(k); });
+      console.log('[panel-layout] wrap-summary CARD anchor=' + (anchor.tagName || '').toLowerCase() +
+        ' sectionsContainer=' + (!!container) + ' textareas=' + tas.length +
+        ' sectionIds=[' + secIds.join(',') + ']');
+    } catch (e) { /* ignore */ }
+  }
+
+  // Dump every editable + button in the whole wrap-up control region so we can
+  // find the real summary field / edit affordance if it lives outside the card.
+  function _wrapDumpWrapRegion() {
+    try {
+      var region = findDeep(document.body, 'agentx-react-interaction-control-wrapper')
+        || findDeep(document.body, '#common-control')
+        || findDeep(document.body, '.wrapup-container');
+      if (!region) { console.log('[panel-layout] wrap-summary REGION: not found'); return; }
+      var tas = findAllDeep(region, 'textarea');
+      var ces = findAllDeep(region, '[contenteditable=""],[contenteditable="true"]');
+      var inputs = findAllDeep(region, 'md-input, md-textarea, input');
+      var summaryEls = findAllDeep(region, '[class*="summary"], agentx-wc-interaction-summary').map(function (e) {
+        return (e.tagName || '').toLowerCase() + '.' + ((e.className && e.className.toString) ? e.className.toString().split(/\s+/)[0] : '');
+      }).slice(0, 10);
+      var btns = findAllDeep(region, 'button, md-button, [role="button"], md-icon').map(function (b) {
+        var a = (b.getAttribute && (b.getAttribute('title') || b.getAttribute('aria-label') || b.getAttribute('name') || b.getAttribute('data-testid'))) || '';
+        var tx = (b.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 24);
+        var c = (b.className && b.className.toString) ? b.className.toString().split(/\s+/).slice(0, 2).join('.') : '';
+        return (a || tx || ('.' + c)).trim();
+      }).filter(function (s) { return s; }).slice(0, 24);
+      console.log('[panel-layout] wrap-summary REGION textareas=' + tas.length + ' contenteditable=' + ces.length + ' inputs=' + inputs.length + ' summaryEls=[' + summaryEls.join(', ') + ']');
+      console.log('[panel-layout] wrap-summary REGION buttons=[' + btns.join(' | ') + ']');
+    } catch (e) { /* ignore */ }
+  }
+
+  // Find the summary card's pen/edit control WITHIN the summary anchor ONLY (a
+  // document-wide search previously clicked an unrelated "edit-name-button" and
+  // hid the panel).
+  function _wrapFindEditControl(anchor) {
+    var all = _wrapDeepAll(anchor, 'button, md-button, [role="button"], md-icon, [title], [aria-label], [data-testid]');
+    for (var i = 0; i < all.length; i++) {
+      var el = all[i];
+      var s = '';
+      try {
+        s = [el.getAttribute && el.getAttribute('title'), el.getAttribute && el.getAttribute('aria-label'),
+             el.getAttribute && el.getAttribute('data-testid'), (el.className && el.className.toString) ? el.className.toString() : ''
+        ].join(' ').toLowerCase();
+      } catch (e) { /* ignore */ }
+      if (/edit summary|edit the summary|\bedit\b|pencil|upravit|bearbeiten/.test(s) &&
+          !/name|copy|delete|remove|feedback|helpful|regenerate|generate|expand|collapse|close/.test(s)) {
+        return el;
+      }
+    }
+    return null;
+  }
+
+  // Click the summary pen ONCE to reveal the editable fields.
+  function _wrapTryEnterEditMode(anchor) {
+    if (_wrapPenClicked) return false;
+    var pen = _wrapFindEditControl(anchor);
+    if (pen) {
+      _wrapPenClicked = true;
+      try { pen.click(); } catch (e) { /* ignore */ }
+      var lbl = (pen.getAttribute && (pen.getAttribute('title') || pen.getAttribute('aria-label') || pen.getAttribute('data-testid'))) || '';
+      console.log('[panel-layout] wrap-summary: clicked edit pen "' + lbl + '"');
+      return true;
+    }
+    if (_wrapSummaryTries % 6 === 2) console.log('[panel-layout] wrap-summary: no edit pen found within the summary card yet');
+    return false;
+  }
+
+  // Returns true once at least one section has been written.
+  function _wrapFillSummaryCard(sections) {
+    var anchor = _wrapSummaryAnchor();
+    if (!anchor) return false;
+    var textareas = _wrapDeepAll(anchor, 'textarea');
+    if (!textareas.length) {
+      _wrapTryEnterEditMode(anchor); // click the pen once to reveal the fields
+      return false;
+    }
+    var wrote = 0;
+    for (var i = 0; i < _WRAP_SUMMARY_KEYS.length; i++) {
+      var key = _WRAP_SUMMARY_KEYS[i];
+      var val = sections[key];
+      if (val == null || String(val).trim() === '') continue;
+      var sec = _wrapDeep(anchor, '#' + key);
+      var ta = sec ? _wrapDeep(sec, 'textarea') : null;
+      if (ta && _wrapSetInputValue(ta, String(val))) wrote++;
+    }
+    if (!wrote) {
+      for (var j = 0; j < textareas.length && j < _WRAP_SUMMARY_KEYS.length; j++) {
+        var v = sections[_WRAP_SUMMARY_KEYS[j]];
+        if (v != null && String(v).trim() !== '' && _wrapSetInputValue(textareas[j], String(v))) wrote++;
+      }
+    }
+    if (wrote) console.log('[panel-layout] wrap-summary: wrote', wrote, 'section(s) into the wrap-up card');
+    return wrote > 0;
+  }
+
+  function _wrapSummaryStartWatch() {
+    if (_wrapSummaryTimer) return;
+    _wrapSummaryTries = 0;
+    _wrapEditClicks = 0;
+    _wrapPenClicked = false;
+    _wrapSummaryTimer = setInterval(_wrapSummaryTick, 700);
+    _wrapSummaryTick();
+  }
+  function _wrapSummaryStopWatch() {
+    if (_wrapSummaryTimer) { clearInterval(_wrapSummaryTimer); _wrapSummaryTimer = null; }
+  }
+  function _wrapSummaryTick() {
+    if (!_wrapPendingSummary || _wrapSummaryApplied) { _wrapSummaryStopWatch(); return; }
+    _wrapSummaryTries++;
+    if (_wrapSummaryTries > 80) { // ~56s
+      console.warn('[panel-layout] wrap-summary: gave up finding an editable wrap-up card after ' + _wrapSummaryTries + ' tries — run __wrapSummaryDiag() during wrap-up');
+      _wrapSummaryStopWatch();
+      _wrapHideSummarySpinner();
+      return;
+    }
+    var anchor = _wrapSummaryAnchor();
+    if (!anchor) {
+      if (_wrapSummaryTries % 8 === 1) console.log('[panel-layout] wrap-summary: waiting for the wrap-up summary card to render…');
+      return;
+    }
+    if (_wrapSummaryTries % 6 === 1) _wrapDumpSummaryCard(anchor);
+    if (_wrapFillSummaryCard(_wrapPendingSummary)) {
+      _wrapSummaryApplied = true;
+      _wrapSummaryStopWatch();
+      _wrapHideSummarySpinner();
+      console.log('[panel-layout] wrap-summary: applied ✅');
+    }
+  }
+
+  // Diagnostic: run __wrapSummaryDiag() in the Desktop console during wrap-up.
+  try {
+    window.__wrapSummaryDiag = function () {
+      var a = _wrapSummaryAnchor();
+      if (a) _wrapDumpSummaryCard(a); else console.log('[panel-layout] wrap-summary: no summary card in DOM');
+      _wrapDumpWrapRegion();
+      return { anchor: !!a, pending: !!_wrapPendingSummary, applied: _wrapSummaryApplied, tries: _wrapSummaryTries };
+    };
+  } catch (e) { /* ignore */ }
 
   // Assemble the editable AI summary the way the card's own "Copy summary" button
   // does. agentx-wc-interaction-summary renders a Microsoft Adaptive Card of
@@ -2595,6 +2884,12 @@
     _wrapLastText = '';
     _wrapTick = 0;
     _wrapHighlightOn = false;
+    // New wrap-up: drop any stale summary; the widget regenerates + rebroadcasts.
+    _wrapPendingSummary = null;
+    _wrapSummaryApplied = false;
+    _wrapSummaryTries = 0;
+    _wrapSummaryStopWatch();
+    _wrapHideSummarySpinner();
     // Show the glow/toolbar as soon as the wrap-up field appears; CRM-open only
     // gates the Transfer button (queried async from the extension + crm-sync).
     _wrapRefreshStatus();
@@ -2615,6 +2910,9 @@
     _wrapHideUI();
     _wrapInteractionId = null;
     _wrapSdkData = null;
+    _wrapPendingSummary = null;
+    _wrapSummaryStopWatch();
+    _wrapHideSummarySpinner();
   }
 
   function _initWrapTransfer() {

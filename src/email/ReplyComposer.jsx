@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
 import { useSelector, useDispatch } from 'react-redux';
-import { Button, Card, CardSection } from '@momentum-ui/react';
+import { Button, Card, CardSection, Badge } from '@momentum-ui/react';
 import { useI18n } from '../i18n/I18nContext';
 import {
   sendEmailReply,
@@ -11,10 +11,12 @@ import {
   setAiReplyDraft,
   setAiProofreadResult,
   setActiveSignatureId,
+  setPendingComposerInsert,
+  saveEmailDraft,
 } from '../store/slices/emailSlice';
 import RichTextEditor from './RichTextEditor';
 import ComposerToolbar from './ComposerToolbar';
-import TemplatePicker from './TemplatePicker';
+import SearchableSelect from '../ui/SearchableSelect';
 
 // ─── Tone options ─────────────────────────────────────────────────────────────
 const TONE_OPTIONS = [
@@ -34,54 +36,102 @@ const SENTIMENT_TONE_MAP = {
 
 const UNDO_SECONDS = 5;
 
-// ─── Proofread issues panel ───────────────────────────────────────────────────
-const ProofreadPanel = ({ result, onApplyAll, onDismiss }) => {
+// ─── Proofread conclusion panel ───────────────────────────────────────────────
+// The grammar/style corrections are shown inline in the editor (accept/reject).
+// This panel below the composer carries only the conclusion (coverage + additions).
+const ProofreadPanel = ({ result, onDismiss, onInsertText, inlineCount }) => {
   const { t } = useI18n();
+  const [usedAdditions, setUsedAdditions] = useState({});
   if (!result) return null;
-  const { issues = [], correctedHtml } = result;
+  const {
+    answersOriginal = true, coverageSummary = '',
+    missingPoints = [], suggestedAdditions = [],
+  } = result;
+  const hasCoverage = Boolean(coverageSummary) || missingPoints.length > 0 || suggestedAdditions.length > 0;
   return (
     <div className="proofread-panel" role="region" aria-label={t('email.reply.proofread.panelLabel')}>
       <div className="proofread-panel__header">
         <span className="proofread-panel__title">
-          {issues.length > 0
-            ? t('email.reply.proofread.found').replace('{n}', issues.length)
-            : t('email.reply.proofread.noIssues')}
+          {inlineCount > 0
+            ? t('email.reply.proofread.inlineCount').replace('{n}', inlineCount)
+            : t('email.reply.proofread.panelLabel')}
         </span>
         <div className="proofread-panel__actions">
-          {correctedHtml && issues.length > 0 && (
-            <Button ariaLabel={t('email.reply.proofread.applyAll')} size={28} color="green" onClick={onApplyAll}>
-              {t('email.reply.proofread.applyAll')}
-            </Button>
-          )}
           <Button ariaLabel={t('email.reply.proofread.dismiss')} size={28} color="none" onClick={onDismiss}>
             {t('email.reply.proofread.dismiss')}
           </Button>
         </div>
       </div>
-      {issues.length > 0 && (
-        <ul className="proofread-panel__list">
-          {issues.map((issue, i) => (
-            // eslint-disable-next-line react/no-array-index-key
-            <li key={i} className="proofread-panel__issue">
-              <span className={`proofread-panel__issue-type proofread-panel__issue-type--${issue.type || 'grammar'}`}>
-                {t(`email.reply.proofread.type.${issue.type}`) || issue.type}
-              </span>
-              <span className="proofread-panel__issue-original">{issue.original}</span>
-              <span className="proofread-panel__issue-arrow" aria-hidden="true">→</span>
-              <span className="proofread-panel__issue-suggestion">{issue.suggestion}</span>
-            </li>
-          ))}
-        </ul>
+
+      {/* ── Coverage: does the reply actually answer the customer? ── */}
+      {hasCoverage && (
+        <div className={`proofread-panel__coverage${answersOriginal ? ' proofread-panel__coverage--ok' : ' proofread-panel__coverage--warn'}`}>
+          <div className="proofread-panel__coverage-status">
+            <span aria-hidden="true">{answersOriginal ? '✓' : '⚠'}</span>
+            <span>{answersOriginal
+              ? t('email.reply.proofread.coverage.answers')
+              : t('email.reply.proofread.coverage.incomplete')}</span>
+          </div>
+          {coverageSummary && (
+            <p className="proofread-panel__coverage-summary">{coverageSummary}</p>
+          )}
+          {missingPoints.length > 0 && (
+            <div className="proofread-panel__coverage-block">
+              <span className="proofread-panel__coverage-label">{t('email.reply.proofread.coverage.missingLabel')}</span>
+              <ul className="proofread-panel__coverage-list">
+                {/* eslint-disable-next-line react/no-array-index-key */}
+                {missingPoints.map((p, i) => (<li key={i}>{p}</li>))}
+              </ul>
+            </div>
+          )}
+          {suggestedAdditions.length > 0 && (
+            <div className="proofread-panel__coverage-block">
+              <span className="proofread-panel__coverage-label">{t('email.reply.proofread.coverage.additionsLabel')}</span>
+              <div className="proofread-panel__additions">
+                {suggestedAdditions.map((s, i) => (
+                  // eslint-disable-next-line react/no-array-index-key
+                  <div key={i} className={`proofread-panel__addition-card${usedAdditions[i] ? ' proofread-panel__addition-card--used' : ''}`}>
+                    <p className="proofread-panel__addition-text">{s}</p>
+                    {onInsertText && (
+                      usedAdditions[i] ? (
+                        <span className="proofread-panel__addition-used" aria-live="polite">
+                          <span className="proofread-panel__addition-btn-icon" aria-hidden="true">✓</span>
+                          {t('email.reply.proofread.coverage.added')}
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          className="proofread-panel__addition-btn"
+                          onClick={() => { onInsertText(s); setUsedAdditions((u) => ({ ...u, [i]: true })); }}
+                          title={t('email.reply.proofread.coverage.add')}
+                        >
+                          <span className="proofread-panel__addition-btn-icon" aria-hidden="true">＋</span>
+                          {t('email.reply.proofread.coverage.add')}
+                        </button>
+                      )
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
 };
 ProofreadPanel.propTypes = {
-  result: PropTypes.shape({ issues: PropTypes.array, correctedHtml: PropTypes.string }),
-  onApplyAll: PropTypes.func.isRequired,
+  result: PropTypes.shape({
+    answersOriginal: PropTypes.bool,
+    coverageSummary: PropTypes.string,
+    missingPoints: PropTypes.array,
+    suggestedAdditions: PropTypes.array,
+  }),
   onDismiss: PropTypes.func.isRequired,
+  onInsertText: PropTypes.func,
+  inlineCount: PropTypes.number,
 };
-ProofreadPanel.defaultProps = { result: null };
+ProofreadPanel.defaultProps = { result: null, onInsertText: null, inlineCount: 0 };
 
 // ─── Signature preview block ─────────────────────────────────────────────────
 
@@ -99,25 +149,37 @@ const resolvePlaceholders = (html, agentVars) => {
 
 const SignatureBlock = ({ signatures, activeSignatureId, onChangeId, agentVars }) => {
   const { t } = useI18n();
+  const [expanded, setExpanded] = useState(false);
   if (!signatures || signatures.length === 0) return null;
   const activeSig = signatures.find((s) => s.id === activeSignatureId);
+  const options = [
+    { id: '', name: t('email.reply.noSignature') },
+    ...signatures.map((s) => ({ id: s.id, name: s.name })),
+  ];
   return (
     <div className="reply-composer__signature-block">
-      <div className="reply-composer__signature-divider">
-        <span aria-hidden="true">—</span>
-        <select
-          className="reply-composer__signature-select"
-          value={activeSignatureId || ''}
-          onChange={(e) => onChangeId(e.target.value || null)}
-          aria-label={t('email.reply.signatureLabel')}
+      <div className="reply-composer__signature-header">
+        <button
+          type="button"
+          className="reply-composer__signature-toggle"
+          onClick={() => setExpanded((v) => !v)}
+          aria-expanded={expanded}
+          disabled={!activeSig}
         >
-          <option value="">{t('email.reply.noSignature')}</option>
-          {signatures.map((s) => (
-            <option key={s.id} value={s.id}>{s.name}</option>
-          ))}
-        </select>
+          <span className="reply-composer__signature-caret" aria-hidden="true">{expanded ? '▾' : '▸'}</span>
+          {t('email.reply.signatureLabel')}
+        </button>
+        <div className="reply-composer__signature-select-wrap">
+          <SearchableSelect
+            value={activeSignatureId || ''}
+            options={options}
+            onChange={(id) => onChangeId(id || null)}
+            searchable={false}
+            ariaLabel={t('email.reply.signatureLabel')}
+          />
+        </div>
       </div>
-      {activeSig && (
+      {expanded && activeSig && (
         // eslint-disable-next-line react/no-danger
         <div className="reply-composer__signature-content" dangerouslySetInnerHTML={{ __html: resolvePlaceholders(activeSig.html, agentVars) }} />
       )}
@@ -156,9 +218,10 @@ const ReplyComposer = ({ interactionId, callAssociatedDetails, darkMode, outboun
   const isSending           = useSelector((state) => state.email.isSending);
   const sendResult          = useSelector((state) => state.email.sendResult);
   const activeEmail         = useSelector((state) => state.email.activeEmail);
-  const templates           = useSelector((state) => state.email.templates);
   const allSignatures       = useSelector((state) => state.email.signatures);
   const activeSignatureId   = useSelector((state) => state.email.activeSignatureId);
+  const emailTouched        = useSelector((state) => state.email.emailTouched);
+  const draftSync           = useSelector((state) => state.email.draftSync);
   const widgetAgent         = useSelector((state) => state.widget.agent);
   const widgetAgentName     = useSelector((state) => state.widget.agentName);
 
@@ -195,15 +258,19 @@ const ReplyComposer = ({ interactionId, callAssociatedDetails, darkMode, outboun
   const aiEnrichment        = useSelector((state) => state.email.aiEnrichment);
   const aiProofreadResult   = useSelector((state) => state.email.aiProofreadResult);
   const isCorrectingGrammar = useSelector((state) => state.email.isCorrectingGrammar);
+  const pendingComposerInsert = useSelector((state) => state.email.pendingComposerInsert);
 
   // ── Local UI state ──
   const [selectedTone,       setSelectedTone]       = useState('professional');
-  const [showTemplatePicker, setShowTemplatePicker] = useState(false);
   const [isNote,             setIsNote]             = useState(false);
   const [undoState,          setUndoState]          = useState(null);
   const [attachments,        setAttachments]        = useState([]);
   const [outboundTo,         setOutboundTo]         = useState(initialTo || '');
   const [outboundSubject,    setOutboundSubject]    = useState(initialSubject || '');
+  // Which AI action drives the shared isFetchingAiDraft flag ('tone' | 'proofread').
+  const [pendingAi,          setPendingAi]          = useState(null);
+  // Count of proofread corrections still shown inline (accept/reject) in the editor.
+  const [inlineCount,        setInlineCount]        = useState(0);
   const undoTimerRef = useRef(null);
 
   // In outbound mode: clear leftover draft from previous email session on mount
@@ -235,11 +302,44 @@ const ReplyComposer = ({ interactionId, callAssociatedDetails, darkMode, outboun
     if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
   }, []);
 
+  // Auto-save the reply as a Gmail draft ~2.5s after typing stops, so a
+  // transferred task can be resumed by the next agent (reply mode only).
+  useEffect(() => {
+    if (outboundMode || isNote || !activeEmail?.threadId) return undefined;
+    if (!aiReplyDraft.replace(/<[^>]+>/g, '').trim()) return undefined;
+    const timer = setTimeout(() => dispatch(saveEmailDraft()), 2500);
+    return () => clearTimeout(timer);
+  }, [aiReplyDraft, outboundMode, isNote, activeEmail, dispatch]);
+
+  // Flush a save on unmount (tab switch / transfer) if content is still unsent.
+  const draftCtxRef = useRef({});
+  draftCtxRef.current = { outboundMode, threadId: activeEmail?.threadId, body: aiReplyDraft };
+  useEffect(() => () => {
+    const { outboundMode: ob, threadId, body } = draftCtxRef.current;
+    if (!ob && threadId && String(body || '').replace(/<[^>]+>/g, '').trim()) {
+      dispatch(saveEmailDraft());
+    }
+  }, [dispatch]);
+
+  // Clear the per-action AI spinner once the shared draft-fetch flag settles.
+  useEffect(() => {
+    if (!isFetchingAiDraft) setPendingAi(null);
+  }, [isFetchingAiDraft]);
+
   // Strip HTML tags to determine if composer is empty
   const isDraftEmpty = !aiReplyDraft.replace(/<[^>]+>/g, '').trim();
   const isAiBusy     = isFetchingAiDraft || isCorrectingGrammar;
   // Extra guard for outbound mode: To and Subject must also be filled
   const isOutboundIncomplete = outboundMode && (!outboundTo.trim() || !outboundSubject.trim());
+
+  // Proofread grammar/style corrections → inline accept/reject suggestions in the editor.
+  // Coverage-type entries are shown below as additions, not inline.
+  const reviewSuggestions = React.useMemo(() => {
+    const issues = aiProofreadResult?.issues || [];
+    return issues
+      .filter((it) => it.original && it.suggestion && it.type !== 'coverage')
+      .map((it, i) => ({ id: `s${i}`, original: it.original, suggestion: it.suggestion, type: it.type }));
+  }, [aiProofreadResult]);
 
   const dispatchSend = (payload) => dispatch(sendEmailReply(payload));
 
@@ -253,12 +353,14 @@ const ReplyComposer = ({ interactionId, callAssociatedDetails, darkMode, outboun
       aiReplyDraft.replace(/<[^>]+>/g, '').trim();
     const activeSig = signatures?.find((s) => s.id === activeSignatureId);
     const sigHtml = activeSig ? `<p>—</p>${resolvePlaceholders(activeSig.html, agentVars)}` : '';
+    // The <mark class="rte-added"> highlight is a compose-time aid only — never send it.
+    const cleanHtml = String(aiReplyDraft).replace(/<\/?mark[^>]*>/gi, '');
 
     const payload = outboundMode ? {
       toAddress:   outboundTo.trim(),
       subject:     outboundSubject.trim(),
       replyText:   bodyText,
-      replyHtml:   aiReplyDraft + sigHtml,
+      replyHtml:   cleanHtml + sigHtml,
       threadId:    null,
       inReplyTo:   null,
       references:  null,
@@ -276,7 +378,7 @@ const ReplyComposer = ({ interactionId, callAssociatedDetails, darkMode, outboun
           ? activeEmail.subject
           : `Re: ${activeEmail.subject}`,
         replyText: bodyText,
-        replyHtml: aiReplyDraft + sigHtml,
+        replyHtml: cleanHtml + sigHtml,
         threadId: activeEmail.threadId,
         inReplyTo: activeEmail.messageId,
         references: activeEmail.references
@@ -347,19 +449,14 @@ const ReplyComposer = ({ interactionId, callAssociatedDetails, darkMode, outboun
 
   const handleProofread = () => {
     if (isDraftEmpty) return;
+    setPendingAi('proofread');
     dispatch(proofreadDraft(aiReplyDraft, locale));
-  };
-
-  const handleApplyProofread = () => {
-    if (aiProofreadResult?.correctedHtml) {
-      dispatch(setAiReplyDraft(aiProofreadResult.correctedHtml));
-    }
-    dispatch(setAiProofreadResult(null));
   };
 
   const handleToneAdjust = (tone) => {
     setSelectedTone(tone);
     if (!isDraftEmpty) {
+      setPendingAi('tone');
       dispatch(improveAiDraft(aiReplyDraft, `Rewrite in a ${tone} tone`, locale));
     }
   };
@@ -381,14 +478,58 @@ const ReplyComposer = ({ interactionId, callAssociatedDetails, darkMode, outboun
     >
       <CardSection full>
 
-        {/* ── Header ── */}
-        <div className="reply-composer__header">
-          <span className="md-h4">
-            {outboundMode
-              ? t('email.outbound.title')
-              : isNote ? t('email.reply.note.active') : t('email.reply.title')}
-          </span>
-          <div className="reply-composer__header-actions">
+        {/* ── Recipient + actions bar (Send lives here, next to the target address) ── */}
+        <div className="reply-composer__bar">
+          <div className="reply-composer__bar-info">
+            {!outboundMode && (
+              <Badge color={emailTouched ? 'orange' : 'green'}>
+                {emailTouched ? t('email.state.draft') : t('email.state.new')}
+              </Badge>
+            )}
+            {!outboundMode && !isNote && (draftSync.resumed || draftSync.status) && (
+              <span className={`reply-composer__draft-status${draftSync.status === 'saving' ? ' reply-composer__draft-status--saving' : ''}`}>
+                {draftSync.resumed
+                  ? t('email.draft.resumed')
+                  : draftSync.status === 'saving'
+                  ? t('email.draft.saving')
+                  : draftSync.status === 'saved'
+                  ? t('email.draft.saved')
+                  : ''}
+              </span>
+            )}
+            {outboundMode ? (
+              <span className="reply-composer__bar-title">{t('email.outbound.title')}</span>
+            ) : isNote ? (
+              <span className="reply-composer__bar-title reply-composer__bar-title--note">{t('email.reply.note.active')}</span>
+            ) : activeEmail ? (
+              <>
+                <span className="reply-composer__to-label">{t('email.to')}:</span>
+                <span className="reply-composer__to-value" title={
+                  Array.isArray(activeEmail.labelIds) && activeEmail.labelIds.includes('SENT')
+                    ? activeEmail.to
+                    : activeEmail.from
+                }>
+                  {Array.isArray(activeEmail.labelIds) && activeEmail.labelIds.includes('SENT')
+                    ? activeEmail.to
+                    : activeEmail.from}
+                </span>
+              </>
+            ) : (
+              <span className="reply-composer__bar-title">{t('email.reply.title')}</span>
+            )}
+          </div>
+          <div className="reply-composer__bar-actions">
+            {sendResult && !undoState && (
+              <span className={`reply-composer__send-result${sendResult.success ? ' reply-composer__send-result--success' : ' reply-composer__send-result--error'}`}>
+                {sendResult.timeout
+                  ? t('email.send.timeout')
+                  : sendResult.success
+                  ? t('email.send.success')
+                  : sendResult.error
+                  ? (t(sendResult.error) || t('email.send.failed'))
+                  : t('email.send.failed')}
+              </span>
+            )}
             {!outboundMode && (
               <Button
                 ariaLabel={isNote ? t('email.reply.note.active') : t('email.reply.note.toggle')}
@@ -399,16 +540,25 @@ const ReplyComposer = ({ interactionId, callAssociatedDetails, darkMode, outboun
                 {isNote ? t('email.reply.note.active') : t('email.reply.note.toggle')}
               </Button>
             )}
-            {templates.length > 0 && (
-              <Button
-                ariaLabel={t('email.reply.template')}
-                size={28}
-                color="none"
-                onClick={() => setShowTemplatePicker((v) => !v)}
-              >
-                {t('email.reply.template')}
-              </Button>
-            )}
+            <Button
+              ariaLabel={isNote ? t('email.reply.note.save') : t('email.reply.send')}
+              size={28}
+              color={isNote ? 'orange' : 'blue'}
+              onClick={handleSend}
+              disabled={isSending || isFetchingAiDraft || isDraftEmpty || !!undoState || isOutboundIncomplete}
+              title={t('email.reply.shortcuts')}
+            >
+              {isSending ? (
+                <>
+                  <span className="widget-spinner widget-spinner--sm widget-spinner--inherit" />
+                  <span>{t('email.reply.sending')}</span>
+                </>
+              ) : isNote ? (
+                t('email.reply.note.save')
+              ) : (
+                t('email.reply.send')
+              )}
+            </Button>
             {outboundMode && onCancel && (
               <button
                 type="button"
@@ -421,11 +571,6 @@ const ReplyComposer = ({ interactionId, callAssociatedDetails, darkMode, outboun
             )}
           </div>
         </div>
-
-        {/* ── Template picker flyout ── */}
-        {showTemplatePicker && (
-          <TemplatePicker onClose={() => setShowTemplatePicker(false)} />
-        )}
 
         {/* ── Note hint ── */}
         {isNote && (
@@ -469,62 +614,55 @@ const ReplyComposer = ({ interactionId, callAssociatedDetails, darkMode, outboun
         )}
 
         {/* ── To line (reply mode only) ── */}
-        {!outboundMode && activeEmail && !isNote && (
-          <div className="reply-composer__to-line">
-            <span className="reply-composer__to-label">{t('email.to')}:</span>
-            <span className="reply-composer__to-value">
-              {Array.isArray(activeEmail.labelIds) && activeEmail.labelIds.includes('SENT')
-                ? activeEmail.to
-                : activeEmail.from}
-            </span>
-          </div>
-        )}
+        {/* Recipient now shown in the actions bar above. */}
 
-        {/* ── AI correction action bar ── */}
-        {aiConfig && !isNote && (
-          <div className="reply-composer__ai-action-bar" role="toolbar" aria-label={t('email.reply.aiActionBar')}>
-            <button
-              type="button"
-              className={`reply-composer__ai-action-btn${(isDraftEmpty || isAiBusy) ? ' reply-composer__ai-action-btn--disabled' : ''}`}
-              onClick={handleFixGrammar}
-              disabled={isDraftEmpty || isAiBusy}
-              title={t('email.reply.fixGrammar')}
-            >
-              {isCorrectingGrammar ? <span className="widget-spinner widget-spinner--xs widget-spinner--inherit" /> : <span aria-hidden="true">✓</span>}
-              {t('email.reply.fixGrammar')}
-            </button>
-
-            <div className="reply-composer__tone-row">
-              <span className="reply-composer__tone-label">{t('email.reply.toneLabel')}:</span>
-              <select
-                className="reply-composer__tone-select"
-                value={selectedTone}
-                onChange={(e) => handleToneAdjust(e.target.value)}
-                disabled={isAiBusy}
-                aria-label={t('email.reply.toneLabel')}
-              >
-                {TONE_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>{t(opt.labelKey)}</option>
-                ))}
-              </select>
-            </div>
-
-            <button
-              type="button"
-              className={`reply-composer__ai-action-btn${(isDraftEmpty || isAiBusy) ? ' reply-composer__ai-action-btn--disabled' : ''}`}
-              onClick={handleProofread}
-              disabled={isDraftEmpty || isAiBusy}
-              title={t('email.reply.proofreadLabel')}
-            >
-              <span aria-hidden="true">🔍</span>
-              {t('email.reply.proofreadLabel')}
-            </button>
-          </div>
-        )}
-
-        {/* ── Formatting toolbar (not for internal notes) ── */}
+        {/* ── Formatting toolbar + inline AI correction controls (one line) ── */}
         {!isNote && (
-          <ComposerToolbar editor={editorRef.current?.editor} onAttachClick={handleAttachClick} />
+          <ComposerToolbar editor={editorRef.current?.editor} onAttachClick={handleAttachClick}>
+            {aiConfig && (
+              <div className="reply-composer__ai-inline" role="group" aria-label={t('email.reply.aiActionBar')}>
+                <button
+                  type="button"
+                  className={`reply-composer__ai-action-btn${(isDraftEmpty || isAiBusy) ? ' reply-composer__ai-action-btn--disabled' : ''}`}
+                  onClick={handleFixGrammar}
+                  disabled={isDraftEmpty || isAiBusy}
+                  title={t('email.reply.fixGrammar')}
+                >
+                  {isCorrectingGrammar ? <span className="widget-spinner widget-spinner--xs widget-spinner--inherit" /> : <span aria-hidden="true">✓</span>}
+                  {t('email.reply.fixGrammar')}
+                </button>
+
+                <div className="reply-composer__tone-row">
+                  <span className="reply-composer__tone-label">{t('email.reply.toneLabel')}:</span>
+                  <select
+                    className="reply-composer__tone-select"
+                    value={selectedTone}
+                    onChange={(e) => handleToneAdjust(e.target.value)}
+                    disabled={isAiBusy}
+                    aria-label={t('email.reply.toneLabel')}
+                  >
+                    {TONE_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>{t(opt.labelKey)}</option>
+                    ))}
+                  </select>
+                  {pendingAi === 'tone' && <span className="widget-spinner widget-spinner--xs widget-spinner--inherit" aria-label={t('email.reply.generating')} />}
+                </div>
+
+                <button
+                  type="button"
+                  className={`reply-composer__ai-action-btn${(isDraftEmpty || isAiBusy) ? ' reply-composer__ai-action-btn--disabled' : ''}`}
+                  onClick={handleProofread}
+                  disabled={isDraftEmpty || isAiBusy}
+                  title={t('email.reply.proofreadLabel')}
+                >
+                  {pendingAi === 'proofread'
+                    ? <span className="widget-spinner widget-spinner--xs widget-spinner--inherit" />
+                    : <span aria-hidden="true">🔍</span>}
+                  {t('email.reply.proofreadLabel')}
+                </button>
+              </div>
+            )}
+          </ComposerToolbar>
         )}
 
         {/* ── AI shimmer while generating ── */}
@@ -540,6 +678,12 @@ const ReplyComposer = ({ interactionId, callAssociatedDetails, darkMode, outboun
               placeholder={t('email.reply.placeholder')}
               disabled={isSending || !!undoState}
               className={isNote ? 'rte-editor--note' : ''}
+              insertPayload={pendingComposerInsert}
+              onInserted={() => dispatch(setPendingComposerInsert(null))}
+              suggestions={reviewSuggestions}
+              onSuggestionsChange={setInlineCount}
+              acceptLabel={t('email.reply.proofread.accept')}
+              rejectLabel={t('email.reply.proofread.reject')}
             />
           </div>
         )}
@@ -548,8 +692,12 @@ const ReplyComposer = ({ interactionId, callAssociatedDetails, darkMode, outboun
         {aiProofreadResult && (
           <ProofreadPanel
             result={aiProofreadResult}
-            onApplyAll={handleApplyProofread}
+            inlineCount={inlineCount}
             onDismiss={() => dispatch(setAiProofreadResult(null))}
+            onInsertText={(text) => {
+              const esc = String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+              dispatch(setPendingComposerInsert(`<p><mark class="rte-added">${esc}</mark></p>`));
+            }}
           />
         )}
 
@@ -606,40 +754,6 @@ const ReplyComposer = ({ interactionId, callAssociatedDetails, darkMode, outboun
             </Button>
           </div>
         )}
-
-        {/* ── Footer ── */}
-        <div className="reply-composer__footer">
-          {sendResult && !undoState && (
-            <span className={`reply-composer__send-result${sendResult.success ? ' reply-composer__send-result--success' : ' reply-composer__send-result--error'}`}>
-              {sendResult.timeout
-                ? t('email.send.timeout')
-                : sendResult.success
-                ? t('email.send.success')
-                : sendResult.error
-                ? (t(sendResult.error) || t('email.send.failed'))
-                : t('email.send.failed')}
-            </span>
-          )}
-          <Button
-            ariaLabel={isNote ? t('email.reply.note.save') : t('email.reply.send')}
-            size={36}
-            color={isNote ? 'orange' : 'blue'}
-            onClick={handleSend}
-            disabled={isSending || isFetchingAiDraft || isDraftEmpty || !!undoState || isOutboundIncomplete}
-            title={t('email.reply.shortcuts')}
-          >
-            {isSending ? (
-              <>
-                <span className="widget-spinner widget-spinner--sm widget-spinner--inherit" />
-                <span>{t('email.reply.sending')}</span>
-              </>
-            ) : isNote ? (
-              t('email.reply.note.save')
-            ) : (
-              t('email.reply.send')
-            )}
-          </Button>
-        </div>
 
       </CardSection>
     </Card>

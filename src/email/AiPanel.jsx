@@ -1,11 +1,13 @@
-import React from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { useSelector, useDispatch } from 'react-redux';
 import { Button, Badge, Card, CardSection } from '@momentum-ui/react';
 import { useI18n } from '../i18n/I18nContext';
+import SearchableSelect from '../ui/SearchableSelect';
 import {
   refreshAiEnrichment,
-  setAiReplyDraft,
+  setPendingComposerInsert,
+  applyTemplate,
 } from '../store/slices/emailSlice';
 
 const SENTIMENT_COLORS = {
@@ -15,38 +17,67 @@ const SENTIMENT_COLORS = {
   urgent: 'orange',
 };
 
-// Fixed quick-start chip starters; agent can edit before sending
-const REPLY_CHIP_KEYS = ['confirm', 'info', 'escalate'];
-
 const AiPanel = ({ darkMode, onSeedReply }) => {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const dispatch = useDispatch();
   const aiEnrichment = useSelector((state) => state.email.aiEnrichment);
   const isFetchingEmail = useSelector((state) => state.email.isFetchingEmail);
   const aiConfig = useSelector((state) => state.widget?.emailConfig?.aiProvider);
+  const templates = useSelector((state) => state.email.templates);
+  const lastSentReply = useSelector((state) => state.email.lastSentReply);
+  const aiReplyDraft = useSelector((state) => state.email.aiReplyDraft);
+  const wrapUpStatus = useSelector((state) => state.email.wrapUpSummary.status);
+
+  const [suggestedUsed, setSuggestedUsed] = useState(false);
+  // Reset the "used" state when a fresh suggested reply arrives.
+  useEffect(() => { setSuggestedUsed(false); }, [aiEnrichment?.suggestedReply]);
 
   const handleRefresh = () => {
     dispatch(refreshAiEnrichment());
   };
 
+  // Suggested reply and templates are inserted at the composer caret (not replacing the draft).
   const handleUseSuggested = () => {
     if (aiEnrichment?.suggestedReply) {
-      dispatch(setAiReplyDraft(aiEnrichment.suggestedReply));
+      dispatch(setPendingComposerInsert(aiEnrichment.suggestedReply));
+      setSuggestedUsed(true);
       if (onSeedReply) onSeedReply(aiEnrichment.suggestedReply);
     }
   };
 
-  const handleChip = (chipText) => {
-    dispatch(setAiReplyDraft(chipText));
-    if (onSeedReply) onSeedReply(chipText);
+  const handleInsertTemplate = (templateId) => {
+    if (templateId) dispatch(applyTemplate(templateId));
   };
+
+  // Show only templates matching the UI locale (fall back to 'en' when none match).
+  const localeTemplates = useMemo(() => {
+    const hasLocale = templates.some((tpl) => tpl.locale);
+    if (!hasLocale) return templates;
+    const lang = (locale || 'en').split('-')[0].toLowerCase();
+    const matching = templates.filter((tpl) => (tpl.locale || 'en') === lang);
+    return matching.length > 0 ? matching : templates.filter((tpl) => (tpl.locale || 'en') === 'en');
+  }, [templates, locale]);
+
+  const templateOptions = useMemo(
+    () => localeTemplates.map((tpl) => ({ id: tpl.id, name: tpl.name })),
+    [localeTemplates],
+  );
 
   const { summary, category, sentiment, confidence, suggestedReply, source } = aiEnrichment || {};
   const confidencePct = confidence != null ? `${Math.round(confidence * 100)}%` : null;
   const sentimentColor = SENTIMENT_COLORS[sentiment] || 'default';
 
+  // Momentum Card intercepts Space/Enter globally — stop it before the Card so
+  // typing works in the searchable template dropdown's input.
+  const handleCardKeyDown = (e) => {
+    const tag = e.target?.tagName?.toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || tag === 'select') {
+      e.stopPropagation();
+    }
+  };
+
   return (
-    <Card className={`ai-panel${darkMode ? ' md--dark' : ''}`}>
+    <Card className={`ai-panel${darkMode ? ' md--dark' : ''}`} onKeyDown={handleCardKeyDown}>
       <CardSection full>
         <div className="ai-panel__header">
           <span className="md-h4">{t('email.ai.summary')}</span>
@@ -109,31 +140,31 @@ const AiPanel = ({ darkMode, onSeedReply }) => {
               ariaLabel={t('email.ai.useReply')}
               size={28}
               color="green"
+              disabled={suggestedUsed}
               onClick={handleUseSuggested}
             >
-              {t('email.ai.useReply')}
+              {suggestedUsed
+                ? `✓ ${t('email.reply.proofread.coverage.added')}`
+                : t('email.ai.useReply')}
             </Button>
           </div>
         )}
 
-        {/* Quick-start reply chips — seed composer with a starter the agent edits */}
-        <div className="ai-panel__chips">
-          <span className="ai-panel__chips-label">{t('email.ai.chips.label')}</span>
-          <div className="ai-panel__chips-row">
-            {REPLY_CHIP_KEYS.map((key) => (
-              <Button
-                key={key}
-                ariaLabel={t(`email.ai.chips.${key}`)}
-                size={28}
-                color="none"
-                onClick={() => handleChip(t(`email.ai.chips.${key}`))}
-                className="ai-panel__chip-btn"
-              >
-                {t(`email.ai.chips.${key}`)}
-              </Button>
-            ))}
+        {/* Template selection — insert a template at the composer caret */}
+        {templates.length > 0 && (
+          <div className="ai-panel__templates">
+            <span className="ai-panel__templates-label">{t('email.composer.templatePicker.title')}</span>
+            <SearchableSelect
+              value=""
+              options={templateOptions}
+              onChange={handleInsertTemplate}
+              searchable
+              placeholder={t('email.composer.templatePicker.search')}
+              ariaLabel={t('email.composer.templatePicker.title')}
+              emptyText={t('email.composer.templatePicker.empty')}
+            />
           </div>
-        </div>
+        )}
       </CardSection>
     </Card>
   );

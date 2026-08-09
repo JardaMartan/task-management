@@ -491,6 +491,68 @@
   border-bottom: none;
 }
 
+/* Manual wrap-up summary trigger + panel */
+.ai-panel__wrapup {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--md-color-gray-15, #f0f2f4);
+}
+.ai-panel__wrapup-btn.md-button {
+  width: 100%;
+  border: 1px solid var(--md-color-gray-30, #d0d4d9);
+  border-radius: 8px;
+}
+
+.wrapup-summary {
+  margin: 8px 12px 0;
+  border: 1px solid var(--md-color-blue-30, #7fd3f0);
+  border-left: 3px solid var(--md-color-blue-50, #007aa3);
+  border-radius: 8px;
+  background: var(--md-color-blue-05, #f0f9ff);
+  padding: 10px 12px;
+}
+.wrapup-summary__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.wrapup-summary__title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--md-color-blue-70, #00557b);
+}
+.wrapup-summary__actions { display: flex; align-items: center; gap: 6px; }
+.wrapup-summary__loading { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--md-color-gray-70, #3d3d3d); }
+.wrapup-summary__text {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 8px 10px;
+  border: 1px solid var(--md-color-gray-30, #d0d4d9);
+  border-radius: 6px;
+  background: var(--md-color-white-100, #fff);
+  color: var(--md-color-gray-90, #0a2236);
+}
+.wrapup-summary__error { font-size: 13px; color: var(--md-color-red-60, #dc2626); }
+.wrapup-summary.md--dark {
+  background: rgba(0,120,160,.12);
+  border-color: rgba(0,160,209,.4);
+  border-left-color: #00a0d1;
+}
+.wrapup-summary.md--dark .wrapup-summary__title { color: #4dd4f5; }
+.wrapup-summary.md--dark .wrapup-summary__text {
+  background: var(--md-color-gray-80, #17242f);
+  border-color: rgba(255,255,255,.12);
+  color: rgba(255,255,255,.88);
+}
+
 .ai-panel__header {
   display: flex;
   align-items: center;
@@ -555,6 +617,89 @@
   color: var(--md-color-gray-80, #1c1c1c);
 }
 
+/* ── AI Panel template selection ──────────────────── */
+.ai-panel__templates {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--md-color-gray-15, #f0f2f4);
+}
+
+.ai-panel__templates-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--md-color-gray-50, #767676);
+  margin-bottom: 6px;
+}
+
+.ai-panel__templates-search.md-input {
+  width: 100%;
+  box-sizing: border-box;
+  height: 28px;
+  font-size: 12px;
+  padding: 0 8px;
+  border: 1px solid var(--md-color-gray-30, #d0d4d9);
+  border-radius: 6px;
+  background: var(--md-color-white-100, #fff);
+  color: var(--md-color-gray-90, #0a2236);
+  margin-bottom: 8px;
+}
+
+.ai-panel__templates-search.md-input:focus {
+  outline: none;
+  border-color: var(--md-color-blue-50, #007aa3);
+  box-shadow: 0 0 0 2px var(--md-color-blue-20, #b3e0f0);
+}
+
+.ai-panel__templates-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.ai-panel__templates-group {
+  margin-bottom: 6px;
+}
+
+.ai-panel__templates-group-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--md-color-gray-50, #767676);
+  padding: 4px 2px;
+}
+
+.ai-panel__template-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: var(--md-color-white-100, #fff);
+  border: 1px solid var(--md-color-gray-20, #e8ebee);
+  border-radius: 6px;
+  padding: 7px 10px;
+  margin-bottom: 4px;
+  font-size: 12px;
+  color: var(--md-color-gray-90, #0a2236);
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.ai-panel__template-item:hover {
+  background: var(--md-color-blue-05, #e8f4fa);
+  border-color: var(--md-color-blue-40, #64b3d9);
+}
+
+.ai-panel__templates-empty {
+  font-size: 12px;
+  color: var(--md-color-gray-50, #767676);
+  padding: 8px 2px;
+}
+
 /* ── Reply Composer ───────────────────────────────── */
 .reply-composer.md-card {
   border-radius: 0;
@@ -572,6 +717,51 @@
 
 .reply-composer__header .md-h4 {
   margin: 0;
+}
+
+/* Recipient + actions bar (Send button sits next to the target address) */
+.reply-composer__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+  padding: 5px 6px 5px 10px;
+  background: var(--md-color-gray-05, #f8f9fa);
+  border: 1px solid var(--md-color-gray-15, #f0f2f4);
+  border-radius: 6px;
+}
+
+.reply-composer__bar-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--md-color-gray-60, #545454);
+}
+
+.reply-composer__bar-title {
+  font-weight: 600;
+  color: var(--md-color-gray-80, #1c1c1c);
+}
+
+.reply-composer__bar-title--note {
+  color: var(--md-color-orange-60, #b45309);
+}
+
+.reply-composer__draft-status {
+  font-size: 11px;
+  color: var(--md-color-green-60, #16a34a);
+  white-space: nowrap;
+}
+.reply-composer__draft-status--saving { color: var(--md-color-gray-50, #767676); }
+
+.reply-composer__bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 .reply-composer__textarea-label {
@@ -735,6 +925,8 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 /* Hint shown below header when note mode is active */
@@ -764,10 +956,15 @@
 
 .reply-composer__to-label {
   font-weight: 600;
+  flex-shrink: 0;
 }
 
 .reply-composer__to-value {
   color: var(--md-color-gray-80, #1c1c1c);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 /* ── Outbound compose: To / Subject editable fields ── */
@@ -966,6 +1163,21 @@
   border-top-color: rgba(255,255,255,.12);
 }
 
+/* AI panel template selection (dark) */
+.email-widget.md--dark .ai-panel__templates {
+  border-top-color: rgba(255,255,255,.12);
+}
+.email-widget.md--dark .ai-panel__templates-search.md-input,
+.email-widget.md--dark .ai-panel__template-item {
+  background: var(--md-color-gray-80, #17242f);
+  border-color: rgba(255,255,255,.1);
+  color: rgba(255,255,255,.88);
+}
+.email-widget.md--dark .ai-panel__template-item:hover {
+  background: rgba(45,173,206,.16);
+  border-color: rgba(45,173,206,.5);
+}
+
 /* Reply composer custom sections */
 .email-widget.md--dark .reply-composer__ai-controls {
   background: rgba(255,255,255,.04);
@@ -974,12 +1186,14 @@
 .email-widget.md--dark .reply-composer__footer {
   border-top-color: rgba(255,255,255,.12);
 }
-.email-widget.md--dark .reply-composer__to-line {
+.email-widget.md--dark .reply-composer__to-line,
+.email-widget.md--dark .reply-composer__bar {
   background: rgba(255,255,255,.06);
   border-color: rgba(255,255,255,.12);
   color: rgba(255,255,255,.6);
 }
-.email-widget.md--dark .reply-composer__to-value {
+.email-widget.md--dark .reply-composer__to-value,
+.email-widget.md--dark .reply-composer__bar-title {
   color: rgba(255,255,255,.9);
 }
 .email-widget.md--dark .reply-composer--note.md-card {
@@ -1233,8 +1447,8 @@
 
 /* ProseMirror core styles (needed inside Shadow DOM where Tiptap can't inject) */
 .rte-editor .ProseMirror {
-  min-height: 140px;
-  max-height: 360px;
+  min-height: 240px;
+  max-height: 520px;
   overflow-y: auto;
   padding: 8px 10px;
   outline: none;
@@ -1281,6 +1495,65 @@
 .rte-editor--note { background: var(--md-color-orange-05, #fff8f0); }
 .rte-editor--note .ProseMirror { color: var(--md-color-gray-90, #282828); }
 
+/* ── Inline proofread suggestions (accept/reject in the text) ── */
+.rte-editor .ProseMirror .sugg-orig {
+  text-decoration: line-through;
+  text-decoration-color: var(--md-color-red-50, #e84545);
+  background: rgba(232, 69, 69, 0.08);
+  border-radius: 2px;
+}
+/* Inline (not inline-flex) so a long suggestion wraps within the composer
+   instead of pushing the accept/reject buttons off to the right. */
+.rte-editor .ProseMirror .sugg-widget {
+  display: inline;
+  white-space: normal;
+}
+.rte-editor .ProseMirror .sugg-new {
+  color: var(--md-color-green-70, #15803d);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.rte-editor .ProseMirror .sugg-new::before {
+  content: '→';
+  margin: 0 4px 0 5px;
+  color: var(--md-color-gray-40, #aaa);
+  font-weight: 400;
+}
+.rte-editor .ProseMirror .sugg-btns {
+  display: inline-flex;
+  gap: 3px;
+  margin: 0 2px 0 4px;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.rte-editor .ProseMirror .sugg-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 50%;
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+.rte-editor .ProseMirror .sugg-accept { background: var(--md-color-green-50, #4db33d); color: #fff; }
+.rte-editor .ProseMirror .sugg-accept:hover { background: var(--md-color-green-60, #16a34a); }
+.rte-editor .ProseMirror .sugg-reject { background: var(--md-color-gray-20, #e8ebee); color: var(--md-color-gray-70, #3d3d3d); }
+.rte-editor .ProseMirror .sugg-reject:hover { background: var(--md-color-red-50, #e84545); color: #fff; }
+
+/* Text that was accepted (inline change) or added (suggested addition) —
+   highlighted so it stays visible as changed; stripped from the sent email. */
+.rte-editor .ProseMirror mark.rte-added {
+  background: var(--md-color-green-10, #dcfce7);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+  box-shadow: inset 0 -1px 0 var(--md-color-green-40, #86efac);
+}
+
 /* Dark mode */
 .md--dark .rte-editor {
   background: var(--md-color-gray-90, #282828);
@@ -1292,6 +1565,13 @@
 }
 .md--dark .rte-editor .ProseMirror { color: rgba(255,255,255,.88); }
 .md--dark .rte-editor .ProseMirror a { color: #4dd4f5; }
+.md--dark .rte-editor .ProseMirror .sugg-new { color: #4ade80; }
+.md--dark .rte-editor .ProseMirror .sugg-reject { background: rgba(255,255,255,.14); color: rgba(255,255,255,.8); }
+.md--dark .rte-editor .ProseMirror mark.rte-added {
+  background: rgba(77,179,61,.22);
+  box-shadow: inset 0 -1px 0 rgba(77,179,61,.5);
+  color: inherit;
+}
 
 /* ── Composer Toolbar ───────────────────────────────── */
 .rte-toolbar {
@@ -1503,6 +1783,14 @@
   margin-bottom: 4px;
 }
 
+/* Inline AI correction controls living inside the formatting toolbar row */
+.reply-composer__ai-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
 .reply-composer__ai-action-btn {
   display: inline-flex;
   align-items: center;
@@ -1580,40 +1868,52 @@
 /* ── Signature Block ────────────────────────────────── */
 .reply-composer__signature-block {
   margin-top: 4px;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
   border-top: 1px dashed var(--md-color-gray-20, #e8ebee);
-  padding-top: 8px;
+  padding-top: 6px;
 }
 
-.reply-composer__signature-divider {
+.reply-composer__signature-header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
-  margin-bottom: 6px;
+}
+
+.reply-composer__signature-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: none;
+  padding: 2px 2px 2px 0;
+  cursor: pointer;
   font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--md-color-gray-50, #767676);
+}
+.reply-composer__signature-toggle:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+.reply-composer__signature-caret {
+  font-size: 10px;
   color: var(--md-color-gray-50, #767676);
 }
 
-.reply-composer__signature-select {
-  height: 22px;
-  font-size: 11px;
-  padding: 0 4px;
-  border: 1px solid var(--md-color-gray-25, #d8dce0);
-  border-radius: 3px;
-  background: var(--md-color-white-100, #fff);
-  color: var(--md-color-gray-70, #3d3d3d);
-  outline: none;
-  cursor: pointer;
-}
-.reply-composer__signature-select:focus {
-  border-color: var(--md-color-blue-50, #007aa3);
+.reply-composer__signature-select-wrap {
+  width: 200px;
+  flex-shrink: 0;
 }
 
 .reply-composer__signature-content {
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: 11px;
+  line-height: 1.4;
   color: var(--md-color-gray-60, #545454);
-  padding: 6px 10px;
+  padding: 5px 8px;
+  margin-top: 6px;
   background: var(--md-color-gray-05, #f8f9fa);
   border-radius: 4px;
 }
@@ -1681,10 +1981,111 @@
 .proofread-panel__issue-type--spelling { background: var(--md-color-orange-50, #f58219); }
 .proofread-panel__issue-type--style    { background: var(--md-color-blue-50,   #007aa3); }
 .proofread-panel__issue-type--tone     { background: var(--md-color-green-50,  #4db33d); }
+.proofread-panel__issue-type--coverage { background: var(--md-color-purple-50, #6f42c1); }
 
 .proofread-panel__issue-original  { color: var(--md-color-red-60, #b91c1c); text-decoration: line-through; }
 .proofread-panel__issue-arrow     { color: var(--md-color-gray-40, #aaa); }
 .proofread-panel__issue-suggestion { color: var(--md-color-green-60, #16a34a); font-weight: 500; }
+
+/* ── Proofread coverage (does the reply answer the customer?) ── */
+.proofread-panel__coverage {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--md-color-yellow-20, #fde68a);
+  font-size: 12px;
+}
+.proofread-panel__coverage--ok   { background: var(--md-color-green-05, #f0fdf4); }
+.proofread-panel__coverage--warn { background: var(--md-color-orange-05, #fff7ed); }
+
+.proofread-panel__coverage-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+.proofread-panel__coverage--ok   .proofread-panel__coverage-status { color: var(--md-color-green-70, #15803d); }
+.proofread-panel__coverage--warn .proofread-panel__coverage-status { color: var(--md-color-orange-70, #b45309); }
+
+.proofread-panel__coverage-summary {
+  margin: 4px 0 0;
+  line-height: 1.45;
+  color: var(--md-color-gray-80, #1c1c1c);
+}
+
+.proofread-panel__coverage-block {
+  margin-top: 8px;
+}
+
+.proofread-panel__coverage-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--md-color-gray-60, #545454);
+  margin-bottom: 3px;
+}
+
+.proofread-panel__coverage-list {
+  list-style: disc;
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--md-color-gray-80, #1c1c1c);
+  line-height: 1.4;
+}
+
+.proofread-panel__additions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.proofread-panel__addition-card {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 9px 10px;
+  background: var(--md-color-white-100, #fff);
+  border: 1px solid var(--md-color-green-30, #bbf7d0);
+  border-radius: 8px;
+}
+
+.proofread-panel__addition-card .proofread-panel__addition-text {
+  margin: 0;
+  line-height: 1.45;
+  color: var(--md-color-gray-80, #1c1c1c);
+}
+
+.proofread-panel__addition-btn {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: none;
+  background: var(--md-color-green-50, #4db33d);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 13px;
+  border-radius: 14px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.proofread-panel__addition-btn:hover { background: var(--md-color-green-60, #16a34a); }
+.proofread-panel__addition-btn-icon { font-size: 14px; line-height: 1; }
+
+.proofread-panel__addition-card--used { border-color: var(--md-color-gray-30, #d0d4d9); opacity: 0.75; }
+.proofread-panel__addition-used {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--md-color-green-70, #15803d);
+}
 
 /* ── Template Picker Flyout ─────────────────────────── */
 .template-picker {
@@ -1906,6 +2307,15 @@
   background: rgba(245,158,11,.08);
   border-color: rgba(245,158,11,.3);
 }
+.md--dark .proofread-panel__coverage--ok   { background: rgba(77,179,61,.12); }
+.md--dark .proofread-panel__coverage--warn { background: rgba(245,130,25,.12); }
+.md--dark .proofread-panel__coverage-summary,
+.md--dark .proofread-panel__coverage-list { color: rgba(255,255,255,.85); }
+.md--dark .proofread-panel__addition-card {
+  background: var(--md-color-gray-80, #17242f);
+  border-color: rgba(77,179,61,.4);
+}
+.md--dark .proofread-panel__addition-card .proofread-panel__addition-text { color: rgba(255,255,255,.85); }
 
 /* ── Attachment list (received email) ─────────────── */
 .attachment-list {
