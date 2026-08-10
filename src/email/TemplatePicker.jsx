@@ -1,9 +1,9 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { useSelector, useDispatch } from 'react-redux';
 import { Button } from '@momentum-ui/react';
 import { useI18n } from '../i18n/I18nContext';
-import { applyTemplate } from '../store/slices/emailSlice';
+import { applyTemplate, loadTeamEmailAssets } from '../store/slices/emailSlice';
 
 /**
  * Template picker flyout.
@@ -15,6 +15,13 @@ const TemplatePicker = ({ onClose }) => {
   const { t, locale } = useI18n();
   const dispatch = useDispatch();
   const templates = useSelector((state) => state.email.templates);
+  const experienceUrl = useSelector((state) => state.widget?.emailConfig?.experienceUrl);
+
+  // Live propagation: re-pull the supervisor repository each time the picker is
+  // opened so activation/deactivation changes appear without a desktop reload.
+  useEffect(() => {
+    if (experienceUrl) dispatch(loadTeamEmailAssets());
+  }, [experienceUrl, dispatch]);
 
   const [search, setSearch] = useState('');
   const [preview, setPreview] = useState(null);

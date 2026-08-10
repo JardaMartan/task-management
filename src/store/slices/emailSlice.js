@@ -18,9 +18,10 @@ import {
   fetchJourneyEvents,
   getTaskSummary,
   searchCustomerByIdentity,
+  fetchExperienceConfig,
 } from '../../api';
 import { createAiProvider } from '../../ai/aiProvider';
-import { setManualCustomerData, clearCaseWorkflow } from './widgetSlice';
+import { setManualCustomerData, clearCaseWorkflow, setEmailConfig } from './widgetSlice';
 
 // Non-serializable refs stored outside Redux (per State Serialization Discipline)
 let emailSseUnsubscribe = null;
@@ -586,20 +587,28 @@ export const initEmailTask =
     dispatch(setActiveInteractionId(interactionId));
 
     // ── Load templates / signatures from config ───────────────────────────
-    // Both may come from a remote URL or inline in the layout config.
+    // Preferred source is the supervisor-managed Agent Experience repository
+    // (team-filtered). It falls back to a remote URL or inline layout config.
     {
       const { emailConfig: cfg } = getState().widget;
-      if (cfg.templatesUrl) {
-        // Fire-and-forget — templates arrive shortly after task init
-        dispatch(fetchTemplatesFromUrl(cfg.templatesUrl));
-      } else if (cfg.templates?.length) {
-        dispatch(setTemplates(cfg.templates));
-      }
-      if (cfg.signaturesUrl) {
-        dispatch(fetchSignaturesFromUrl(cfg.signaturesUrl, cfg.defaultSignatureId));
-      } else if (cfg.signatures?.length) {
-        dispatch(setSignatures(cfg.signatures));
-        if (cfg.defaultSignatureId) dispatch(setActiveSignatureId(cfg.defaultSignatureId));
+      const applyFallback = () => {
+        if (cfg.templatesUrl) {
+          dispatch(fetchTemplatesFromUrl(cfg.templatesUrl));
+        } else if (cfg.templates?.length) {
+          dispatch(setTemplates(cfg.templates));
+        }
+        if (cfg.signaturesUrl) {
+          dispatch(fetchSignaturesFromUrl(cfg.signaturesUrl, cfg.defaultSignatureId));
+        } else if (cfg.signatures?.length) {
+          dispatch(setSignatures(cfg.signatures));
+          if (cfg.defaultSignatureId) dispatch(setActiveSignatureId(cfg.defaultSignatureId));
+        }
+      };
+      if (cfg.experienceUrl) {
+        // Team-filtered repository; fall back if it yields nothing.
+        dispatch(loadTeamEmailAssets()).then((ok) => { if (!ok) applyFallback(); });
+      } else {
+        applyFallback();
       }
     }
 
@@ -1795,6 +1804,158 @@ export const fetchSignaturesFromUrl = (url, defaultSignatureId) => async (dispat
   } catch (err) {
     console.warn('[EmailSlice] fetchSignaturesFromUrl error:', err.message);
   }
+};
+
+/**
+ * Resolve the agent's CURRENTLY ACTIVE (logged-in) team. Templates/signatures
+ * are filtered to this one team only — not the agent's full set of team
+ * memberships. Primary source is the Desktop SDK `latestData.teamId`; falls back
+ * to a single active team on the stored agent object.
+ *
+ * @returns {Promise<{id:string, name:string|null} | null>}
+ */
+const resolveActiveTeam = async (widget) => {
+  const agent = widget.agent || {};
+  // The AgentX store ($STORE.agent = ModuleAgent) exposes the CURRENTLY ACTIVE
+  // team as `teamUniqueId` (id) + `teamName`. Prefer it — it is present as soon
+  // as the agent is logged in, unlike latestData.teamId which needs a live event.
+  const storeId = agent.teamUniqueId || agent.teamId || agent.team?.id;
+  const storeName = agent.teamName || agent.team?.name;
+  if (storeId || storeName) {
+    return { id: storeId ? String(storeId) : null, name: storeName ? String(storeName) : null };
+  }
+  // SDK fallback (populated only once a state-change event has been received).
+  if (widget.desktopSDK) {
+    try {
+      const { Desktop } = await import('@wxcc-desktop/sdk');
+      for (let i = 0; i < 6; i++) {
+        const info = Desktop?.agentStateInfo?.latestData || {};
+        if (info.teamId) {
+          return { id: String(info.teamId), name: info.teamName ? String(info.teamName) : null };
+        }
+        await new Promise((r) => setTimeout(r, 350));
+      }
+      console.warn('[EmailSlice] no active team on agent store or latestData; agentKeys=', Object.keys(agent), 'latestKeys=', Object.keys(Desktop?.agentStateInfo?.latestData || {}));
+    } catch { /* SDK unavailable */ }
+  }
+  return null;
+};
+
+/**
+ * Load email templates, signatures and the proof-reading prompt from the
+ * supervisor-managed Agent Experience repository (the `experience` Cloud
+ * Function), filtered to the current agent's team membership.
+ *
+ * The repository stores language-grouped templates; they are flattened into the
+ * flat, locale-tagged shape the composer already understands (TemplatePicker
+ * filters by `locale`). Fails soft: returns false (so the caller falls back to
+ * the layout/URL/mock source) when nothing is configured or nothing applies.
+ *
+ * @returns {Promise<boolean>} true when templates or signatures were applied
+ */
+export const loadTeamEmailAssets = () => async (dispatch, getState) => {
+  const { widget } = getState();
+  const cfg = widget.emailConfig || {};
+  const { experienceUrl } = cfg;
+  const accessToken = widget.accesstoken;
+  const orgId = widget.orgid;
+  if (!experienceUrl || !accessToken || !orgId) return false;
+
+  const config = await fetchExperienceConfig(experienceUrl, orgId, accessToken);
+  if (!config) return false;
+
+  const templates = Array.isArray(config.templates) ? config.templates : [];
+  const signatures = Array.isArray(config.signatures) ? config.signatures : [];
+  const tAssign = config.templateAssignments || {};
+  const sAssign = config.signatureAssignments || {};
+  const prompts = config.proofreadPrompts || {};
+
+  // An empty repository (org never saved one) → let the caller fall back to the
+  // layout/URL/mock source. A non-empty repository is AUTHORITATIVE below.
+  const repoHasTemplates = templates.length > 0;
+  const repoHasSignatures = signatures.length > 0;
+  if (!repoHasTemplates && !repoHasSignatures) return false;
+
+  const activeTeam = await resolveActiveTeam(widget);
+  const activeTeamId = activeTeam?.id || null;
+  const activeTeamName = activeTeam?.name || null;
+  const hasTeam = Boolean(activeTeamId);
+  if (!hasTeam) {
+    console.warn('[EmailSlice] active agent team could not be determined — showing all assigned items (fail-open)');
+  }
+  // An item is available only when it is assigned to the agent's CURRENTLY ACTIVE
+  // team. If the active team can't be determined (fail-open) any assigned item is
+  // shown so the agent is never left without templates.
+  const assignedToAgent = (assignMap, id) => {
+    const list = assignMap[id];
+    if (!Array.isArray(list) || list.length === 0) return false;
+    if (!hasTeam) return true;
+    return list.some((tid) => String(tid) === activeTeamId || (activeTeamName && String(tid) === activeTeamName));
+  };
+
+  const flatTemplates = [];
+  templates.forEach((tpl) => {
+    if (!assignedToAgent(tAssign, tpl.id)) return;
+    const variants = tpl.variants || {};
+    Object.keys(variants).forEach((lang) => {
+      const v = variants[lang] || {};
+      if (!v.name && !v.body) return;
+      flatTemplates.push({
+        id: `${tpl.id}:${lang}`,
+        name: v.name || tpl.id,
+        subject: v.subject || '',
+        body: v.body || '',
+        locale: lang,
+        category: tpl.category || 'general',
+        variables: Array.isArray(tpl.variables) ? tpl.variables : [],
+      });
+    });
+  });
+
+  // Signatures are language-grouped too — flatten to per-language, locale-tagged
+  // entries (the composer filters signatures by `locale` like templates).
+  const flatSignatures = [];
+  signatures.forEach((sig) => {
+    if (!assignedToAgent(sAssign, sig.id)) return;
+    // Support legacy flat signatures ({name, html}) as a single 'en' variant.
+    const variants = sig.variants || (sig.html || sig.name ? { en: { name: sig.name, html: sig.html } } : {});
+    Object.keys(variants).forEach((lang) => {
+      const v = variants[lang] || {};
+      if (!v.name && !v.html) return;
+      flatSignatures.push({
+        id: `${sig.id}:${lang}`,
+        name: v.name || sig.id,
+        html: v.html || '',
+        locale: lang,
+      });
+    });
+  });
+
+  // Proof-reading prompt: the active team's override, else the org default.
+  let proofreadPrompt = typeof prompts.default === 'string' && prompts.default.trim() ? prompts.default : null;
+  const teamPrompts = prompts.teams || {};
+  if (hasTeam && typeof teamPrompts[activeTeamId] === 'string' && teamPrompts[activeTeamId].trim()) {
+    proofreadPrompt = teamPrompts[activeTeamId];
+  }
+
+  // The repository is authoritative: apply the team-filtered result (even when
+  // it narrows to few/none) so supervisor activation/deactivation propagates and
+  // non-team templates never leak in via a fallback.
+  if (repoHasTemplates) dispatch(setTemplates(flatTemplates));
+  if (repoHasSignatures) {
+    dispatch(setSignatures(flatSignatures));
+    // The composer's own effect picks/keeps a valid current-locale signature, so
+    // we don't reset the agent's selection here (avoids clobbering it on refresh).
+  }
+  if (proofreadPrompt) dispatch(setEmailConfig({ proofreadPrompt }));
+
+  console.log('[EmailSlice] loaded team email assets:', {
+    activeTeamId, activeTeamName,
+    templates: flatTemplates.length,
+    signatures: flatSignatures.length,
+    promptOverride: proofreadPrompt != null && proofreadPrompt !== prompts.default,
+  });
+  return true;
 };
 
 /**

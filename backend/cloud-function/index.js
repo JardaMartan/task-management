@@ -10,6 +10,7 @@ const { ingestEvents, queryAgentEvents, queryTeamEvents, queryAgents } = require
 const { queryAgentState, queryTeamState, queryAgentRoster, queryTaskContacts } = require('./agent-state');
 const { queryTeams, queryUsers, loadDirectory, canonicalUser, resolveAgentIds } = require('./config-api');
 const { resolveCustomerNames } = require('./jds');
+const { getExperienceConfig, saveExperienceConfig, extractOrgUuid } = require('./experience');
 
 /**
  * Send JSON, gzip-compressed when the client supports it. Activity/state JSON is
@@ -214,6 +215,68 @@ functions.http('transcript', async (req, res) => {
   } catch (err) {
     console.error('[transcript] error:', err);
     return res.status(500).json({ error: 'Transcript retrieval failed' });
+  }
+});
+
+// ─── Agent Experience settings (templates / signatures / prompts) ─────────────
+/**
+ * Read or write the per-org Agent Experience configuration used by supervisors:
+ * email templates, signatures, their team assignments, and per-team proof-reading
+ * prompts. Firestore-backed (collection `agent_experience`, one doc per org).
+ *
+ * Auth: Authorization: Bearer <webex-ci-token>. The token's org MUST match the
+ * requested orgId (a supervisor may only manage their own organization).
+ *   GET  /experience?orgId=<org>            → { ...config }
+ *   POST /experience  { orgId, config }      → { saved:boolean }
+ */
+functions.http('experience', async (req, res) => {
+  res.set('Access-Control-Allow-Origin', process.env.CORS_ORIGIN || '*');
+  res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(204).send('');
+  }
+
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Missing or invalid Authorization header' });
+  }
+  const desktopToken = authHeader.slice('Bearer '.length).trim();
+
+  const src = req.method === 'POST' ? (req.body || {}) : (req.query || {});
+  const orgId = src.orgId;
+  if (!orgId) {
+    return res.status(400).json({ error: 'orgId is required' });
+  }
+
+  try {
+    const identity = await verifyWebexIdentity(desktopToken);
+    if (!identity) {
+      return res.status(401).json({ error: 'Invalid Webex token' });
+    }
+    // A supervisor may only read/write their own org's configuration. The token
+    // org (hydra base64) and the widget-supplied orgId (bare UUID) are compared
+    // after normalizing both to a bare UUID.
+    if (identity.orgId && extractOrgUuid(identity.orgId) !== extractOrgUuid(orgId)) {
+      return res.status(403).json({ error: 'Token org does not match requested orgId' });
+    }
+
+    if (req.method === 'GET') {
+      const config = await getExperienceConfig(orgId);
+      res.set('Cache-Control', 'no-store');
+      return sendJson(req, res, config);
+    }
+
+    if (req.method === 'POST') {
+      const result = await saveExperienceConfig(orgId, src.config, { updatedBy: identity.id || null });
+      return res.status(200).json(result);
+    }
+
+    return res.status(405).json({ error: 'Method Not Allowed' });
+  } catch (err) {
+    console.error('[experience] error:', err);
+    return res.status(500).json({ error: 'Experience settings request failed' });
   }
 });
 

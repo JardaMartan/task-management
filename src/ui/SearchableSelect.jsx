@@ -31,7 +31,7 @@ const CheckIcon = () => (
  * @param {{id:string,name:string}[]} options
  * @param {(id:string|null)=>void} onChange
  */
-export default function SearchableSelect({ value, options, onChange, placeholder, searchable, disabled, ariaLabel, emptyText }) {
+export default function SearchableSelect({ value, options, onChange, placeholder, searchable, disabled, ariaLabel, emptyText, onOpen }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
@@ -64,6 +64,7 @@ export default function SearchableSelect({ value, options, onChange, placeholder
   useEffect(() => {
     if (!open) return;
     if (searchable && inputRef.current) inputRef.current.focus();
+    if (typeof onOpen === 'function') onOpen();
     const idx = filtered.findIndex((i) => i.id === selectedId);
     setActiveIndex(idx >= 0 ? idx : 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -148,6 +149,7 @@ SearchableSelect.propTypes = {
   disabled: PropTypes.bool,
   ariaLabel: PropTypes.string,
   emptyText: PropTypes.string,
+  onOpen: PropTypes.func,
 };
 
 SearchableSelect.defaultProps = {
@@ -158,4 +160,5 @@ SearchableSelect.defaultProps = {
   disabled: false,
   ariaLabel: undefined,
   emptyText: '',
+  onOpen: undefined,
 };

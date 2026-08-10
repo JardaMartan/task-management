@@ -13,6 +13,7 @@ import {
   setActiveSignatureId,
   setPendingComposerInsert,
   saveEmailDraft,
+  loadTeamEmailAssets,
 } from '../store/slices/emailSlice';
 import RichTextEditor from './RichTextEditor';
 import ComposerToolbar from './ComposerToolbar';
@@ -147,7 +148,7 @@ const resolvePlaceholders = (html, agentVars) => {
     .replace(/\{\{agentLastName\}\}/g,  agentVars.agentLastName  || '');
 };
 
-const SignatureBlock = ({ signatures, activeSignatureId, onChangeId, agentVars }) => {
+const SignatureBlock = ({ signatures, activeSignatureId, onChangeId, agentVars, onRefresh }) => {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   if (!signatures || signatures.length === 0) return null;
@@ -174,6 +175,7 @@ const SignatureBlock = ({ signatures, activeSignatureId, onChangeId, agentVars }
             value={activeSignatureId || ''}
             options={options}
             onChange={(id) => onChangeId(id || null)}
+            onOpen={onRefresh}
             searchable={false}
             ariaLabel={t('email.reply.signatureLabel')}
           />
@@ -195,8 +197,9 @@ SignatureBlock.propTypes = {
     agentFirstName: PropTypes.string,
     agentLastName: PropTypes.string,
   }),
+  onRefresh: PropTypes.func,
 };
-SignatureBlock.defaultProps = { signatures: [], activeSignatureId: null, agentVars: {} };
+SignatureBlock.defaultProps = { signatures: [], activeSignatureId: null, agentVars: {}, onRefresh: undefined };
 
 // ─── Main ReplyComposer ───────────────────────────────────────────────────────
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -224,6 +227,13 @@ const ReplyComposer = ({ interactionId, callAssociatedDetails, darkMode, outboun
   const draftSync           = useSelector((state) => state.email.draftSync);
   const widgetAgent         = useSelector((state) => state.widget.agent);
   const widgetAgentName     = useSelector((state) => state.widget.agentName);
+  const experienceUrl       = useSelector((state) => state.widget?.emailConfig?.experienceUrl);
+
+  // Re-pull the supervisor repository (team-filtered) so signature changes appear
+  // without a desktop reload — fired when the signature dropdown opens.
+  const refreshTeamAssets = React.useCallback(() => {
+    if (experienceUrl) dispatch(loadTeamEmailAssets());
+  }, [experienceUrl, dispatch]);
 
   // Build agent variable map for signature placeholder resolution.
   const agentVars = React.useMemo(() => {
@@ -708,6 +718,7 @@ const ReplyComposer = ({ interactionId, callAssociatedDetails, darkMode, outboun
             activeSignatureId={activeSignatureId}
             onChangeId={(id) => dispatch(setActiveSignatureId(id))}
             agentVars={agentVars}
+            onRefresh={refreshTeamAssets}
           />
         )}
 

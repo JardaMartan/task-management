@@ -46,6 +46,8 @@ function inlineFonts() {
       path.join(__dirname, '../dist/bulk-reskill-standalone.js'),
       path.join(__dirname, '../dist/agent-activity.js'),
       path.join(__dirname, '../dist/agent-activity-standalone.js'),
+      path.join(__dirname, '../dist/agent-experience.js'),
+      path.join(__dirname, '../dist/agent-experience-standalone.js'),
     ].filter((p) => fs.existsSync(p));
 
     if (bundlePaths.length === 0) {

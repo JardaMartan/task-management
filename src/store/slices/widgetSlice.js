@@ -124,6 +124,11 @@ const widgetSlice = createSlice({
             aiProvider: null,
             templatesUrl: null,
             signaturesUrl: null,
+            // Agent Experience settings service (Cloud Function `experience`). When set,
+            // templates/signatures/proofread-prompt are loaded from the supervisor-managed
+            // repository and filtered to the agent's team membership. Defaults to the
+            // deployed endpoint; override (or clear) via the layout `config` object.
+            experienceUrl: 'https://us-central1-newagent-kxwo.cloudfunctions.net/experience',
             templates: [],
             signatures: [],
             defaultSignatureId: null,
@@ -169,6 +174,9 @@ const widgetSlice = createSlice({
                         agentName: src.agentName || src.name || '',
                         name: src.name || src.agentName || '',
                         agentProfileId: src.agentProfileId || '',
+                        teamUniqueId: src.teamUniqueId || src.teamId || '',
+                        teamName: src.teamName || '',
+                        siteId: src.siteId || '',
                     };
                 } catch {
                     state.agent = null;
@@ -530,6 +538,9 @@ export const hydrateWidgetContext = (props = {}) => (dispatch) => {
                     agentName: s.agentName || s.name || '',
                     name: s.name || s.agentName || '',
                     agentProfileId: s.agentProfileId || '',
+                    teamUniqueId: s.teamUniqueId || s.teamId || '',
+                    teamName: s.teamName || '',
+                    siteId: s.siteId || '',
                 };
             } catch { /* give up */ }
         }
@@ -555,7 +566,7 @@ export const hydrateWidgetContext = (props = {}) => (dispatch) => {
             aiProvider, aiApiKey,
             templatesUrl, signaturesUrl, templates, signatures, defaultSignatureId, knowledgeBase,
             slaVariable, slaThresholdMinutes,
-            proofreadPrompt,
+            proofreadPrompt, experienceUrl,
         } = safeConfig;
         const emailCfg = {};
         if (tokenBrokerUrl) emailCfg.tokenBrokerUrl = tokenBrokerUrl;
@@ -577,6 +588,9 @@ export const hydrateWidgetContext = (props = {}) => (dispatch) => {
         }
         if (typeof proofreadPrompt === 'string' && proofreadPrompt.trim()) {
             emailCfg.proofreadPrompt = proofreadPrompt;
+        }
+        if (typeof experienceUrl === 'string' && experienceUrl.trim()) {
+            emailCfg.experienceUrl = experienceUrl.trim();
         }
         if (Object.keys(emailCfg).length > 0) {
             dispatch(setEmailConfig(emailCfg));

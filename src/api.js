@@ -2212,6 +2212,62 @@ export const fetchGmailToken = async (tokenBrokerUrl, desktopToken) => {
 };
 
 /**
+ * Fetch the supervisor-managed Agent Experience configuration (email templates,
+ * signatures, their team assignments, and per-team proof-reading prompts) from
+ * the `experience` Cloud Function. Returns null on any failure so callers can
+ * fall back to their existing template source.
+ *
+ * @param {string} experienceUrl - Cloud Function endpoint URL
+ * @param {string} orgId         - Webex CC org id (bare UUID)
+ * @param {string} accessToken   - Webex CI bearer token from Desktop SDK
+ * @returns {Promise<null | { languages, templates, signatures, templateAssignments, signatureAssignments, proofreadPrompts }>}
+ */
+export const fetchExperienceConfig = async (experienceUrl, orgId, accessToken) => {
+  if (!experienceUrl || !orgId || !accessToken) return null;
+  try {
+    // Cache-buster + no-store so a re-fetch after a supervisor change never
+    // returns a browser-cached (stale) template/assignment list.
+    const url = `${experienceUrl}?orgId=${encodeURIComponent(orgId)}&_=${Date.now()}`;
+    const response = await fetch(url, {
+      cache: 'no-store',
+      headers: { Accept: 'application/json', Authorization: `Bearer ${accessToken}` },
+    });
+    if (!response.ok) {
+      console.warn(`[API] experience config fetch failed (${response.status})`);
+      return null;
+    }
+    return await response.json();
+  } catch (error) {
+    console.warn('[API] experience config fetch error:', error?.message);
+    return null;
+  }
+};
+
+/**
+ * Best-effort lookup of the teams an agent belongs to, via the Webex CC
+ * Configuration API user record. Requires the token to have config-read access;
+ * returns [] on any failure so callers can fall back to SDK team data.
+ *
+ * @returns {Promise<string[]>} team ids (may be empty)
+ */
+export const fetchAgentTeamIds = async ({ accessToken, orgId, userId, datacenter }) => {
+  if (!accessToken || !orgId || !userId) return [];
+  try {
+    const base = searchApiHostForDatacenter(datacenter);
+    const url = `${base}/organization/${encodeURIComponent(orgId)}/user/${encodeURIComponent(userId)}`;
+    const res = await fetch(url, {
+      headers: { Accept: 'application/json', Authorization: `Bearer ${accessToken}` },
+    });
+    if (!res.ok) return [];
+    const u = await res.json();
+    const ids = Array.isArray(u?.teamIds) ? u.teamIds : [];
+    return ids.filter(Boolean).map(String);
+  } catch {
+    return [];
+  }
+};
+
+/**
  * Fetch a full Gmail thread by threadId.
  * @param {string} threadId
  * @param {string} gmailToken
