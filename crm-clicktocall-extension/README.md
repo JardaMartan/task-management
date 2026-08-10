@@ -51,6 +51,7 @@ Desktop URL pattern:
 | `manifest.json` | MV3 manifest (content script on `<all_urls>`, background worker) |
 | `contact-scan.js` | Pure email/phone extraction helpers (unit-tested) |
 | `content.js` | Dual-role content script: scanner **or** desktop bridge |
+| `field-transfer.js` | Separate concern: wrap-up → CRM field transfer. Desktop forwarder role bridges `panel-layout-headless.js` to the background worker; CRM-participant role runs the element picker, target glow, and writes the wrap-up text into the chosen field inside the CRM Tab Manager's iframes. |
 | `content.css` | Injected button styling |
 | `background.js` | Service worker; routes CRM clicks to the Desktop tab |
 | `options.html/js` | Settings: enable, Desktop URL pattern, CRM allowlist, channels |

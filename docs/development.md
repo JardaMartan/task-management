@@ -24,6 +24,7 @@ npm install
 | [src/](../src/) | Task Management widget (`task-management-widget`) + `crm-sync-header.js` watcher. |
 | [src-report/](../src-report/) | Agent Activity Analytics widget (`agent-activity-widget`). |
 | [src-reskill/](../src-reskill/) | Bulk Reskilling widget (`bulk-reskill-widget`). |
+| [src-experience/](../src-experience/) | Agent Experience widget (`agent-experience-widget`) — supervisor email templates/signatures/prompts. |
 | [crm-tab-manager/](../crm-tab-manager/) | CRM Tab Manager web app. |
 | [crm-clicktocall-extension/](../crm-clicktocall-extension/) | MV3 browser extension. |
 | [relay-server/](../relay-server/) | WebSocket relay + static file server. |
@@ -44,6 +45,7 @@ Desktop deployment). Standalone is selected with `BUILD_MODE=self-contained`.
 | Task Management | `npm start` | `npm run build` → `dist/task-management.js` | `npm run build:standalone` → `dist/task-management-standalone.js` | `task-management-widget` |
 | Agent Activity | `npm run start:report` | `npm run build:report` → `dist/agent-activity.js` | `npm run build:report:standalone` → `dist/agent-activity-standalone.js` | `agent-activity-widget` |
 | Bulk Reskill | `npm run start:reskill` | `npm run build:reskill` → `dist/bulk-reskill.js` | `npm run build:reskill:standalone` → `dist/bulk-reskill-standalone.js` | `bulk-reskill-widget` |
+| Agent Experience | `npm run start:experience` | `npm run build:experience` → `dist/agent-experience.js` | `npm run build:experience:standalone` → `dist/agent-experience-standalone.js` | `agent-experience-widget` |
 
 Notes:
 

@@ -90,8 +90,36 @@ Thunks: `initReskillWidget`, `loadConfig`, `loadAnalytics`, `applyChanges`,
 
 ## Props
 
-`accesstoken`, `orgid`, `datacenter`, `darkmode`, `view` (`mock` | `live`),
-`locale`.
+| Attribute | Type | Purpose |
+|---|---|---|
+| `accesstoken` | string | Webex bearer token for the Configuration API. |
+| `orgid` | string | Webex org UUID. |
+| `datacenter` | string | Regional datacenter (e.g. `eu1`); auto-discovered if omitted. Also settable as the camelCase property `dataCenter`. |
+| `darkmode` | boolean-ish string | Toggles the `md--dark` theme. |
+| `view` | string | `mock` (demo data) \| `live` (real data); omit to auto-detect. |
+| `locale` | string | UI locale (`en` / `de` / `cs`); falls back to browser detection. |
+| `teams` / `supervisorteams` | JSON array \| CSV string | Restricts the supervisor's team scope; accepts a JSON array, a comma-separated string, or an already-parsed array. Omit to show all teams. |
+| `config` | object | Optional JSON object (or JSON string) merging any of the above. |
+
+### Sample Desktop Layout JSON
+
+```json
+{
+  "comp": "bulk-reskill-widget",
+  "script": "https://your-host/dist/bulk-reskill-standalone.js",
+  "properties": {
+    "darkmode": "$STORE.app.darkMode",
+    "accesstoken": "$STORE.auth.accessToken",
+    "orgid": "$STORE.agent.orgId",
+    "datacenter": "$STORE.app.datacenter",
+    "locale": "$STORE.app.selectedLanguage",
+    "view": "live",
+    "teams": ["team-uuid-1", "team-uuid-2"]
+  }
+}
+```
+
+Omit `teams` to let the supervisor manage every team in the org.
 
 ---
 

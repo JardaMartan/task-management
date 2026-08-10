@@ -74,23 +74,103 @@ components only dispatch actions and read selectors.
 
 ---
 
-## Props (Desktop Layout attributes)
+## Props (Desktop Layout attributes & properties)
 
-The web component reads these attributes/properties (observed attributes include
-`darkmode`, `accesstoken`, `orgid`, `datacenter`, `locale`, `tasktype`, `email`,
-`view` — see [src/index.jsx](../src/index.jsx)):
+The web component reads plain HTML **attributes** (`observedAttributes`) for
+simple values and JSON-capable **properties** (set directly on the DOM node by
+the Desktop layout engine, e.g. `$STORE.*` bindings or object literals) for
+structured data. Both are parsed defensively — structured values may arrive as
+JSON strings and are `JSON.parse`'d safely.
 
-| Attribute | Purpose |
+### Attributes
+
+| Attribute | Type | Purpose |
+|---|---|---|
+| `accesstoken` | string | Webex bearer token for API/JDS calls. |
+| `orgid` | string | Webex org UUID. |
+| `datacenter` | string | Regional datacenter (e.g. `prodeu1`); also settable as the camelCase property `dataCenter`. |
+| `locale` | string | UI locale (`en` / `de` / `cs`); falls back to browser detection. |
+| `tasktype` / `taskType` | string | Which channel/view to render for the current task. |
+| `darkmode` | boolean-ish string | Toggles the `md--dark` theme. |
+| `view` | string | View selector for standalone/tab mounting: `email` \| `cases` \| `history` \| `chat` \| `360`. |
+| `email` | string | Pre-populates the email address context (e.g. outbound/agent-initiated flows). |
+
+### Properties (objects, set by the layout engine)
+
+| Property | Type | Purpose |
+|---|---|---|
+| `task` | object | Current task (interaction) object from `$STORE.agentContact.taskSelected`. |
+| `selectedtaskid` | string | ID of the currently selected task. |
+| `cad` / `details` | object | Call-associated data / task map (`$STORE.agentContact.taskMap`); both names accepted, same data. |
+| `wrap` | object | Agent wrap-up data. |
+| `agent` | object | Agent object (`$STORE.agent`); defensively stripped of MobX observables. |
+| `workspaceid` | string | JDS workspace UUID used for case/knowledge-base lookups. |
+| `avatar` | string | Agent avatar URL. |
+| `name` | string | Display name shown in the header. |
+| `style` | object | Inline style overrides for the host element, e.g. `{ "height": "100%", "overflow": "hidden" }`. |
+| `config` | object | Nested feature configuration — see below. Accepted as an object or a JSON string. |
+
+### `config` object fields (only the ones the widget actually reads)
+
+| Field | Purpose |
 |---|---|
-| `accesstoken` | Webex bearer token for API/JDS calls. |
-| `orgid` | Webex org UUID. |
-| `datacenter` | Regional datacenter (e.g. `prodeu1`). |
-| `locale` | UI locale (`en` / `de` / `cs`); falls back to browser detection. |
-| `tasktype` | Which channel/view to render. |
-| `darkmode` | Boolean; toggles `md--dark` theme. |
-| `view` | View selector for standalone/harness mounting. |
+| `tokenBrokerUrl` | Backend URL used to mint scoped Gmail/AI tokens (see [backend.md](backend.md)). |
+| `aiProvider` | `{ type: 'gemini'\|'openai', model, apiKey }` — AI provider used for hints/summaries/proofreading. |
+| `experienceUrl` | Agent Experience Cloud Function URL (email templates/signatures/prompts, team-scoped). Defaults to the deployed `experience` function if omitted. |
+| `templatesUrl` / `signaturesUrl` | Fallback URLs to fetch email templates/signatures when `experienceUrl` is not configured. |
+| `templates` / `signatures` | Pre-loaded template/signature arrays (bypasses fetching). |
+| `defaultSignatureId` | Signature to select by default in the composer. |
+| `knowledgeBase` | Knowledge-base items array surfaced in the AI rail. |
+| `slaVariable` | Global Variable name holding an email's SLA-expiry epoch-ms timestamp. |
+| `slaThresholdMinutes` | Minutes before SLA expiry to show the amber warning (default `15`). |
+| `proofreadPrompt` | Custom AI proofreading prompt template (`{{language}}`, `{{customerMessage}}`, `{{draft}}` placeholders). |
+| `workspaceOverrideTaskTypes` | Task types to fetch from the workspace (default `['case']`). |
+| `outdialEntryPointId` | Entry point UUID used for agent-initiated outbound calls. |
+| `smsEntryPointId` / `smsOrigin` | Entry point UUID + sender ANI for agent-initiated SMS. |
+| `whatsappEntryPointId` / `whatsappOrigin` | Entry point UUID + sender address for agent-initiated WhatsApp. |
+| `transcriptUrl` | Backend URL for voice-transcript retrieval (see [backend.md](backend.md)). |
+| `wsUrl` | Relay-server WebSocket URL for CRM tab sync; also used to auto-derive `crmTabManagerUrl` if not set. |
+| `crmTabManagerUrl` | Override URL for the CRM Tab Manager window (see [crm-integration.md](crm-integration.md)). |
 
-Structured props may arrive as JSON strings — the widget parses them defensively.
+### Sample Desktop Layout JSON
+
+```json
+{
+  "comp": "task-management",
+  "script": "https://your-host/dist/task-management-standalone.js",
+  "attributes": {
+    "view": "360",
+    "accesstoken": "$STORE.auth.accessToken",
+    "style": { "height": "100%", "overflow": "hidden" }
+  },
+  "properties": {
+    "darkmode": "$STORE.app.darkMode",
+    "task": "$STORE.agentContact.taskSelected",
+    "selectedtaskid": "$STORE.agentContact.selectedTaskId",
+    "cad": "$STORE.agentContact.taskMap",
+    "workspaceid": "6682a446abe8cf671b34f47c",
+    "orgid": "$STORE.agent.orgId",
+    "datacenter": "$STORE.app.datacenter",
+    "agent": "$STORE.agent",
+    "locale": "$STORE.app.selectedLanguage",
+    "config": {
+      "tokenBrokerUrl": "https://us-central1-your-project.cloudfunctions.net/auth",
+      "transcriptUrl": "https://us-central1-your-project.cloudfunctions.net/transcript",
+      "experienceUrl": "https://us-central1-your-project.cloudfunctions.net/experience",
+      "aiProvider": { "type": "gemini", "model": "gemini-2.5-flash" },
+      "outdialEntryPointId": "38b5c40e-8bcb-44d9-8d93-a79cc4d615fe",
+      "smsEntryPointId": "2e84a61b-8e06-4395-8d3b-da4df382e980",
+      "smsOrigin": "447908663416",
+      "slaVariable": "SLAExpires",
+      "slaThresholdMinutes": 15
+    }
+  }
+}
+```
+
+Only include the `config` fields your deployment actually uses — every field is
+optional and the widget degrades gracefully (demo/mock data, disabled feature)
+when a field is omitted.
 
 ---
 
@@ -130,4 +210,6 @@ The standalone build also inlines Momentum fonts and copies the headless helpers
 
 - [SLA Focus Mode](sla-focus-mode.md) — the focus/requeue behavior hosted in Customer 360 + the header watcher.
 - [CRM integration](crm-integration.md) — how tasks sync to the CRM Tab Manager and click‑to‑call.
+- [Agent Experience widget](agent-experience-widget.md) — team‑scoped email templates/signatures/prompts consumed by this widget's Email tab.
+- [Backend cloud function](backend.md) — `tokenBrokerUrl`, `transcriptUrl`, and `experienceUrl` endpoints.
 - [Development & deployment](development.md).

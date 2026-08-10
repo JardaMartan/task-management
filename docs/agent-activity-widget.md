@@ -70,8 +70,42 @@ kept in module scope so Redux state stays serializable.
 
 ## Props
 
-`accesstoken`, `orgid`, `datacenter`, `activityurl`, `darkmode`, `view`
-(`mock` | `live`), `locale`.
+| Attribute | Type | Purpose |
+|---|---|---|
+| `accesstoken` | string | Webex bearer token for the activity/config APIs. |
+| `orgid` | string | Webex org UUID. |
+| `datacenter` | string | Regional datacenter (e.g. `eu1`); auto-discovered if omitted. |
+| `activityurl` | string | Cloud Function base URL for activity ingest/query (see [backend.md](backend.md)). Omitting it forces demo mode. |
+| `workspaceid` | string | JDS workspace UUID used to resolve customer display names on the timeline. |
+| `darkmode` | boolean-ish string | Toggles the `md--dark` theme. |
+| `view` | string | `mock` (demo data) \| `live` (real data); omit to auto-detect from `activityurl`. |
+| `locale` | string | UI locale (`en` / `de` / `cs`); falls back to browser detection. |
+| `debug` | string | Set to `perf` to enable performance instrumentation logging. |
+| `config` | object | Optional JSON object (or JSON string) merging any of the above — useful when a layout only exposes a single `config` binding. |
+
+All attributes also accept a camelCase property alias (`accessToken`, `orgId`,
+`activityUrl`, `workspaceId`, `darkMode`) for layouts that prefer that casing.
+
+### Sample Desktop Layout JSON
+
+```json
+{
+  "comp": "agent-activity-widget",
+  "script": "https://your-host/dist/agent-activity-standalone.js",
+  "properties": {
+    "darkmode": "$STORE.app.darkMode",
+    "accesstoken": "$STORE.auth.accessToken",
+    "orgid": "$STORE.app.organizationId",
+    "datacenter": "$STORE.app.datacenter",
+    "locale": "$STORE.app.selectedLanguage",
+    "view": "live",
+    "activityurl": "https://us-central1-your-project.cloudfunctions.net/activity"
+  }
+}
+```
+
+This mirrors the supervisor navigation-panel entry used in production (see
+[tmp/agent-activity-layout-snippets.json](../tmp/agent-activity-layout-snippets.json)).
 
 ---
 

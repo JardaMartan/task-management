@@ -20,7 +20,8 @@ Desktop Layout.
 | **CRM integration** | Header watcher, relay server, CRM Tab Manager, and click‑to‑call browser extension | [docs/crm-integration.md](docs/crm-integration.md) |
 | **Agent Activity Analytics widget** | Supervisor timeline + KPI view of agent/team activity | [docs/agent-activity-widget.md](docs/agent-activity-widget.md) |
 | **Bulk Reskilling widget** | Supervisor tool to edit agent skills / skill‑profiles at scale | [docs/bulk-reskill-widget.md](docs/bulk-reskill-widget.md) |
-| **Backend cloud function** | Inbound email processing, Gmail watch, token broker, AI enrichment | [docs/backend.md](docs/backend.md) |
+| **Agent Experience widget** | Supervisor tool for team‑scoped email templates, signatures, and AI proofreading prompts | [docs/agent-experience-widget.md](docs/agent-experience-widget.md) |
+| **Backend cloud function** | Inbound email processing, Gmail watch, token broker, AI enrichment, Agent Experience config, voice‑transcript proxy, and a scheduled web crawler feeding a Vertex AI Search data store (Gemini RAG) | [docs/backend.md](docs/backend.md) |
 | **Development & deployment** | Build targets, artifacts, i18n, design tokens, testing, repo layout | [docs/development.md](docs/development.md) |
 
 > Screenshots referenced throughout the docs live in [docs/images/](docs/images/).
@@ -37,6 +38,7 @@ flowchart LR
     HDR["crm-sync-header<br/>(headless watcher + pill)"]
     RPT["Agent Activity widget"]
     RSK["Bulk Reskill widget"]
+    EXP["Agent Experience widget"]
   end
 
   EXT["CRM click-to-call<br/>browser extension"]
@@ -56,7 +58,9 @@ flowchart LR
   TM --> JDS
   RPT --> JDS
   RSK --> JDS
+  EXP --> JDS
   TM --> CF
+  EXP --> CF
 ```
 
 ---
