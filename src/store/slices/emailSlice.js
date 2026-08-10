@@ -1,4 +1,4 @@
-import { createSlice } from '@reduxjs/toolkit';
+import { createSlice, createSelector } from '@reduxjs/toolkit';
 import { getMockData } from '../../mock/mockData';
 import {
   subscribeToCustomerEvents,
@@ -125,6 +125,9 @@ export const parseGmailMessage = (msg) => {
     cc: decodeMimeHeader(getHeader('Cc')),
     subject: decodeMimeHeader(getHeader('Subject')),
     date: getHeader('Date'),
+    // RFC 822 Message-ID header — the id JDS ai-summary events are keyed by, so
+    // per-thread summaries can be matched when browsing historical threads.
+    rfcMessageId: (getHeader('Message-ID') || getHeader('Message-Id')).trim(),
     inReplyTo: getHeader('In-Reply-To'),
     references: getHeader('References'),
     snippet: msg.snippet || '',
@@ -235,11 +238,16 @@ const emailSlice = createSlice({
       state.customerProfile = action.payload;
     },
     appendCustomerHistoryEvent: (state, action) => {
-      // Prepend so newest events appear first (HistoryView sorts desc by ts)
-      // Deduplicate by event id to guard against reconnect replays.
+      // Prepend so newest events appear first (HistoryView sorts desc by ts).
       const incoming = action.payload;
       if (!incoming?.id) return;
-      const alreadyPresent = state.customerHistory.some((e) => e.id === incoming.id);
+      // Dedup on id+type+timestamp, NOT id alone: the new JDS format shares ONE
+      // CloudEvent id across an interaction's whole lifecycle, so an id-only
+      // guard would drop every SSE event after the first — collapsing the
+      // interaction to a single-event fragment that renders as a raw row.
+      const keyOf = (e) => `${e.id}|${e.type || ''}|${e.timestamp || e.createdAt || e.eventTime || ''}`;
+      const incomingKey = keyOf(incoming);
+      const alreadyPresent = state.customerHistory.some((e) => keyOf(e) === incomingKey);
       if (!alreadyPresent) {
         state.customerHistory = [incoming, ...state.customerHistory];
       }
@@ -793,9 +801,11 @@ export const fetchEmailThread = (threadId) => async (dispatch, getState) => {
 
   // When the user selects a historical thread from OtherThreadsList (a different
   // thread than the active interaction's thread), clear the AI summary — it was
-  // loaded for the active task and is not relevant to the historical thread.
+  // loaded for the active task and is not relevant to the historical thread. The
+  // per-thread summary is reloaded below (matched by the thread's RFC 822 ids).
   const { resolvedThreadId } = getState().email;
-  if (resolvedThreadId && threadId !== resolvedThreadId) {
+  const isHistoricalThread = Boolean(resolvedThreadId) && threadId !== resolvedThreadId;
+  if (isHistoricalThread) {
     dispatch(setAiEnrichment(null));
   }
 
@@ -803,7 +813,12 @@ export const fetchEmailThread = (threadId) => async (dispatch, getState) => {
     const threadData = await apiFetchEmailThread(threadId, token);
     if (!threadData) return;
 
-    const messages = (threadData.messages || []).map((msg) => parseGmailMessage(msg));
+    // Exclude Gmail DRAFT messages from the conversation: the agent's in-progress
+    // reply (e.g. handed off on transfer) belongs in the composer, not as a
+    // message row in the history — otherwise it shows up twice.
+    const messages = (threadData.messages || [])
+      .map((msg) => parseGmailMessage(msg))
+      .filter((m) => m && !(m.labelIds || []).includes('DRAFT'));
     dispatch(setThread(messages));
 
     if (messages.length > 0) {
@@ -814,17 +829,18 @@ export const fetchEmailThread = (threadId) => async (dispatch, getState) => {
       dispatch(setLastHistoryId(threadData.historyId));
     }
 
-    // Always try the JDS history cache first (covers voice-context email browsing where
-    // customerHistory contains all historical email:ai-summary events).
+    // Per-thread AI summary + suggested reply: match by THIS thread's RFC 822
+    // Message-IDs (falls back to the active task only for the active thread), so
+    // opening an older thread shows its own summary — not the latest one.
     dispatch(loadCachedAiSummary());
 
     // If the cache missed, fetch from JDS. This handles both:
     //   • Navigating back to the active task's thread from a historical one
-    //   • Browsing historical threads during a voice call (no resolvedThreadId)
+    //   • Browsing historical threads (matched by the thread's message ids)
     const updatedState = getState().email;
     if (!updatedState.aiEnrichment) {
-      const email = updatedState.customerEmail;
-      if (email) dispatch(fetchJdsAiSummary(email));
+      const custEmail = updatedState.customerEmail;
+      if (custEmail) dispatch(fetchJdsAiSummary(custEmail));
     }
   } catch (err) {
     console.error('[EmailSlice] fetchEmailThread error:', err);
@@ -936,8 +952,15 @@ export const loadCustomerEmailThreads = (customerEmail) => async (dispatch, getS
 // and initEmailTask both triggering JDS at the same time).
 const jdsInFlight = new Set();
 
+// Default JDS history window (days). All history fetches are TIME-bound by this
+// so coverage is consistent across customers regardless of event density — a
+// page-count cap silently truncated dense customers to a few days. Must match
+// the History panel's default range so the two share one in-flight cache key
+// (prevents a shallow task-context fetch racing/overwriting the panel fetch).
+export const DEFAULT_HISTORY_RANGE_DAYS = 7;
+
 export const fetchCustomerJdsHistory =
-  (identity, accessToken, workspaceId, datacenter, maxPages = 5, expectedInteractionId = null, rangeDays = null) => async (dispatch, getState) => {
+  (identity, accessToken, workspaceId, datacenter, maxPages = 5, expectedInteractionId = null, rangeDays = DEFAULT_HISTORY_RANGE_DAYS) => async (dispatch, getState) => {
     // Normalise to array so the rest of the function is uniform.
     const identities = (Array.isArray(identity) ? identity : [identity]).filter(Boolean);
     if (!identities.length) return;
@@ -1674,30 +1697,96 @@ export const AI_SUMMARY_EVENT_TYPE = 'email:ai-summary';
  */
 const DEFAULT_AI_SUMMARY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
+// ── AI-summary matching helpers ────────────────────────────────────────────
+// Normalise an RFC 822 Message-ID for comparison (strip <>, trim, lowercase).
+const normMsgId = (id) => String(id || '').replace(/[<>]/g, '').trim().toLowerCase();
+// customerHistory events store the epoch under raw.eventTime / timestamp — NOT
+// a top-level eventTime — so read all three (older code read the wrong field).
+const eventTs = (ev) => Number(ev?.raw?.eventTime ?? ev?.eventTime ?? ev?.timestamp ?? 0);
+// RFC 822 Message-IDs of every message in the currently loaded thread.
+const openThreadRfcIds = (email) => {
+  const s = new Set();
+  for (const m of (email.thread || [])) {
+    const id = normMsgId(m.rfcMessageId);
+    if (id) s.add(id);
+  }
+  return s;
+};
+// Whether the currently open thread is the active task's own thread (vs a
+// historical thread the agent opened from the thread list).
+const isActiveThreadOpen = (email) =>
+  Boolean(email.resolvedThreadId) && email.activeEmail?.threadId === email.resolvedThreadId;
+// True when an ai-summary event belongs to the currently open thread. Matches on
+// the message's RFC 822 id; the active-task fallback (taskId) only applies to the
+// active thread so historical threads never inherit the active task's summary.
+const aiSummaryMatchesOpenThread = (ev, rfcIds, activeInteractionId, activeThreadOpen) => {
+  const mid = normMsgId(ev.data?.messageId);
+  if (mid && rfcIds.has(mid)) return true;
+  if (activeThreadOpen && activeInteractionId && ev.data?.taskId === activeInteractionId) return true;
+  return false;
+};
+
 /**
- * Scan customerHistory for the newest email:ai-summary event that matches
- * the active message, and seed aiEnrichment from it if still fresh.
+ * All email:ai-summary versions for the currently open thread, newest first.
+ * As the agent re-generates the summary/suggested reply after each thread
+ * update a new event is written, so this powers the AiPanel's "latest shown,
+ * older ones collapsed" view. Memoised so it only recomputes when the email
+ * slice changes. Deduped by event id (fetch + SSE can both carry the same one).
+ */
+export const selectThreadAiSummaries = createSelector(
+  [(s) => s.email, (s) => s.widget?.emailConfig?.aiSummaryTtlMs],
+  (email, ttlMs) => {
+    if (!email?.activeEmail) return [];
+    const cutoff = Date.now() - (ttlMs ?? DEFAULT_AI_SUMMARY_TTL_MS);
+    const rfcIds = openThreadRfcIds(email);
+    const activeThreadOpen = isActiveThreadOpen(email);
+    const interactionId = email.activeInteractionId;
+    if (rfcIds.size === 0 && !(activeThreadOpen && interactionId)) return [];
+    const seen = new Set();
+    return (email.customerHistory || [])
+      .filter((ev) =>
+        ev.type === AI_SUMMARY_EVENT_TYPE &&
+        eventTs(ev) > cutoff &&
+        (ev.data?.summary || ev.data?.aiSummary || ev.data?.suggestedReply) &&
+        aiSummaryMatchesOpenThread(ev, rfcIds, interactionId, activeThreadOpen)
+      )
+      .sort((a, b) => eventTs(b) - eventTs(a))
+      .filter((ev) => { if (seen.has(ev.id)) return false; seen.add(ev.id); return true; })
+      .map((ev) => ({
+        id: ev.id,
+        ts: eventTs(ev),
+        summary: ev.data?.summary || ev.data?.aiSummary || null,
+        suggestedReply: ev.data?.suggestedReply || null,
+      }));
+  }
+);
+
+/**
+ * Scan customerHistory for the newest email:ai-summary event that belongs to the
+ * currently open thread, and seed aiEnrichment from it if still fresh.
  */
 export const loadCachedAiSummary = () => (dispatch, getState) => {
   const { email, widget } = getState();
-  const messageId = email.activeEmail?.messageId;
-  if (!messageId) return;
+  if (!email.activeEmail) return;
   const ttl = widget.emailConfig?.aiSummaryTtlMs ?? DEFAULT_AI_SUMMARY_TTL_MS;
   const cutoff = Date.now() - ttl;
+  const rfcIds = openThreadRfcIds(email);
+  const activeThreadOpen = isActiveThreadOpen(email);
+  if (rfcIds.size === 0 && !(activeThreadOpen && email.activeInteractionId)) return;
 
   const cached = (email.customerHistory || [])
     .filter(
       (ev) =>
         ev.type === AI_SUMMARY_EVENT_TYPE &&
-        ev.data?.messageId === messageId &&
-        (ev.eventTime ?? 0) > cutoff
+        eventTs(ev) > cutoff &&
+        aiSummaryMatchesOpenThread(ev, rfcIds, email.activeInteractionId, activeThreadOpen)
     )
-    .sort((a, b) => (b.eventTime ?? 0) - (a.eventTime ?? 0))[0];
+    .sort((a, b) => eventTs(b) - eventTs(a))[0];
 
   if (cached?.data?.summary || cached?.data?.aiSummary) {
     const summaryText = cached.data.summary || cached.data.aiSummary;
     const suggestedReply = cached.data.suggestedReply || null;
-    console.log('[EmailSlice] Loaded AI summary from JDS cache for message', messageId);
+    console.log('[EmailSlice] Loaded AI summary from JDS cache for open thread');
     dispatch(setAiEnrichment({ summary: summaryText, suggestedReply, source: 'jds-cache' }));
   }
 };
@@ -1716,7 +1805,7 @@ export const loadCachedAiSummary = () => (dispatch, getState) => {
 export const fetchJdsAiSummary = (customerEmail) => async (dispatch, getState) => {
   const { email, widget } = getState();
   const interactionId = email.activeInteractionId;
-  if (!interactionId || !customerEmail) return;
+  if (!customerEmail) return;
 
   const { accesstoken, workspaceid, datacenter } = widget;
   if (!accesstoken || !workspaceid) return;
@@ -1724,37 +1813,41 @@ export const fetchJdsAiSummary = (customerEmail) => async (dispatch, getState) =
   const ttl = widget.emailConfig?.aiSummaryTtlMs ?? DEFAULT_AI_SUMMARY_TTL_MS;
   const cutoff = Date.now() - ttl;
 
-  // Match only by taskId (globally unique UUID). Do NOT check ev.identity — JDS events
-  // are sometimes stored with the agent email instead of the customer email, which
-  // would cause a miss if we required identity === customerEmail.
-  const findByTaskId = (events) =>
+  const rfcIds = openThreadRfcIds(email);
+  const activeThreadOpen = isActiveThreadOpen(email);
+  // Need at least one way to identify the open thread's summary.
+  if (rfcIds.size === 0 && !(activeThreadOpen && interactionId)) return;
+
+  // Match the open thread by its RFC 822 Message-IDs; the active-task taskId
+  // fallback only applies to the active thread (see aiSummaryMatchesOpenThread).
+  const findMatch = (events) =>
     events
-      .filter((ev) =>
-        ev.data?.taskId === interactionId &&
-        (ev.raw?.eventTime ?? ev.eventTime ?? 0) > cutoff
-      )
-      .sort((a, b) => (b.raw?.eventTime ?? b.eventTime ?? 0) - (a.raw?.eventTime ?? a.eventTime ?? 0))[0];
+      .filter((ev) => eventTs(ev) > cutoff && aiSummaryMatchesOpenThread(ev, rfcIds, interactionId, activeThreadOpen))
+      .sort((a, b) => eventTs(b) - eventTs(a))[0];
 
   try {
     // Primary: compound FIQL AND (identity + type). Confirmed working in JDS.
     // Returns only this customer's ai-summary events — much cheaper than workspace-wide.
     const primaryFilter = `identity==${customerEmail};type==email:ai-summary`;
-    const primaryEvents = await fetchJourneyEvents(null, accesstoken, workspaceid, datacenter, primaryFilter, 1);
-    let cached = findByTaskId(primaryEvents);
+    const primaryEvents = await fetchJourneyEvents(null, accesstoken, workspaceid, datacenter, primaryFilter, 2);
+    let cached = findMatch(primaryEvents);
 
     // Fallback: workspace-wide type query. Handles events stored with the wrong identity
-    // (e.g. agent email instead of customer email). Match by taskId alone.
+    // (e.g. agent email instead of customer email). Match by message id / taskId.
     if (!cached?.data?.summary && !cached?.data?.aiSummary) {
       console.log('[EmailSlice] fetchJdsAiSummary: primary identity query missed, trying workspace fallback');
-      const fallbackEvents = await fetchJourneyEvents(null, accesstoken, workspaceid, datacenter, 'type==email:ai-summary', 1);
-      cached = findByTaskId(fallbackEvents);
+      const fallbackEvents = await fetchJourneyEvents(null, accesstoken, workspaceid, datacenter, 'type==email:ai-summary', 2);
+      cached = findMatch(fallbackEvents);
     }
 
     if (cached?.data?.summary || cached?.data?.aiSummary) {
       const summaryText = cached.data.summary || cached.data.aiSummary;
       const suggestedReply = cached.data.suggestedReply || null;
-      console.log('[EmailSlice] Loaded AI summary from JDS cache for task', interactionId);
+      console.log('[EmailSlice] Loaded AI summary from JDS for open thread');
       dispatch(setAiEnrichment({ summary: summaryText, suggestedReply, source: 'jds-cache' }));
+    } else if (!activeThreadOpen) {
+      // Historical thread with no stored summary — make sure no stale summary lingers.
+      dispatch(setAiEnrichment(null));
     }
   } catch (err) {
     console.warn('[EmailSlice] fetchJdsAiSummary error:', err.message);
@@ -2293,11 +2386,9 @@ export const sendEmailReply = (payload) => async (dispatch, getState) => {
   dispatch(setSendResult(null));
 
   try {
-    // Ensure we have a valid Gmail token with send permissions.
-    // Force a fresh token for every send — the cached token may have been obtained
-    // with the old gmail.readonly scope before the Cloud Function was redeployed
-    // with https://mail.google.com/ scope.
-    const token = await dispatch(fetchGmailToken());
+    // Use the cached Gmail token when still valid (the send scope is now the
+    // default), so a routine send doesn't wait on a token-broker round-trip.
+    const token = await dispatch(ensureGmailToken());
     if (!token) {
       dispatch(setIsSending(false));
       dispatch(setSendResult({ success: false, error: 'email.error.noToken' }));
@@ -2396,7 +2487,10 @@ export const handleSseEvent = (event) => (dispatch, getState) => {
     const eventTaskId = event.data.taskId || null;
     // Accept if taskId matches (specific) OR no taskId on event (broadcast)
     const taskMatch = !eventTaskId || !activeId || eventTaskId === activeId;
-    if (taskMatch) {
+    // Skip while the agent is browsing a historical thread so its per-thread
+    // summary is not overwritten by the active task's live summary.
+    const browsingHistorical = Boolean(emailState.activeEmail) && !isActiveThreadOpen(emailState);
+    if (taskMatch && !browsingHistorical) {
       const summaryText = event.data.aiSummary || event.data.summary || null;
       const suggestedReply = event.data.suggestedReply || null;
       if (summaryText || suggestedReply) {
@@ -2460,6 +2554,125 @@ export const submitWrapUp = (interactionId, wrapUpData) => async (dispatch, getS
 };
 
 /**
+ * Pick a durable interaction summary we previously persisted to JDS for a given
+ * task/interaction id. email:wrapup-summary / task:wrapup-summary carry the
+ * structured `sections` the History InteractionSummary renders; email:ai-summary
+ * is a plain-text fallback. Returns null when nothing was stored for the task.
+ */
+export const pickStoredSummaryForTask = (events, taskId) => {
+  const evs = (events || []).filter(
+    (ev) =>
+      (ev.type === 'email:wrapup-summary' ||
+        ev.type === 'task:wrapup-summary' ||
+        ev.type === AI_SUMMARY_EVENT_TYPE) &&
+      ev.data?.taskId === taskId
+  );
+  if (!evs.length) return null;
+  evs.sort((a, b) => eventTs(b) - eventTs(a));
+
+  const wrap = evs.find(
+    (e) => (e.type === 'email:wrapup-summary' || e.type === 'task:wrapup-summary') && e.data?.sections
+  );
+  if (wrap) {
+    const s = wrap.data.sections;
+    return {
+      initialContactReason: s.initialContactReason || null,
+      keyActionsTaken: s.keyActionsTaken || null,
+      nextSteps: s.nextSteps || null,
+      additionalContactReasons: s.additionalContactReasons || s.additionalContext || null,
+    };
+  }
+  const ai = evs.find((e) => e.data?.aiSummary || e.data?.summary);
+  if (ai) return { initialContactReason: ai.data.aiSummary || ai.data.summary };
+  return null;
+};
+
+// Human-readable labels for the wrap-up summary text stored in JDS.
+const WRAPUP_SUMMARY_LABELS = {
+  initialContactReason: 'Contact reason',
+  additionalContext: 'Details',
+  additionalContactReasons: 'Additional topics',
+  keyActionsTaken: 'Actions taken',
+  nextSteps: 'Next steps',
+};
+
+/** Convert an AI-assistant POST_CALL summary into the JDS {sections,text} shape. */
+const summaryToJdsPayload = (summary) => {
+  const sections = {
+    initialContactReason: summary.initialContactReason || '',
+    additionalContext: summary.additionalContext || '',
+    additionalContactReasons: summary.additionalContactReasons || '',
+    keyActionsTaken: summary.keyActionsTaken || '',
+    nextSteps: summary.nextSteps || '',
+  };
+  const text = Object.keys(WRAPUP_SUMMARY_LABELS)
+    .filter((k) => sections[k] && String(sections[k]).trim())
+    .map((k) => `${WRAPUP_SUMMARY_LABELS[k]}: ${sections[k]}`)
+    .join('\n');
+  return { sections, text };
+};
+
+/**
+ * Best-effort: resolve a customer identity (phone/email) to key a stored summary
+ * on, so the customer's JDS history query returns it later. Prefers the
+ * interaction's own origin (guaranteed to be one of the identities History
+ * queried, since the interaction appeared in customerHistory), then falls back
+ * to the resolved customer identities.
+ */
+const deriveCustomerIdentityForTask = (email, taskId) => {
+  for (const ev of (email.customerHistory || [])) {
+    if (ev.data?.interactionId === taskId || ev.data?.taskId === taskId) {
+      const o = ev.data?.origin;
+      if (o && (String(o).includes('@') || /\d/.test(String(o)))) return o;
+    }
+  }
+  const ids = email.customerIdentities || [];
+  return ids[0] || email.customerEmail || null;
+};
+
+/**
+ * Persist a voice/interaction wrap-up summary to JDS so it survives the short
+ * AI-assistant summary/list retention window (~1-2 days). Keyed by a customer
+ * identity so the customer's JDS history query returns it. Best-effort — never
+ * throws into the caller.
+ */
+export const persistTaskSummaryToJds = (taskId, summary, identity) => async (dispatch, getState) => {
+  if (!taskId || !summary || !identity) return;
+  const { accesstoken, workspaceid, datacenter } = getState().widget;
+  if (!accesstoken || !workspaceid) return;
+  // Don't write a duplicate if we already stored one for this task.
+  const already = (getState().email.customerHistory || []).some(
+    (ev) => ev.type === 'task:wrapup-summary' && ev.data?.taskId === taskId
+  );
+  if (already) return;
+  const { sections, text } = summaryToJdsPayload(summary);
+  if (!text) return;
+  const identitytype = String(identity).includes('@') ? 'email' : 'phone';
+  try {
+    await publishCloudEvent(
+      {
+        id: generateCorrelationId(),
+        specversion: '1.0',
+        type: 'task:wrapup-summary',
+        source: 'task-management-widget',
+        time: new Date().toISOString(),
+        eventTime: Date.now(),
+        identity,
+        identitytype,
+        datacontenttype: 'application/json',
+        data: { summary: text, sections, taskId },
+      },
+      accesstoken,
+      workspaceid,
+      datacenter
+    );
+    console.log('[EmailSlice] Persisted wrap-up summary to JDS for task', taskId);
+  } catch (err) {
+    console.warn('[EmailSlice] task:wrapup-summary JDS publish failed:', err.message);
+  }
+};
+
+/**
  * Fetch an AI-generated POST_CALL summary for a past interaction and store it
  * in state.email.interactionSummaries[taskId].
  * Safe to call multiple times — skips the network call if a summary already
@@ -2471,6 +2684,15 @@ export const fetchInteractionSummary = (taskId) => async (dispatch, getState) =>
   const state = getState();
   // Skip if already fetched
   if (state.email?.interactionSummaries?.[taskId]) return;
+
+  // 1) Durable source: a summary we persisted to JDS (email:wrapup-summary /
+  //    email:ai-summary). Survives far longer than the AI-assistant summary/list
+  //    retention window, so older interactions still show their summary.
+  const stored = pickStoredSummaryForTask(state.email?.customerHistory || [], taskId);
+  if (stored) {
+    dispatch(setInteractionSummary({ taskId, summary: stored }));
+    return;
+  }
 
   const { widget } = state;
   const orgId       = widget.orgid || widget.orgId;
@@ -2486,6 +2708,10 @@ export const fetchInteractionSummary = (taskId) => async (dispatch, getState) =>
     const summary = await getTaskSummary(orgId, taskId, datacenter, accessToken);
     if (summary) {
       dispatch(setInteractionSummary({ taskId, summary }));
+      // Persist to JDS while the summary is still fresh so it survives the short
+      // AI-assistant retention window and remains visible on future visits.
+      const identity = deriveCustomerIdentityForTask(state.email, taskId);
+      if (identity) dispatch(persistTaskSummaryToJds(taskId, summary, identity));
     }
   } catch (err) {
     console.error('[EmailSlice] fetchInteractionSummary error:', err);

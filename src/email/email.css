@@ -617,6 +617,64 @@
   color: var(--md-color-gray-80, #1c1c1c);
 }
 
+/* ── AI Panel version history (older summaries / replies, collapsed) ── */
+.ai-panel__history-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  padding: 2px 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--md-color-gray-60, #5b6b7b);
+}
+.ai-panel__history-toggle:hover { color: var(--md-color-blue-60, #0e7fc1); }
+.ai-panel__history {
+  margin-top: 6px;
+  border-top: 1px dashed var(--md-color-gray-20, #dbe3ec);
+  padding-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ai-panel__history-item {
+  border-left: 2px solid var(--md-color-gray-20, #dbe3ec);
+  padding-left: 8px;
+}
+.ai-panel__history-time {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--md-color-gray-50, #767676);
+  margin-bottom: 2px;
+}
+.ai-panel__history-text {
+  font-size: 12px;
+  line-height: 1.45;
+  margin: 0;
+  color: var(--md-color-gray-70, #3d3d3d);
+}
+.ai-panel__history-use {
+  margin-top: 4px;
+  padding: 2px 8px;
+  background: none;
+  border: 1px solid var(--md-color-green-30, #bbf7d0);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--md-color-green-70, #15803d);
+}
+.ai-panel__history-use:hover { background: var(--md-color-green-05, #f0fdf4); }
+.email-widget.md--dark .ai-panel__history-toggle { color: rgba(255, 255, 255, .55); }
+.email-widget.md--dark .ai-panel__history { border-top-color: rgba(255, 255, 255, .12); }
+.email-widget.md--dark .ai-panel__history-item { border-left-color: rgba(255, 255, 255, .12); }
+.email-widget.md--dark .ai-panel__history-time { color: rgba(255, 255, 255, .45); }
+.email-widget.md--dark .ai-panel__history-text { color: rgba(255, 255, 255, .75); }
+
 /* ── AI Panel template selection ──────────────────── */
 .ai-panel__templates {
   margin-top: 12px;

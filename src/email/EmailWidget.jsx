@@ -138,17 +138,23 @@ const EmailWidget = ({ interactionId, callAssociatedDetails, darkMode, mockMode,
   ) : null;
 
   if (isFetchingToken || isFetchingEmail) {
-    return (
-      <div className={`email-widget widget-shell${darkMode ? ' md--dark' : ''}`}>
-        {analyticsHeader}
-        <div className="widget-state">
-          <div className="widget-spinner" />
-          <span className="md-h4 widget-state__text widget-state__text--spaced">
-            {t('email.loading')}
-          </span>
+    // Only take over the whole panel on the FIRST load (nothing to show yet).
+    // Once a thread/list is loaded, a send or background refresh must not blank
+    // the panel — the composer's own inline sending state covers that.
+    const hasEmailContent = Boolean(activeEmail) || (customerThreads && customerThreads.length > 0);
+    if (!hasEmailContent) {
+      return (
+        <div className={`email-widget widget-shell${darkMode ? ' md--dark' : ''}`}>
+          {analyticsHeader}
+          <div className="widget-state">
+            <div className="widget-spinner" />
+            <span className="md-h4 widget-state__text widget-state__text--spaced">
+              {t('email.loading')}
+            </span>
+          </div>
         </div>
-      </div>
-    );
+      );
+    }
   }
 
   if (error) {

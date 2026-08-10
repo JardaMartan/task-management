@@ -5,7 +5,7 @@ import { Badge, Card, CardSection, Icon } from '@momentum-ui/react';
 import { useI18n } from '../i18n/I18nContext';
 import HistoryAnalyticsBar from './HistoryAnalyticsBar';
 import { getMockData } from '../mock/mockData';
-import { fetchInteractionSummary, fetchCustomerJdsHistory, loadCustomerJdsHistoryForRange } from '../store/slices/emailSlice';
+import { fetchInteractionSummary, fetchCustomerJdsHistory, loadCustomerJdsHistoryForRange, DEFAULT_HISTORY_RANGE_DAYS } from '../store/slices/emailSlice';
 import { toggleAnalyticsOpen } from '../store/slices/widgetSlice';
 import { usePanelUiState } from '../ui/usePanelUiState';
 
@@ -13,7 +13,8 @@ import { usePanelUiState } from '../ui/usePanelUiState';
 const DEFAULT_HISTORY_FILTERS = { channel: null, sentiment: null };
 // History time-range presets (rolling days) for the range selector.
 const HISTORY_RANGES = [{ days: 7, label: '7d' }, { days: 30, label: '30d' }, { days: 90, label: '90d' }, { days: 365, label: '1y' }];
-const DEFAULT_RANGE_DAYS = 7;
+// Shared with the JDS loaders so the panel default and the pre-fetch window match.
+const DEFAULT_RANGE_DAYS = DEFAULT_HISTORY_RANGE_DAYS;
 
 // ─── Analytics computation from live JDS events ───────────────────────────
 
@@ -874,10 +875,19 @@ const backfillChannelByTaskId = (events) => {
   return events;
 };
 
+// AI summary/metadata events are surfaced via the InteractionSummary panel
+// (read straight from customerHistory), not as timeline rows. Excluding them
+// stops a summary event — whose eventTime is when it was WRITTEN, which can be
+// long after the interaction (e.g. a regenerated voice summary) — from becoming
+// its interaction group's newest event and hijacking the group's channel/time.
+const TIMELINE_METADATA_TYPES = new Set([
+  'task:wrapup-summary', 'email:wrapup-summary', 'email:ai-summary',
+]);
+
 const normalizeEvents = (caseEvents, emailEvents) => {
   const out = [];
-  (caseEvents || []).forEach((e) => out.push(normalizeEvent(e, 'task')));
-  (emailEvents || []).forEach((e) => out.push(normalizeEvent(e, 'email')));
+  (caseEvents || []).forEach((e) => { if (!TIMELINE_METADATA_TYPES.has(e.type)) out.push(normalizeEvent(e, 'task')); });
+  (emailEvents || []).forEach((e) => { if (!TIMELINE_METADATA_TYPES.has(e.type)) out.push(normalizeEvent(e, 'email')); });
   backfillChannelByTaskId(out);
   out.sort((a, b) => new Date(b.ts || 0) - new Date(a.ts || 0));
   return out;
@@ -1864,13 +1874,11 @@ const HistoryView = ({ darkMode, mockMode, onNavigate }) => {
                 const refProp = isHighlighted ? { ref: highlightedRef } : {};
 
                 if (item.type === 'group') {
-                  if (item.events.length === 1) {
-                    return (
-                      <div key={itemKey} {...refProp} className={isHighlighted ? 'history-view__highlight' : ''}>
-                        <EventRow ev={item.events[0]} />
-                      </div>
-                    );
-                  }
+                  // Every group has a taskId — i.e. it's a real interaction — so
+                  // render it as an InteractionGroup card even when only one of
+                  // its lifecycle events is in the window. Rendering a lone
+                  // interaction event as a raw EventRow looked unformatted and
+                  // "ungrouped" under the channel filters.
                   return (
                     <div key={itemKey} {...refProp} className={isHighlighted ? 'history-view__highlight' : ''}>
                       <InteractionGroup

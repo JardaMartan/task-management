@@ -221,6 +221,7 @@ const baseDictionary = {
       refresh: 'Refresh Analysis',
       suggestedReply: 'Suggested Reply',
       useReply: 'Use this reply',
+      previousVersions: 'Previous versions',
       chips: {
         label: 'Quick start:',
         confirm: 'Confirming your request…',
@@ -891,6 +892,7 @@ const deDictionary = {
       refresh: 'Analyse aktualisieren',
       suggestedReply: 'Vorgeschlagene Antwort',
       useReply: 'Diese Antwort verwenden',
+      previousVersions: 'Frühere Versionen',
       chips: {
         label: 'Schnellstart:',
         confirm: 'Ihre Anfrage bestätigen…',
@@ -1560,6 +1562,7 @@ const csDictionary = {
       refresh: 'Obnovit analýzu',
       suggestedReply: 'Navrhovaná odpověď',
       useReply: 'Použít tuto odpověď',
+      previousVersions: 'Předchozí verze',
       chips: {
         label: 'Rychlý start:',
         confirm: 'Potvrzuji váš požadavek…',

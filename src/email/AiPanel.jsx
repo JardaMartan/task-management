@@ -8,6 +8,7 @@ import {
   refreshAiEnrichment,
   setPendingComposerInsert,
   applyTemplate,
+  selectThreadAiSummaries,
 } from '../store/slices/emailSlice';
 
 const SENTIMENT_COLORS = {
@@ -27,22 +28,38 @@ const AiPanel = ({ darkMode, onSeedReply }) => {
   const lastSentReply = useSelector((state) => state.email.lastSentReply);
   const aiReplyDraft = useSelector((state) => state.email.aiReplyDraft);
   const wrapUpStatus = useSelector((state) => state.email.wrapUpSummary.status);
+  // Versioned AI summaries/replies for the open thread (newest first): the agent
+  // re-generates them after each thread update, so show the latest and collapse
+  // the older ones.
+  const aiSummaryVersions = useSelector(selectThreadAiSummaries);
+  const currentSummary = aiSummaryVersions[0]?.summary ?? aiEnrichment?.summary ?? null;
+  const currentReply = aiSummaryVersions[0]?.suggestedReply ?? aiEnrichment?.suggestedReply ?? null;
+  const olderSummaries = aiSummaryVersions.slice(1).filter((v) => v.summary);
+  const olderReplies = aiSummaryVersions.slice(1).filter((v) => v.suggestedReply);
 
   const [suggestedUsed, setSuggestedUsed] = useState(false);
+  const [summaryHistoryOpen, setSummaryHistoryOpen] = useState(false);
+  const [replyHistoryOpen, setReplyHistoryOpen] = useState(false);
   // Reset the "used" state when a fresh suggested reply arrives.
-  useEffect(() => { setSuggestedUsed(false); }, [aiEnrichment?.suggestedReply]);
+  useEffect(() => { setSuggestedUsed(false); }, [currentReply]);
+
+  const fmtVersionTime = (ts) => {
+    try {
+      return new Date(ts).toLocaleString(locale, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    } catch { return ''; }
+  };
 
   const handleRefresh = () => {
     dispatch(refreshAiEnrichment());
   };
 
   // Suggested reply and templates are inserted at the composer caret (not replacing the draft).
-  const handleUseSuggested = () => {
-    if (aiEnrichment?.suggestedReply) {
-      dispatch(setPendingComposerInsert(aiEnrichment.suggestedReply));
-      setSuggestedUsed(true);
-      if (onSeedReply) onSeedReply(aiEnrichment.suggestedReply);
-    }
+  // Any version can be used — markCurrent only drives the current button's "used" state.
+  const handleUseReply = (replyText, { markCurrent = false } = {}) => {
+    if (!replyText) return;
+    dispatch(setPendingComposerInsert(replyText));
+    if (markCurrent) setSuggestedUsed(true);
+    if (onSeedReply) onSeedReply(replyText);
   };
 
   const handleInsertTemplate = (templateId) => {
@@ -63,7 +80,7 @@ const AiPanel = ({ darkMode, onSeedReply }) => {
     [localeTemplates],
   );
 
-  const { summary, category, sentiment, confidence, suggestedReply, source } = aiEnrichment || {};
+  const { category, sentiment, confidence, source } = aiEnrichment || {};
   const confidencePct = confidence != null ? `${Math.round(confidence * 100)}%` : null;
   const sentimentColor = SENTIMENT_COLORS[sentiment] || 'default';
 
@@ -100,10 +117,32 @@ const AiPanel = ({ darkMode, onSeedReply }) => {
           </div>
         </div>
 
-        {summary && (
+        {currentSummary && (
           <div className="reading-pane__summary" role="note">
             <span className="reading-pane__summary-label">{t('email.ai.summary')}</span>
-            <p className="reading-pane__summary-text">{summary}</p>
+            <p className="reading-pane__summary-text">{currentSummary}</p>
+            {olderSummaries.length > 0 && (
+              <>
+                <button
+                  type="button"
+                  className="ai-panel__history-toggle"
+                  onClick={() => setSummaryHistoryOpen((o) => !o)}
+                  aria-expanded={summaryHistoryOpen}
+                >
+                  {summaryHistoryOpen ? '▲' : '▼'} {t('email.ai.previousVersions')} ({olderSummaries.length})
+                </button>
+                {summaryHistoryOpen && (
+                  <div className="ai-panel__history">
+                    {olderSummaries.map((v) => (
+                      <div key={v.id} className="ai-panel__history-item">
+                        <span className="ai-panel__history-time">{fmtVersionTime(v.ts)}</span>
+                        <p className="ai-panel__history-text">{v.summary}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
           </div>
         )}
 
@@ -132,21 +171,50 @@ const AiPanel = ({ darkMode, onSeedReply }) => {
           </div>
         )}
 
-        {suggestedReply && (
+        {currentReply && (
           <div className="ai-panel__suggested">
             <div className="ai-panel__suggested-label">{t('email.ai.suggestedReply')}</div>
-            <p className="ai-panel__suggested-text">{suggestedReply}</p>
+            <p className="ai-panel__suggested-text">{currentReply}</p>
             <Button
               ariaLabel={t('email.ai.useReply')}
               size={28}
               color="green"
               disabled={suggestedUsed}
-              onClick={handleUseSuggested}
+              onClick={() => handleUseReply(currentReply, { markCurrent: true })}
             >
               {suggestedUsed
                 ? `✓ ${t('email.reply.proofread.coverage.added')}`
                 : t('email.ai.useReply')}
             </Button>
+            {olderReplies.length > 0 && (
+              <>
+                <button
+                  type="button"
+                  className="ai-panel__history-toggle"
+                  onClick={() => setReplyHistoryOpen((o) => !o)}
+                  aria-expanded={replyHistoryOpen}
+                >
+                  {replyHistoryOpen ? '▲' : '▼'} {t('email.ai.previousVersions')} ({olderReplies.length})
+                </button>
+                {replyHistoryOpen && (
+                  <div className="ai-panel__history">
+                    {olderReplies.map((v) => (
+                      <div key={v.id} className="ai-panel__history-item">
+                        <span className="ai-panel__history-time">{fmtVersionTime(v.ts)}</span>
+                        <p className="ai-panel__history-text">{v.suggestedReply}</p>
+                        <button
+                          type="button"
+                          className="ai-panel__history-use"
+                          onClick={() => handleUseReply(v.suggestedReply)}
+                        >
+                          {t('email.ai.useReply')}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
           </div>
         )}
 

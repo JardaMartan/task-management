@@ -10,6 +10,8 @@ const { ingestEvents, queryAgentEvents, queryTeamEvents, queryAgents } = require
 const { queryAgentState, queryTeamState, queryAgentRoster, queryTaskContacts } = require('./agent-state');
 const { queryTeams, queryUsers, loadDirectory, canonicalUser, resolveAgentIds } = require('./config-api');
 const { resolveCustomerNames } = require('./jds');
+const { crawlPeceDocs } = require('./crawler');
+const { ensureDataStore, stageToGcs, importDocuments, dataStoreConsoleLink } = require('./vertex-search');
 const { getExperienceConfig, saveExperienceConfig, extractOrgUuid } = require('./experience');
 
 /**
@@ -277,6 +279,48 @@ functions.http('experience', async (req, res) => {
   } catch (err) {
     console.error('[experience] error:', err);
     return res.status(500).json({ error: 'Experience settings request failed' });
+  }
+});
+
+// ─── Knowledge base crawl: innogy.cz/pece → Vertex AI Search data store ───────
+/**
+ * Periodically (via Cloud Scheduler) crawls https://www.innogy.cz/pece/ and one
+ * level deeper, then rebuilds an unstructured Vertex AI Search (Discovery Engine)
+ * data store from the extracted pages. The resulting data store can be attached to
+ * the Gemini API as a RAG grounding source.
+ *
+ * Because it is deployed as an HTTP function, an optional shared secret guards it:
+ * set CRAWL_TRIGGER_TOKEN and pass it as `X-Trigger-Token` (Scheduler adds it).
+ * The response includes the data store console link.
+ */
+functions.http('crawlPece', async (req, res) => {
+  const secret = process.env.CRAWL_TRIGGER_TOKEN;
+  if (secret && req.headers['x-trigger-token'] !== secret) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  try {
+    const store = await ensureDataStore();
+
+    const docs = await crawlPeceDocs();
+    if (!docs.length) {
+      return res.status(502).json({ error: 'Crawl returned no documents', dataStore: store });
+    }
+
+    const { manifestUri, count } = await stageToGcs(docs);
+    const { operation } = await importDocuments(manifestUri);
+
+    console.log(`[crawlPece] staged ${count} docs → import ${operation}`);
+    return sendJson(req, res, {
+      pages: count,
+      manifestUri,
+      importOperation: operation,
+      dataStore: store.name,
+      dataStoreLink: dataStoreConsoleLink(),
+    });
+  } catch (err) {
+    console.error('[crawlPece] error:', err);
+    return res.status(500).json({ error: err.message });
   }
 });
 

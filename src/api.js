@@ -414,15 +414,19 @@ export const fetchJourneyEvents = async (identity, accessToken, workspaceId, dat
             hasMore = false;
         } else {
             const rawLen = pageData.length; // raw page size before range trim
-            let crossedCutoff = false;
+            let pageAllOlder = false;
             if (sinceTs != null) {
                 const kept = pageData.filter((e) => !e.timestamp || Number(e.timestamp) >= sinceTs);
-                if (kept.length < rawLen) crossedCutoff = true; // page holds events older than the range
+                // Only stop once an ENTIRE page is older than the window. Stopping on
+                // the first page that merely CONTAINS an older event would truncate
+                // in-window results that follow an out-of-order/late event (e.g. a
+                // back-dated or newly written summary) on later pages.
+                pageAllOlder = kept.length === 0;
                 pageData = kept;
             }
             allEvents = [...allEvents, ...pageData];
             if (rawLen < pageSize) hasMore = false;      // natural end of data
-            else if (crossedCutoff) hasMore = false;     // reached the selected range boundary
+            else if (pageAllOlder) hasMore = false;      // whole page past the range boundary
             else page++;
 
             if (hasMore && page > pageLimit) {

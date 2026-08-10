@@ -1,5 +1,6 @@
 import { createSlice } from '@reduxjs/toolkit';
 import { fetchVoiceTranscript, fetchVoiceSummary, fetchVoiceCaptureList, fetchCustomerVoiceCalls } from '../../api';
+import { persistTaskSummaryToJds, pickStoredSummaryForTask } from './emailSlice';
 
 /**
  * Live voice-transcript state, keyed by taskId. Populated on demand from the
@@ -97,9 +98,17 @@ export const fetchLiveVoiceTranscript = (taskId, { force = false } = {}) => asyn
  */
 export const fetchVoiceSummaryFor = (taskId, { force = false } = {}) => async (dispatch, getState) => {
   if (!taskId) return;
-  const { widget, voice } = getState();
+  const { widget, voice, email } = getState();
   if (voice.summaryStatus[taskId] === 'loading') return;
   if (!force && voice.summaries[taskId] !== undefined && voice.summaryStatus[taskId]) return;
+
+  // Durable source first: a summary we persisted to JDS survives the short
+  // AI-assistant summary/list retention window (~1-2 days).
+  const stored = pickStoredSummaryForTask(email.customerHistory || [], taskId);
+  if (stored) {
+    dispatch(setSummary({ taskId, summary: stored }));
+    return;
+  }
 
   const { desktopToken, orgId, datacenter } = resolveConfig(widget);
   if (!desktopToken || !orgId) return;
@@ -108,6 +117,12 @@ export const fetchVoiceSummaryFor = (taskId, { force = false } = {}) => async (d
   try {
     const summary = await fetchVoiceSummary(desktopToken, orgId, taskId, datacenter);
     dispatch(setSummary({ taskId, summary }));
+    // Persist while fresh so it stays available after the endpoint retention lapses.
+    if (summary) {
+      const call = (voice.customerCalls || []).find((c) => c.taskId === taskId);
+      const identity = call?.origin || (email.customerIdentities || [])[0] || email.customerEmail || null;
+      if (identity) dispatch(persistTaskSummaryToJds(taskId, summary, identity));
+    }
   } catch (err) {
     console.error('[voiceSlice] summary fetch failed:', err);
     dispatch(setSummaryStatus({ taskId, status: 'error' }));
