@@ -1287,7 +1287,7 @@ const normalizeSubject = (subject) =>
  * from:+subject: search ordering bug that highlights an older thread while the
  * real interaction is the newest one.
  */
-async function resolveActiveThreadFromCustomerThreads(customerEmail, subject) {
+function resolveActiveThreadFromCustomerThreads(customerEmail, subject) {
   return async (dispatch) => {
     const token = await dispatch(ensureGmailToken());
     if (!token) return null;
