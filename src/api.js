@@ -2403,7 +2403,7 @@ export const findGmailThreadBySubjectAndSender = async (customerEmail, subject, 
   const q = [`from:${customerEmail}`];
   if (subject) q.push(`subject:"${subject.replace(/"/g, '')}"`);
   const query = encodeURIComponent(q.join(' '));
-  const url = `${GMAIL_API_BASE}/threads?q=${query}&maxResults=5`;
+  const url = `${GMAIL_API_BASE}/threads?q=${query}&maxResults=10`;
   const response = await fetch(url, {
     headers: { Authorization: `Bearer ${gmailToken}` },
   });
@@ -2414,7 +2414,42 @@ export const findGmailThreadBySubjectAndSender = async (customerEmail, subject, 
   }
 
   const data = await response.json();
-  return data?.threads?.[0]?.id || null;
+  const threads = data?.threads || [];
+  if (threads.length === 0) return null;
+
+  // Gmail's search result order is not guaranteed to be chronological. Fetch
+  // metadata for each candidate and return the thread with the newest non-draft
+  // message, so we don't highlight an older thread while the current
+  // interaction is the newest one.
+  const normalizeSubject = (s) =>
+    String(s || '')
+      .replace(/^(Re|Fwd|FW|RE|FWD)\s*:\s*/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+  const targetSubject = normalizeSubject(subject);
+
+  const metas = await Promise.all(
+    threads.map((t) =>
+      fetchEmailThreadMetadata(t.id, gmailToken).catch((err) => {
+        console.warn('[api] metadata fetch failed for subject-search candidate', t.id, err.message);
+        return { threadId: t.id, subject: '', date: '' };
+      })
+    )
+  );
+
+  const candidates = targetSubject
+    ? metas.filter((m) => normalizeSubject(m.subject) === targetSubject)
+    : metas;
+
+  const sorted = [...candidates].filter((m) => m.date).sort((a, b) => {
+    const da = new Date(a.date);
+    const db = new Date(b.date);
+    return isNaN(db) || isNaN(da) ? 0 : db - da;
+  });
+
+  const newest = sorted[0] || metas.find((m) => m.date) || metas[0];
+  return newest?.threadId || null;
 };
 
 /**

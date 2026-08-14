@@ -8,7 +8,6 @@ import {
   fetchEmailMessage as apiFetchEmailMessage,
   fetchCustomerEmailThreads as apiFetchCustomerEmailThreads,
   findGmailThreadByRfcMessageId as apiFindGmailThreadByRfcMessageId,
-  findGmailThreadBySubjectAndSender as apiFindGmailThreadBySubjectAndSender,
   sendEmailViaGmail as apiSendEmailViaGmail,
   pollGmailThreadHistory as apiPollGmailThreadHistory,
   createGmailDraft as apiCreateGmailDraft,
@@ -972,10 +971,15 @@ export const initEmailTask =
     }
 
     // Resolve the active thread ID. Priority:
+    // Resolve the active thread ID. Priority:
     //   1. gmailThreadId from CAD (direct — requires Webex Connect flow to map it)
     //   2. rfcMessageId via rfc822msgid: Gmail search (exact, works once Webex Connect
     //      maps the Message-Id header as a CAD variable)
-    //   3. sender + subject search (current fallback, less reliable)
+    //   3. customer thread list: fetch all threads for this customer, enrich
+    //      metadata, and pick the newest matching thread. This is more reliable
+    //      than a from:+subject: search, which returns matches in arbitrary order
+    //      and can highlight an older thread while the real interaction thread is
+    //      the newest one at the top of the list.
     let resolvedThreadId = threadId;
     if (!resolvedThreadId && customerEmail) {
       const rfcMessageId = callAssociatedDetails?.rfcMessageId || null;
@@ -987,10 +991,14 @@ export const initEmailTask =
           console.log('[EmailSlice] rfc822msgid search result:', resolvedThreadId);
         }
         if (!resolvedThreadId) {
-          const searchQuery = `from:${customerEmail}${subject ? ` subject:"${subject}"` : ''}`;
-          console.log('[EmailSlice] Searching thread via subject/sender:', searchQuery);
-          resolvedThreadId = await apiFindGmailThreadBySubjectAndSender(customerEmail, subject, token);
-          console.log('[EmailSlice] subject/sender search result:', resolvedThreadId);
+          console.log('[EmailSlice] Resolving active thread from customer thread list', {
+            customerEmail,
+            subject,
+          });
+          resolvedThreadId = await dispatch(
+            resolveActiveThreadFromCustomerThreads(customerEmail, subject)
+          );
+          console.log('[EmailSlice] customer-thread resolution result:', resolvedThreadId);
         }
       } catch (err) {
         console.warn('[EmailSlice] Thread ID resolution failed:', err.message);
@@ -1004,10 +1012,17 @@ export const initEmailTask =
       dispatch(setResolvedThreadId(resolvedThreadId));
       dispatch(setInteractionThreadId(resolvedThreadId));
     }
-    await Promise.all([
-      resolvedThreadId ? dispatch(fetchEmailThread(resolvedThreadId)) : Promise.resolve(),
-      customerEmail ? dispatch(fetchCustomerThreads(customerEmail)) : Promise.resolve(),
-    ]);
+
+    // Load the active thread and the full thread list. We run them sequentially
+    // here because, in the no-direct-threadId path, the customer thread list is
+    // used to determine which thread is active. Once resolvedThreadId is known,
+    // both loads can proceed.
+    if (resolvedThreadId) {
+      await dispatch(fetchEmailThread(resolvedThreadId));
+    }
+    if (customerEmail) {
+      await dispatch(fetchCustomerThreads(customerEmail));
+    }
 
     // ── Resume a Gmail draft left by a previous agent (task transfer) ──────
     if (resolvedThreadId) {
@@ -1254,6 +1269,72 @@ const refreshInteractionThreadMetadata = () => async (dispatch, getState) => {
     console.warn('[EmailSlice] refreshInteractionThreadMetadata error:', err.message);
   }
 };
+
+// Normalize a subject for comparison by stripping reply/fwd prefixes,
+// collapsing whitespace, and lower-casing.
+const normalizeSubject = (subject) =>
+  String(subject || '')
+    .replace(/^(Re|Fwd|FW|RE|FWD)\s*:\s*/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+
+/**
+ * Resolve the active interaction thread by fetching the full customer thread
+ * list and choosing the newest (most recent non-draft message) thread. When a
+ * subject is provided, prefer threads whose normalized subject matches it;
+ * otherwise simply pick the newest thread overall. This avoids the Gmail
+ * from:+subject: search ordering bug that highlights an older thread while the
+ * real interaction is the newest one.
+ */
+async function resolveActiveThreadFromCustomerThreads(customerEmail, subject) {
+  return async (dispatch) => {
+    const token = await dispatch(ensureGmailToken());
+    if (!token) return null;
+
+    try {
+      const data = await apiFetchCustomerEmailThreads(customerEmail, token);
+      const stubs = data?.threads || [];
+      if (stubs.length === 0) return null;
+
+      const toEnrich = stubs.slice(0, 20);
+      const enriched = await Promise.all(
+        toEnrich.map((t) =>
+          apiFetchEmailThreadMetadata(t.id, token).catch((err) => {
+            console.warn('[EmailSlice] metadata fetch failed for', t.id, err.message);
+            return {
+              threadId: t.id,
+              subject: '',
+              from: '',
+              date: '',
+              messageCount: null,
+              snippet: t.snippet || '',
+            };
+          })
+        )
+      );
+
+      const targetSubject = normalizeSubject(subject);
+      const candidates = targetSubject
+        ? enriched.filter((t) => normalizeSubject(t.subject) === targetSubject)
+        : enriched;
+
+      const sorted = [...candidates].filter((t) => t.date).sort((a, b) => {
+        const da = new Date(a.date);
+        const db = new Date(b.date);
+        const diff = (isNaN(db) || isNaN(da)) ? 0 : db - da;
+        if (diff !== 0) return diff;
+        return String(b.threadId).localeCompare(String(a.threadId));
+      });
+
+      const newest = sorted[0] || enriched.find((t) => t.date) || enriched[0];
+      return newest?.threadId || null;
+    } catch (err) {
+      console.warn('[EmailSlice] resolveActiveThreadFromCustomerThreads error:', err.message);
+      return null;
+    }
+  };
+}
 
 export const fetchCustomerThreads = (customerEmail) => async (dispatch) => {
   const token = await dispatch(ensureGmailToken());
