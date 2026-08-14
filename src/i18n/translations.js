@@ -89,6 +89,7 @@ const baseDictionary = {
     history: {
       title: 'Case History',
       aiSummary: 'AI Customer Summary',
+      riskAlert: 'Risk detected',
       empty: 'No history events available.',
       entry: 'Interaction',
       customerSource: 'Customer source: {{source}}',
@@ -206,6 +207,9 @@ const baseDictionary = {
     },
     thread: {
       title: 'Email Threads',
+      currentInteraction: 'Current interaction',
+      jumpToInteraction: 'Jump to interaction thread',
+      draft: 'Draft',
     },
     attachments: {
       title: 'Attachments',
@@ -222,6 +226,7 @@ const baseDictionary = {
       suggestedReply: 'Suggested Reply',
       useReply: 'Use this reply',
       previousVersions: 'Previous versions',
+      riskAlert: 'Risk detected',
       chips: {
         label: 'Quick start:',
         confirm: 'Confirming your request…',
@@ -340,6 +345,7 @@ const baseDictionary = {
       saving: 'Saving draft…',
       saved: 'Draft saved',
       resumed: 'Resumed draft',
+      unsaved: 'Draft not saved',
     },
     wrapupSummary: {
       title: 'Wrap-up summary',
@@ -520,6 +526,9 @@ const baseDictionary = {
     clearAll: 'Clear all',
     directionInbound: 'inbound',
     directionOutbound: 'outbound',
+    openCallTranscript: 'Open call transcript',
+    openEmail: 'Open email',
+    openChat: 'Open chat',
     metrics: {
       ivr: 'IVR',
       queue: 'Queue',
@@ -605,6 +614,19 @@ const baseDictionary = {
     wrapUp: {
       title: 'Wrap-up',
       note: 'Agent note',
+    },
+    export: {
+      title: 'Export transcript',
+      documentTitle: 'Voice call transcript {{callId}}',
+      generatedAt: 'Generated:',
+      metadata: 'Call metadata',
+      filePrefix: 'voice-transcript',
+      callId: 'Call ID',
+      customer: 'Customer',
+      phone: 'Phone number',
+      started: 'Started',
+      duration: 'Duration',
+      direction: 'Direction',
     },
   },
   chat: {
@@ -762,6 +784,7 @@ const deDictionary = {
     history: {
       title: 'Fallverlauf',
       aiSummary: 'KI-Kundenzusammenfassung',
+      riskAlert: 'Risiko erkannt',
       empty: 'Keine Verlaufsereignisse verfügbar.',
       entry: 'Interaktion',
       customerSource: 'Kundenquelle: {{source}}',
@@ -877,6 +900,9 @@ const deDictionary = {
     },
     thread: {
       title: 'E-Mail-Threads',
+      currentInteraction: 'Aktuelle Interaktion',
+      jumpToInteraction: 'Zum Interaktions-Thread springen',
+      draft: 'Entwurf',
     },
     attachments: {
       title: 'Anhänge',
@@ -893,6 +919,7 @@ const deDictionary = {
       suggestedReply: 'Vorgeschlagene Antwort',
       useReply: 'Diese Antwort verwenden',
       previousVersions: 'Frühere Versionen',
+      riskAlert: 'Risiko erkannt',
       chips: {
         label: 'Schnellstart:',
         confirm: 'Ihre Anfrage bestätigen…',
@@ -1011,6 +1038,7 @@ const deDictionary = {
       saving: 'Entwurf wird gespeichert…',
       saved: 'Entwurf gespeichert',
       resumed: 'Entwurf fortgesetzt',
+      unsaved: 'Entwurf nicht gespeichert',
     },
     wrapupSummary: {
       title: 'Nachbearbeitungs-Zusammenfassung',
@@ -1190,6 +1218,10 @@ const deDictionary = {
     clearAll: 'Alle löschen',
     directionInbound: 'eingehend',
     directionOutbound: 'ausgehend',
+    openCallTranscript: 'Anrufprotokoll öffnen',
+    openEmail: 'E-Mail öffnen',
+    openChat: 'Chat öffnen',
+    riskAlert: 'Risiko erkannt',
     metrics: {
       ivr: 'IVR',
       queue: 'Warteschlange',
@@ -1275,6 +1307,19 @@ const deDictionary = {
     wrapUp: {
       title: 'Nachbearbeitung',
       note: 'Agentennotiz',
+    },
+    export: {
+      title: 'Transkript exportieren',
+      documentTitle: 'Sprachanruf-Transkript {{callId}}',
+      generatedAt: 'Erstellt:',
+      metadata: 'Anrufmetadaten',
+      filePrefix: 'voice-transcript',
+      callId: 'Anruf-ID',
+      customer: 'Kunde',
+      phone: 'Telefonnummer',
+      started: 'Beginn',
+      duration: 'Dauer',
+      direction: 'Richtung',
     },
   },
   chat: {
@@ -1432,6 +1477,7 @@ const csDictionary = {
     history: {
       title: 'Historie případu',
       aiSummary: 'AI shrnutí zákazníka',
+      riskAlert: 'Riziko detekováno',
       empty: 'Nejsou dostupné žádné události z historie.',
       entry: 'Interakce',
       customerSource: 'Zdroj zákazníka: {{source}}',
@@ -1547,6 +1593,9 @@ const csDictionary = {
     },
     thread: {
       title: 'Vlákna',
+      currentInteraction: 'Aktuální interakce',
+      jumpToInteraction: 'Přejít na vlákno interakce',
+      draft: 'Koncept',
     },
     attachments: {
       title: 'Přílohy',
@@ -1563,6 +1612,7 @@ const csDictionary = {
       suggestedReply: 'Navrhovaná odpověď',
       useReply: 'Použít tuto odpověď',
       previousVersions: 'Předchozí verze',
+      riskAlert: 'Riziko detekováno',
       chips: {
         label: 'Rychlý start:',
         confirm: 'Potvrzuji váš požadavek…',
@@ -1681,6 +1731,7 @@ const csDictionary = {
       saving: 'Ukládám koncept…',
       saved: 'Koncept uložen',
       resumed: 'Obnovený koncept',
+      unsaved: 'Koncept není uložen',
     },
     wrapupSummary: {
       title: 'Shrnutí dokončení',
@@ -1860,6 +1911,10 @@ const csDictionary = {
     clearAll: 'Vymazat vše',
     directionInbound: 'příchozí',
     directionOutbound: 'odchozí',
+    openCallTranscript: 'Otevřít přepis hovoru',
+    openEmail: 'Otevřít e-mail',
+    openChat: 'Otevřít chat',
+    riskAlert: 'Riziko detekováno',
     metrics: {
       ivr: 'IVR',
       queue: 'Fronta',
@@ -1945,6 +2000,19 @@ const csDictionary = {
     wrapUp: {
       title: 'Vyhodnocení',
       note: 'Poznámka agenta',
+    },
+    export: {
+      title: 'Exportovat přepis',
+      documentTitle: 'Přepis hlasového hovoru {{callId}}',
+      generatedAt: 'Vygenerováno:',
+      metadata: 'Metadata hovoru',
+      filePrefix: 'voice-transcript',
+      callId: 'ID hovoru',
+      customer: 'Zákazník',
+      phone: 'Telefonní číslo',
+      started: 'Začátek',
+      duration: 'Délka',
+      direction: 'Směr',
     },
   },
   chat: {

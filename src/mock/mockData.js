@@ -414,6 +414,17 @@ const EN = {
     },
     aiSummary: `Sarah Johnson (ACME Corp Ltd, Finance Manager) is a high-value customer with a pattern of payment processing issues. Current active case ${REF.case1} is her third escalation for Invoice #${REF.invoice} (${REF.amount}). History shows 2 prior resolved cases (card block, SEPA delay) and an open login issue. Sentiment is urgent — immediate payment team escalation and proactive callback recommended.`,
   },
+  jdsAiSummaryRiskEvent: {
+    type: 'email:ai-summary',
+    id: 'mock-jds-risk-001',
+    timestamp: Date.now() - 120_000,
+    data: {
+      summary: `Risky: repeated payment failure for Invoice #${REF.invoice} (${REF.amount}). Customer may be escalating fraudulently. Verify account and SEPA details before refunding.`,
+      riskDetected: true,
+      messageId: '<mock-msg-001>',
+      taskId: 'mock-email-task-001',
+    },
+  },
 
   email: {
     activeEmail: {
@@ -438,6 +449,8 @@ const EN = {
       category: 'Payment Issue', sentiment: 'urgent', confidence: 0.94,
       suggestedReply: `Dear Sarah, thank you for your follow-up. I have escalated your case (ref: INC-20250605-4421) to our payments investigation team as a priority. A senior specialist will contact you directly within 2 business hours. We sincerely apologise for the inconvenience and delay.`,
       source: 'ai',
+      riskDetected: true,
+      riskMessageId: 'mock-msg-001',
     },
     customerThreads: [
       { threadId: 'mock-thread-mortgage', statusKey: 'resolved', topicKey: 'general', subject: 'Gold tier offer — mortgage refinancing at 3.9% fixed', date: 'Jun 4, 2025', snippet: 'Rate comparison and ESIS illustration requested.' },

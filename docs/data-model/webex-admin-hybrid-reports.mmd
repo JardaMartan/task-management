@@ -1,0 +1,71 @@
+erDiagram
+    ORGANIZATION {
+        string id PK
+    }
+    RESOURCEGROUP {
+        string id PK
+        string name
+        string orgId FK
+    }
+    HYBRIDCLUSTER {
+        string id PK
+        string name
+        string orgId FK
+    }
+    HYBRIDCONNECTOR {
+        string id PK
+        string name
+        string clusterId FK
+        string orgId FK
+        string state
+    }
+    PERSON {
+        string id PK
+        string displayName
+    }
+    REPORT {
+        string id PK
+        string name
+        string status
+        string created
+        string start
+        string end
+        string templateId FK
+        string siteUrl
+        string creatorId FK
+    }
+    REPORTTEMPLATE {
+        string id PK
+        string name
+        string service
+        string category
+    }
+    ADMINAUDITEVENT {
+        string id PK
+        string actorId FK
+        string targetId
+        string targetType
+        string eventCategory
+        string action
+        string created
+        object data
+    }
+    EVENT {
+        string id PK
+        string actorId FK
+        string resource
+        string resourceId
+        string type
+        string created
+        object data
+    }
+
+    ORGANIZATION ||--o{ RESOURCEGROUP : has
+    ORGANIZATION ||--o{ HYBRIDCLUSTER : has
+    ORGANIZATION ||--o{ REPORT : has
+    RESOURCEGROUP ||--o{ HYBRIDCLUSTER : serves
+    HYBRIDCLUSTER ||--o{ HYBRIDCONNECTOR : contains
+    PERSON ||--o{ REPORT : creates
+    PERSON ||--o{ ADMINAUDITEVENT : performs
+    PERSON ||--o{ EVENT : performs
+    REPORT }o--|| REPORTTEMPLATE : from

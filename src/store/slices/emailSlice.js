@@ -5,6 +5,7 @@ import {
   fetchGmailToken as apiFetchGmailToken,
   fetchEmailThread as apiFetchEmailThread,
   fetchEmailThreadMetadata as apiFetchEmailThreadMetadata,
+  fetchEmailMessage as apiFetchEmailMessage,
   fetchCustomerEmailThreads as apiFetchCustomerEmailThreads,
   findGmailThreadByRfcMessageId as apiFindGmailThreadByRfcMessageId,
   findGmailThreadBySubjectAndSender as apiFindGmailThreadBySubjectAndSender,
@@ -14,6 +15,7 @@ import {
   updateGmailDraft as apiUpdateGmailDraft,
   deleteGmailDraft as apiDeleteGmailDraft,
   findGmailDraftForThread as apiFindGmailDraftForThread,
+  fetchGmailDraftList as apiFetchGmailDraftList,
   publishCloudEvent,
   fetchJourneyEvents,
   getTaskSummary,
@@ -32,11 +34,94 @@ const initInFlight = new Set();
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
+/**
+ * Normalise a CAD risk value that may be delivered as a boolean, string, or number.
+ * Treats only explicit "true"/1/"1"/"yes" as risky; everything else (including the
+ * string "false" and null/undefined) is treated as not risky.
+ */
+export const parseRiskValue = (raw) => {
+  if (typeof raw === 'boolean') return raw;
+  if (raw == null) return false;
+  const s = String(raw).toLowerCase();
+  return s === 'true' || s === '1' || s === 'yes';
+};
+
 const generateCorrelationId = () =>
   'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0;
     return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
   });
+
+// Empty draft cache entry shape. Kept as a factory so every thread starts
+// with a stable initial object if not already cached.
+const emptyThreadDraft = () => ({
+  aiReplyDraft: '',
+  gmailDraftId: null,
+  draftSync: { status: null, savedAt: null, resumed: false },
+  aiProofreadResult: null,
+  emailTouched: false,
+  lastSentReply: null,
+  pendingComposerInsert: null,
+});
+
+/**
+ * Snapshot / restore helper for per-thread draft state.
+ *
+ * Why: within a single interaction the agent may browse several email threads
+ * from the left panel.  The scalar `aiReplyDraft` / `gmailDraftId` / `draftSync`
+ * fields were global, so the same in-progress draft was shown on every thread.
+ *
+ * Strategy:
+ *   - We keep a serializable map `draftsByThreadId` keyed by Gmail threadId.
+ *   - When the activeEmail (reply target) changes to a different threadId,
+ *     `swapThreadDraftContext` stashes the OLD thread's draft into the map
+ *     and restores the NEW thread's draft to the scalar working fields.
+ *   - The composer and thunks continue to read/write the scalar fields, so no
+ *     component needs to know about the map.
+ *   - On task switch / full reset the map is cleared.
+ */
+const getThreadDraft = (state, threadId) =>
+  (threadId && state.draftsByThreadId?.[threadId]) || emptyThreadDraft();
+
+const setThreadDraft = (state, threadId, patch) => {
+  if (!threadId) return;
+  const base = state.draftsByThreadId?.[threadId] || emptyThreadDraft();
+  state.draftsByThreadId[threadId] = { ...base, ...patch };
+};
+
+const swapThreadDraftContext = (state, nextThreadId) => {
+  const prevThreadId = state.activeEmail?.threadId || null;
+  if (prevThreadId === nextThreadId) return;
+
+  // Stash the outgoing thread's working draft fields
+  if (prevThreadId) {
+    setThreadDraft(state, prevThreadId, {
+      aiReplyDraft: state.aiReplyDraft,
+      gmailDraftId: state.gmailDraftId,
+      draftSync: state.draftSync,
+      aiProofreadResult: state.aiProofreadResult,
+      emailTouched: state.emailTouched,
+      lastSentReply: state.lastSentReply,
+      pendingComposerInsert: state.pendingComposerInsert,
+    });
+  }
+
+  // Restore the incoming thread's draft, or blank defaults
+  const next = getThreadDraft(state, nextThreadId);
+  state.aiReplyDraft = next.aiReplyDraft;
+  state.gmailDraftId = next.gmailDraftId;
+  state.draftSync = next.draftSync;
+  state.aiProofreadResult = next.aiProofreadResult;
+  state.emailTouched = next.emailTouched;
+  state.lastSentReply = next.lastSentReply;
+  state.pendingComposerInsert = next.pendingComposerInsert ?? null;
+
+  // Ensure the incoming thread has a cache row (important for setters that run
+  // immediately afterwards, and for threads with blank defaults).
+  if (nextThreadId && !state.draftsByThreadId[nextThreadId]) {
+    state.draftsByThreadId[nextThreadId] = emptyThreadDraft();
+  }
+};
 
 /**
  * Decode RFC 2047 MIME encoded-words (=?charset?B/Q?text?=) in email headers.
@@ -146,6 +231,7 @@ const initialState = {
   activeInteractionId: null,
   customerEmail: null,          // customer email address for the active task
   resolvedThreadId: null,   // cached Gmail threadId to skip repeated searches on tab re-visits
+  interactionThreadId: null, // Gmail threadId tied to the current interaction (for jump-back marker)
   gmailDraftId: null,       // Gmail draft id for the active thread (agent-to-agent handoff)
   draftSync: { status: null, savedAt: null, resumed: false }, // status: null|saving|saved|error
   lastSentReply: null,      // plain-text of the last reply sent (input for the wrap-up summary)
@@ -178,8 +264,17 @@ const initialState = {
   error: null,
   slaExpiresAt: null,       // SLA expiry (epoch ms) for the active email task; null = unknown
   emailTouched: false,      // agent has started working on this task (drafted a reply)
+  // CAD-driven risk flag (e.g. Jmartan_Riziko boolean). Independent from JDS AI risk.
+  cadRiskDetected: false,
+  // True when the CAD layer is currently providing a Jmartan_Riziko value,
+  // even if that value is explicitly false. Used by the UI to prefer CAD over
+  // JDS-derived risk; when CAD is not available, JDS becomes the fallback.
+  cadRiskAvailable: false,
   // Navigation-panel live customer lookup (search by email/phone, no active task).
   manualSearch: { status: 'idle', identity: null }, // status: idle|searching|found|notfound|error
+  // Per-thread composer draft cache so that switching threads within the same
+  // interaction does not show the same draft on every thread.
+  draftsByThreadId: {},
 };
 
 const emailSlice = createSlice({
@@ -193,7 +288,10 @@ const emailSlice = createSlice({
       state.geminiToken = action.payload;
     },
     setActiveEmail: (state, action) => {
-      state.activeEmail = action.payload;
+      const next = action.payload;
+      const nextThreadId = next?.threadId || null;
+      swapThreadDraftContext(state, nextThreadId);
+      state.activeEmail = next;
     },
     setActiveInteractionId: (state, action) => {
       state.activeInteractionId = action.payload;
@@ -201,14 +299,40 @@ const emailSlice = createSlice({
     setResolvedThreadId: (state, action) => {
       state.resolvedThreadId = action.payload;
     },
+    setInteractionThreadId: (state, action) => {
+      state.interactionThreadId = action.payload;
+    },
     setGmailDraftId: (state, action) => {
       state.gmailDraftId = action.payload;
+      const threadId = state.activeEmail?.threadId;
+      setThreadDraft(state, threadId, { gmailDraftId: action.payload });
+      // Mirror the draft flag into the visible thread list metadata so the
+      // pill appears (or disappears) without requiring a separate thread reload.
+      if (threadId) {
+        const idx = state.customerThreads.findIndex((t) => t.threadId === threadId);
+        if (idx >= 0) {
+          state.customerThreads[idx] = { ...state.customerThreads[idx], hasDraft: Boolean(action.payload) };
+        }
+      }
     },
     setDraftSync: (state, action) => {
-      state.draftSync = { ...state.draftSync, ...action.payload };
+      const next = { ...state.draftSync, ...action.payload };
+      state.draftSync = next;
+      const threadId = state.activeEmail?.threadId;
+      setThreadDraft(state, threadId, { draftSync: next });
+      // Mirror the draft flag into the visible thread list metadata so the
+      // active (or any selected) thread shows the draft pill immediately.
+      if (threadId) {
+        const hasDraft = next.status === 'saved' || next.status === 'saving' || next.resumed;
+        const idx = state.customerThreads.findIndex((t) => t.threadId === threadId);
+        if (idx >= 0) {
+          state.customerThreads[idx] = { ...state.customerThreads[idx], hasDraft };
+        }
+      }
     },
     setLastSentReply: (state, action) => {
       state.lastSentReply = action.payload;
+      setThreadDraft(state, state.activeEmail?.threadId, { lastSentReply: action.payload });
     },
     setWrapUpSummary: (state, action) => {
       state.wrapUpSummary = { ...state.wrapUpSummary, ...action.payload };
@@ -221,6 +345,16 @@ const emailSlice = createSlice({
     },
     setThread: (state, action) => {
       state.thread = action.payload;
+    },
+    appendThreadMessages: (state, action) => {
+      const incoming = action.payload || [];
+      if (!Array.isArray(incoming) || incoming.length === 0) return;
+      const existingIds = new Set(state.thread.map((m) => m.messageId));
+      const newMessages = incoming.filter((m) => m?.messageId && !existingIds.has(m.messageId));
+      if (newMessages.length === 0) return;
+      state.thread = [...state.thread, ...newMessages].sort(
+        (a, b) => new Date(a.date || 0) - new Date(b.date || 0)
+      );
     },
     setCustomerThreads: (state, action) => {
       state.customerThreads = action.payload;
@@ -261,17 +395,26 @@ const emailSlice = createSlice({
     },
     setAiReplyDraft: (state, action) => {
       state.aiReplyDraft = action.payload;
+      let touched = state.emailTouched;
       // Latch "touched" once the agent has actual reply text — drives the
       // New/Draft indicator and suppresses SLA auto-requeue.
       if (String(action.payload || '').replace(/<[^>]+>/g, '').trim()) {
         state.emailTouched = true;
+        touched = true;
       }
+      setThreadDraft(state, state.activeEmail?.threadId, {
+        aiReplyDraft: action.payload,
+        emailTouched: touched,
+      });
     },
     setPendingComposerInsert: (state, action) => {
       // action.payload is the HTML/text to insert at the composer cursor, or null to clear.
-      state.pendingComposerInsert = action.payload
+      const next = action.payload
         ? { html: action.payload, nonce: Date.now() }
         : null;
+      state.pendingComposerInsert = next;
+      // One-shot insert payload is thread-scoped so it survives context swaps.
+      setThreadDraft(state, state.activeEmail?.threadId, { pendingComposerInsert: next });
     },
     setTemplates: (state, action) => {
       state.templates = action.payload;
@@ -284,12 +427,22 @@ const emailSlice = createSlice({
     },
     setAiProofreadResult: (state, action) => {
       state.aiProofreadResult = action.payload;
+      setThreadDraft(state, state.activeEmail?.threadId, { aiProofreadResult: action.payload });
     },
     setIsCorrectingGrammar: (state, action) => {
       state.isCorrectingGrammar = action.payload;
     },
     setKnowledgeSources: (state, action) => {
       state.knowledgeSources = action.payload;
+    },
+    setDraftsByThreadId: (state, action) => {
+      state.draftsByThreadId = action.payload || {};
+    },
+    setThreadDraftCache: (state, action) => {
+      const { threadId, patch } = action.payload || {};
+      if (!threadId) return;
+      const base = state.draftsByThreadId?.[threadId] || emptyThreadDraft();
+      state.draftsByThreadId[threadId] = { ...base, ...patch };
     },
     setPendingCorrelationId: (state, action) => {
       state.pendingCorrelationId = action.payload;
@@ -318,11 +471,34 @@ const emailSlice = createSlice({
     setError: (state, action) => {
       state.error = action.payload;
     },
+    setCadRiskDetected: (state, action) => {
+      // Payload can be a plain boolean (legacy) or { detected, available }.
+      // A missing availability flag defaults to true when a non-null object is
+      // provided, and to false for legacy boolean payloads.
+      const payload = action.payload;
+      if (payload && typeof payload === 'object' && 'detected' in payload) {
+        state.cadRiskDetected = Boolean(payload.detected);
+        state.cadRiskAvailable = 'available' in payload ? Boolean(payload.available) : true;
+      } else {
+        state.cadRiskDetected = Boolean(payload);
+        state.cadRiskAvailable = payload != null;
+      }
+    },
     setSlaExpiresAt: (state, action) => {
       state.slaExpiresAt = action.payload;
     },
     setEmailTouched: (state, action) => {
-      state.emailTouched = Boolean(action.payload);
+      const next = Boolean(action.payload);
+      state.emailTouched = next;
+      const threadId = state.activeEmail?.threadId;
+      setThreadDraft(state, threadId, { emailTouched: next });
+      // Any touched composer counts as a draft for the thread list badge.
+      if (threadId && next) {
+        const idx = state.customerThreads.findIndex((t) => t.threadId === threadId);
+        if (idx >= 0) {
+          state.customerThreads[idx] = { ...state.customerThreads[idx], hasDraft: true };
+        }
+      }
     },
     setManualSearch: (state, action) => {
       state.manualSearch = {
@@ -331,44 +507,57 @@ const emailSlice = createSlice({
       };
     },
     resetEmail: () => ({ ...initialState }),
-    resetEmailContent: (state) => ({
+    resetEmailContent: (state) => {
       // Preserves everything that was loaded for the current task so that
       // switching to another tab and back does NOT trigger a full reload:
       //   - customerHistory / interactionSummaries  → History tab
       //   - thread / activeEmail / aiEnrichment / customerThreads → Email reading pane
       //   - gmailToken / activeInteractionId / resolvedThreadId / lastHistoryId → Gmail state
-      // Only volatile UI state (wrapUp, sending, errors, drafts) is reset.
-      ...initialState,
-      gmailToken: state.gmailToken,
-      geminiToken: state.geminiToken,
-      activeInteractionId: state.activeInteractionId,
-      customerEmail: state.customerEmail,
-      resolvedThreadId: state.resolvedThreadId,
-      lastHistoryId: state.lastHistoryId,
-      thread: state.thread,
-      activeEmail: state.activeEmail,
-      aiEnrichment: state.aiEnrichment,
-      customerThreads: state.customerThreads,
-      customerHistory: state.customerHistory,
-      customerIdentities: state.customerIdentities,
-      customerProfile: state.customerProfile,
-      interactionSummaries: state.interactionSummaries,
-      // Preserve the SLA countdown across tab switches
-      slaExpiresAt: state.slaExpiresAt,
-      // Preserve the touched/Draft state across tab switches
-      emailTouched: state.emailTouched,
-      // Persist config-level lists across tab switches
-      templates: state.templates,
-      signatures: state.signatures,
-      activeSignatureId: state.activeSignatureId,
-      // Preserve the in-progress reply + its Gmail draft link across tab switches
-      // (a genuine task switch clears these explicitly in initEmailTask).
-      aiReplyDraft: state.aiReplyDraft,
-      gmailDraftId: state.gmailDraftId,
-      draftSync: state.draftSync,
-      lastSentReply: state.lastSentReply,
-      wrapUpSummary: state.wrapUpSummary,
-    }),
+      // Only volatile UI state (wrapUp, sending, errors) is reset.
+      //
+      // The per-thread draft cache is preserved across tab switches; because
+      // activeEmail is also preserved, the current thread's draft remains in the
+      // scalar working fields.  On a genuine interaction change, initEmailTask
+      // clears the cache via resetEmail.
+      return {
+        ...initialState,
+        gmailToken: state.gmailToken,
+        geminiToken: state.geminiToken,
+        activeInteractionId: state.activeInteractionId,
+        customerEmail: state.customerEmail,
+        resolvedThreadId: state.resolvedThreadId,
+        interactionThreadId: state.interactionThreadId,
+        lastHistoryId: state.lastHistoryId,
+        thread: state.thread,
+        activeEmail: state.activeEmail,
+        aiEnrichment: state.aiEnrichment,
+        customerThreads: state.customerThreads,
+        customerHistory: state.customerHistory,
+        customerIdentities: state.customerIdentities,
+        customerProfile: state.customerProfile,
+        interactionSummaries: state.interactionSummaries,
+        // Preserve the SLA countdown across tab switches
+        slaExpiresAt: state.slaExpiresAt,
+        // Persist config-level lists across tab switches
+        templates: state.templates,
+        signatures: state.signatures,
+        activeSignatureId: state.activeSignatureId,
+        // Preserve the in-progress reply + its Gmail draft link across tab switches
+        // (a genuine task switch clears these explicitly in initEmailTask).
+        aiReplyDraft: state.aiReplyDraft,
+        gmailDraftId: state.gmailDraftId,
+        draftSync: state.draftSync,
+        lastSentReply: state.lastSentReply,
+        wrapUpSummary: state.wrapUpSummary,
+        aiProofreadResult: state.aiProofreadResult,
+        emailTouched: state.emailTouched,
+        // Preserve CAD-driven risk flag across tab switches so the alert stays visible.
+        cadRiskDetected: state.cadRiskDetected,
+        cadRiskAvailable: state.cadRiskAvailable,
+        // Preserve the whole per-thread draft cache
+        draftsByThreadId: state.draftsByThreadId,
+      };
+    },
     setMockEmailData: (state, action) => {
       // payload can be a locale string (legacy) or { locale, taskId }
       const locale = typeof action.payload === 'string' ? action.payload : (action.payload?.locale || 'en');
@@ -379,7 +568,6 @@ const emailSlice = createSlice({
       state.activeEmail    = emailData.activeEmail;
       state.thread         = emailData.thread;
       state.aiEnrichment   = emailData.aiEnrichment;
-      state.aiReplyDraft   = '';
       state.customerThreads = emailData.customerThreads;
       state.isFetchingToken = false;
       state.isFetchingEmail = false;
@@ -387,13 +575,35 @@ const emailSlice = createSlice({
       state.wrapUp = { submitted: false, reason: '', notes: '' };
       // Demo SLA countdown: ~8.5 minutes out so the timer is visible in mock mode.
       state.slaExpiresAt = Date.now() + Math.round(8.5 * 60 * 1000);
-      state.emailTouched = false;
+      // Reset working draft fields and the per-thread cache for a fresh mock task.
+      state.aiReplyDraft   = '';
+      state.gmailDraftId   = null;
+      state.draftSync      = { status: null, savedAt: null, resumed: false };
+      state.aiProofreadResult = null;
+      state.emailTouched   = false;
+      state.lastSentReply  = null;
+      state.draftsByThreadId = {};
       // Load templates, signatures, KB from mock data (locale-aware)
       if (m.emailComposer) {
         state.templates  = m.emailComposer.templates  || [];
         state.signatures = m.emailComposer.signatures || [];
         state.activeSignatureId = m.emailComposer.defaultSignatureId || null;
       }
+    },
+    switchMockEmailThread: (state, action) => {
+      // Demo-only thread switch: swap to another mock thread without wiping
+      // the per-thread draft cache, so A→B→A restores the original draft.
+      const { locale, taskId } = action.payload || {};
+      const m = getMockData(locale || 'en');
+      const emailData = (taskId && m.emails?.[taskId]) || m.email;
+      const nextThreadId = emailData?.activeEmail?.threadId || null;
+      swapThreadDraftContext(state, nextThreadId);
+      state.activeEmail    = emailData.activeEmail || null;
+      state.thread         = emailData.thread || [];
+      state.aiEnrichment   = emailData.aiEnrichment || null;
+      state.customerThreads = emailData.customerThreads || [];
+      state.error          = null;
+      state.isFetchingEmail = false;
     },
   },
 });
@@ -405,12 +615,14 @@ export const {
   setActiveInteractionId,
   setCustomerEmail,
   setResolvedThreadId,
+  setInteractionThreadId,
   setGmailDraftId,
   setDraftSync,
   setLastSentReply,
   setWrapUpSummary,
   setLastHistoryId,
   setThread,
+  appendThreadMessages,
   setCustomerThreads,
   setCustomerHistory,
   setCustomerHistoryMeta,
@@ -418,6 +630,7 @@ export const {
   setCustomerIdentities,
   setCustomerProfile,
   setAiEnrichment,
+  setCadRiskDetected,
   setAiReplyDraft,
   setPendingComposerInsert,
   setTemplates,
@@ -438,9 +651,12 @@ export const {
   setSlaExpiresAt,
   setEmailTouched,
   setManualSearch,
+  setDraftsByThreadId,
+  setThreadDraftCache,
   resetEmail,
   resetEmailContent,
   setMockEmailData,
+  switchMockEmailThread,
   setInteractionSummary,
 } = emailSlice.actions;
 
@@ -547,7 +763,13 @@ export const initEmailTask =
     // switches tabs and comes back, and also guards against the effect
     // double-firing on initial mount.
     if (prevId === interactionId && prevState.thread.length > 0) {
-      console.log('[EmailSlice] initEmailTask: task already loaded, skipping re-initialization');
+      console.log('[EmailSlice] initEmailTask: task already loaded, skipping re-initialization', {
+        interactionId,
+        resolvedThreadId: prevState.resolvedThreadId,
+        activeThreadId: prevState.activeEmail?.threadId,
+        threadLength: prevState.thread.length,
+        callAssociatedThreadId: callAssociatedDetails?.gmailThreadId || callAssociatedDetails?.threadId || null,
+      });
       // Re-check AI summary if it's not loaded yet (handles the case where the JDS event
       // was written after the initial load, or a previous lookup missed due to wrong identity).
       if (!prevState.aiEnrichment) {
@@ -583,6 +805,7 @@ export const initEmailTask =
       dispatch(setAiEnrichment(null));
       dispatch(setCustomerEmail(null));
       dispatch(setResolvedThreadId(null));
+      dispatch(setInteractionThreadId(null));
       dispatch(setLastHistoryId(null));
       // Reset transfer draft + wrap-up summary state for the new task.
       dispatch(setGmailDraftId(null));
@@ -591,6 +814,13 @@ export const initEmailTask =
       dispatch(setWrapUpSummary({ status: 'idle', text: '' }));
       dispatch(setAiReplyDraft(''));
       dispatch(setAiProofreadResult(null));
+      dispatch(setEmailTouched(false));
+      dispatch(setCadRiskDetected({ detected: false, available: false }));
+      // Task switch: discard the per-thread draft cache from the previous task.
+      // Mutating state inside a thunk is fine in Redux Toolkit because the slice
+      // is written with Immer, but `state` here is a local ref so we assign via
+      // the dispatch helpers to stay consistent.
+      dispatch(setDraftsByThreadId({}));
     }
     dispatch(setActiveInteractionId(interactionId));
 
@@ -642,10 +872,22 @@ export const initEmailTask =
           sentiment: cadSentiment,
           confidence: callAssociatedDetails?.aiConfidence || null,
           suggestedReply: callAssociatedDetails?.aiSuggestedReply || null,
+          // CAD may also carry the risk flag. Default to false when absent.
+          riskDetected: parseRiskValue(callAssociatedDetails?.riskDetected),
           source: 'cad',
         })
       );
     }
+
+    // Seed CAD-driven risk flag immediately so the reading pane can highlight
+    // the active message even before the poll sees a live task-map update.
+    // The CAD variable may arrive as a string "true"/"false" or as a boolean.
+    const rawRiskValue = callAssociatedDetails?.Jmartan_Riziko ?? callAssociatedDetails?.jmartan_riziko ?? null;
+    const cadRiskAvailable = rawRiskValue != null && rawRiskValue !== '';
+    const cadRiskValue = typeof rawRiskValue === 'boolean'
+      ? rawRiskValue
+      : String(rawRiskValue).toLowerCase() === 'true';
+    dispatch(setCadRiskDetected({ detected: cadRiskValue, available: cadRiskAvailable }));
 
     // Prefer gmailThreadId (mapped by Webex Connect flow once configured),
     // fall back to legacy threadId field name, then Redux-cached resolvedThreadId.
@@ -757,7 +999,11 @@ export const initEmailTask =
 
     console.log('[EmailSlice] Resolved threadId:', resolvedThreadId, '| customerEmail:', customerEmail);
     // Cache the resolved threadId so future tab re-visits skip the Gmail search.
-    if (resolvedThreadId) dispatch(setResolvedThreadId(resolvedThreadId));
+    // Also remember it as the interaction-related thread for jump-back / highlighting.
+    if (resolvedThreadId) {
+      dispatch(setResolvedThreadId(resolvedThreadId));
+      dispatch(setInteractionThreadId(resolvedThreadId));
+    }
     await Promise.all([
       resolvedThreadId ? dispatch(fetchEmailThread(resolvedThreadId)) : Promise.resolve(),
       customerEmail ? dispatch(fetchCustomerThreads(customerEmail)) : Promise.resolve(),
@@ -791,13 +1037,19 @@ export const fetchMockEmailThread = (threadId, locale) => (dispatch) => {
   );
   if (match) {
     const [taskId] = match;
-    dispatch(setMockEmailData({ locale: locale || 'en', taskId: taskId === 'default' ? null : taskId }));
+    dispatch(switchMockEmailThread({ locale: locale || 'en', taskId: taskId === 'default' ? null : taskId }));
   }
 };
 
 export const fetchEmailThread = (threadId) => async (dispatch, getState) => {
   const token = await dispatch(ensureGmailToken());
   if (!token) return;
+
+  console.log('[EmailSlice] fetchEmailThread start', {
+    threadId,
+    previousActiveThreadId: getState().email.activeEmail?.threadId,
+    resolvedThreadId: getState().email.resolvedThreadId,
+  });
 
   // When the user selects a historical thread from OtherThreadsList (a different
   // thread than the active interaction's thread), clear the AI summary — it was
@@ -823,11 +1075,47 @@ export const fetchEmailThread = (threadId) => async (dispatch, getState) => {
 
     if (messages.length > 0) {
       dispatch(setActiveEmail(messages[messages.length - 1]));
+      console.log('[EmailSlice] fetchEmailThread setActiveEmail', {
+        threadId,
+        messageId: messages[messages.length - 1].messageId,
+        previousActiveThreadId: getState().email.activeEmail?.threadId,
+      });
+    } else {
+      // No messages in the thread: clear the active email but still activate the
+      // thread's own (empty) draft context so the composer doesn't inherit a
+      // different thread's draft.
+      dispatch(setActiveEmail(null));
     }
+
     // Cache the Gmail historyId so incremental updates can be polled cheaply.
     if (threadData.historyId) {
       dispatch(setLastHistoryId(threadData.historyId));
     }
+
+    // Keep the thread list metadata consistent with the full fetch so selecting a
+    // thread does not make it jump to a different sort position (the sidebar uses
+    // the same metadata dates for every entry).
+    const lastMsg = messages[messages.length - 1];
+    const metadataUpdate = {
+      threadId,
+      subject: lastMsg?.subject || '',
+      from: lastMsg?.from || '',
+      date: lastMsg?.date || '',
+      messageCount: messages.length,
+      snippet: lastMsg?.snippet || threadData.snippet || '',
+    };
+    const { customerThreads } = getState().email;
+    const idx = customerThreads.findIndex((t) => t.threadId === threadId);
+    if (idx >= 0) {
+      const next = [...customerThreads];
+      next[idx] = { ...next[idx], ...metadataUpdate };
+      dispatch(setCustomerThreads(next));
+    }
+
+    // Resume any Gmail draft for this thread (agent hand-off or drafts created
+    // externally). For the interaction thread this is also called by
+    // initEmailTask, but running it here makes historical drafts discoverable.
+    dispatch(loadEmailDraftForThread(threadId));
 
     // Per-thread AI summary + suggested reply: match by THIS thread's RFC 822
     // Message-IDs (falls back to the active task only for the active thread), so
@@ -853,11 +1141,29 @@ export const fetchEmailThread = (threadId) => async (dispatch, getState) => {
  * Only re-fetches the thread when Gmail reports new messages added since the
  * last full load (identified by lastHistoryId). Falls back to a full re-fetch
  * if the historyId has expired (>7 days old).
+ *
+ * Important: this polling is about the INTERACTION thread.  The agent may have
+ * manually selected a different historical thread to read.  We must NOT call
+ * fetchEmailThread(resolvedThreadId) blindly because fetchEmailThread ends
+ * with setActiveEmail(lastMessage), which swaps the reading pane (and composer
+ * draft context) back to the interaction thread.  Instead:
+ *   - If the user is currently viewing the interaction thread, append the new
+ *     message(s) to state.thread without changing the active email.
+ *   - If the user is viewing a different thread, only update the interaction
+ *     thread metadata so the thread list can show an unread/new indicator, but
+ *     keep the reading pane where the user left it.
  */
 export const checkGmailThreadUpdates = () => async (dispatch, getState) => {
   const { email } = getState();
-  const { resolvedThreadId, lastHistoryId, activeInteractionId } = email;
+  const { resolvedThreadId, lastHistoryId, activeInteractionId, activeEmail } = email;
   if (!resolvedThreadId || !lastHistoryId || !activeInteractionId) return;
+
+  console.log('[EmailSlice] checkGmailThreadUpdates tick', {
+    resolvedThreadId,
+    activeThreadId: activeEmail?.threadId,
+    activeInteractionId,
+    lastHistoryId,
+  });
 
   const token = await dispatch(ensureGmailToken());
   if (!token) return;
@@ -867,20 +1173,85 @@ export const checkGmailThreadUpdates = () => async (dispatch, getState) => {
       await apiPollGmailThreadHistory(lastHistoryId, resolvedThreadId, token);
 
     if (expired) {
-      // historyId too old — do a full refresh silently
+      // historyId too old — do a full refresh silently, but only if the user is
+      // currently viewing the interaction thread.  If the user has browsed away,
+      // just update metadata and keep the reading pane where it is.
       console.log('[EmailSlice] Gmail historyId expired, doing full thread refresh');
-      await dispatch(fetchEmailThread(resolvedThreadId));
+      const isViewingInteractionThread = activeEmail?.threadId === resolvedThreadId;
+      if (isViewingInteractionThread) {
+        await dispatch(fetchEmailThread(resolvedThreadId));
+      } else {
+        await dispatch(refreshInteractionThreadMetadata());
+      }
       return;
     }
 
     if (newHistoryId) dispatch(setLastHistoryId(newHistoryId));
 
-    if (addedMessageIds.length > 0) {
-      console.log('[EmailSlice] Gmail: new messages detected, refreshing thread', addedMessageIds);
-      await dispatch(fetchEmailThread(resolvedThreadId));
+    if (addedMessageIds.length === 0) return;
+
+    const isViewingInteractionThread = activeEmail?.threadId === resolvedThreadId;
+    console.log('[EmailSlice] Gmail: new messages detected', addedMessageIds, {
+      isViewingInteractionThread,
+    });
+
+    if (isViewingInteractionThread) {
+      // Append each new message to the current thread without changing the
+      // activeEmail (and therefore without swapping draft context).
+      const messages = [];
+      for (const messageId of addedMessageIds) {
+        try {
+          const raw = await apiFetchEmailMessage(messageId, token);
+          const parsed = parseGmailMessage(raw);
+          if (parsed && !parsed.labelIds?.includes('DRAFT')) {
+            messages.push(parsed);
+          }
+        } catch (msgErr) {
+          console.warn('[EmailSlice] Failed to fetch incremental message', messageId, msgErr.message);
+        }
+      }
+      if (messages.length > 0) {
+        dispatch(appendThreadMessages(messages));
+      }
+    } else {
+      // User is reading a different thread: update the interaction thread
+      // metadata in the sidebar, but don't steal the reading pane.
+      await dispatch(refreshInteractionThreadMetadata());
     }
   } catch (err) {
     console.warn('[EmailSlice] checkGmailThreadUpdates error:', err.message);
+  }
+};
+
+/**
+ * Refresh only the metadata (subject/from/date/messageCount) of the interaction
+ * thread so the thread list can reflect new activity.  Does not touch the
+ * active reading pane or composer.
+ */
+const refreshInteractionThreadMetadata = () => async (dispatch, getState) => {
+  const { email } = getState();
+  const { resolvedThreadId } = email;
+  if (!resolvedThreadId) return;
+
+  const token = await dispatch(ensureGmailToken());
+  if (!token) return;
+
+  try {
+    const meta = await apiFetchEmailThreadMetadata(resolvedThreadId, token);
+    console.log('[EmailSlice] refreshInteractionThreadMetadata', {
+      resolvedThreadId,
+      previousActiveThreadId: getState().email.activeEmail?.threadId,
+      meta,
+    });
+    const { customerThreads } = getState().email;
+    const idx = customerThreads.findIndex((t) => t.threadId === meta.threadId);
+    if (idx >= 0) {
+      const next = [...customerThreads];
+      next[idx] = { ...next[idx], ...meta, hasNew: true };
+      dispatch(setCustomerThreads(next));
+    }
+  } catch (err) {
+    console.warn('[EmailSlice] refreshInteractionThreadMetadata error:', err.message);
   }
 };
 
@@ -914,6 +1285,42 @@ export const fetchCustomerThreads = (customerEmail) => async (dispatch) => {
       )
     );
     dispatch(setCustomerThreads(enriched));
+
+    // Pre-fetch the user's Gmail drafts once and flag any thread that already
+    // has a draft. This makes the "draft" pill appear immediately on list load,
+    // including for the active/interaction thread.
+    try {
+      const draftList = await apiFetchGmailDraftList(token);
+      const draftThreadIds = new Set(
+        (draftList.drafts || [])
+          .map((d) => d.message?.threadId)
+          .filter(Boolean)
+      );
+      if (draftThreadIds.size > 0) {
+        const withDraftFlag = enriched.map((t) => ({
+          ...t,
+          hasDraft: draftThreadIds.has(t.threadId),
+        }));
+        dispatch(setCustomerThreads(withDraftFlag));
+
+        // Prime the per-thread draft cache with a minimal "has draft" entry so
+        // ThreadPanel.hasThreadDraft reports true for threads that carry Gmail
+        // drafts even before they are opened.
+        draftThreadIds.forEach((threadId) => {
+          dispatch(setThreadDraftCache({
+            threadId,
+            patch: {
+              aiReplyDraft: '',
+              gmailDraftId: true,
+              draftSync: { status: 'saved', savedAt: Date.now(), resumed: false },
+              emailTouched: true,
+            },
+          }));
+        });
+      }
+    } catch (draftErr) {
+      console.warn('[EmailSlice] draft list pre-fetch failed:', draftErr.message);
+    }
   } catch (err) {
     console.error('[EmailSlice] fetchCustomerThreads error:', err);
   }
@@ -1757,6 +2164,8 @@ export const selectThreadAiSummaries = createSelector(
         ts: eventTs(ev),
         summary: ev.data?.summary || ev.data?.aiSummary || null,
         suggestedReply: ev.data?.suggestedReply || null,
+        riskDetected: parseRiskValue(ev.data?.riskDetected),
+        riskMessageId: normMsgId(ev.data?.messageId),
       }));
   }
 );
@@ -1786,8 +2195,12 @@ export const loadCachedAiSummary = () => (dispatch, getState) => {
   if (cached?.data?.summary || cached?.data?.aiSummary) {
     const summaryText = cached.data.summary || cached.data.aiSummary;
     const suggestedReply = cached.data.suggestedReply || null;
-    console.log('[EmailSlice] Loaded AI summary from JDS cache for open thread');
-    dispatch(setAiEnrichment({ summary: summaryText, suggestedReply, source: 'jds-cache' }));
+    // JDS may flag this message/thread as risky (e.g. fraud, compliance).
+    // If the field is absent we default to false so existing events keep working.
+    const riskDetected = parseRiskValue(cached.data?.riskDetected);
+    const riskMessageId = riskDetected ? normMsgId(cached.data?.messageId) : null;
+    console.log('[EmailSlice] Loaded AI summary from JDS cache for open thread (riskDetected=' + riskDetected + (riskMessageId ? ' messageId=' + riskMessageId : '') + ')');
+    dispatch(setAiEnrichment({ summary: summaryText, suggestedReply, riskDetected, riskMessageId, source: 'jds-cache' }));
   }
 };
 
@@ -1843,8 +2256,10 @@ export const fetchJdsAiSummary = (customerEmail) => async (dispatch, getState) =
     if (cached?.data?.summary || cached?.data?.aiSummary) {
       const summaryText = cached.data.summary || cached.data.aiSummary;
       const suggestedReply = cached.data.suggestedReply || null;
-      console.log('[EmailSlice] Loaded AI summary from JDS for open thread');
-      dispatch(setAiEnrichment({ summary: summaryText, suggestedReply, source: 'jds-cache' }));
+      const riskDetected = parseRiskValue(cached.data?.riskDetected);
+      const riskMessageId = riskDetected ? normMsgId(cached.data?.messageId) : null;
+      console.log('[EmailSlice] Loaded AI summary from JDS for open thread (riskDetected=' + riskDetected + (riskMessageId ? ' messageId=' + riskMessageId : '') + ')');
+      dispatch(setAiEnrichment({ summary: summaryText, suggestedReply, riskDetected, riskMessageId, source: 'jds-cache' }));
     } else if (!activeThreadOpen) {
       // Historical thread with no stored summary — make sure no stale summary lingers.
       dispatch(setAiEnrichment(null));
@@ -2268,17 +2683,73 @@ export const saveEmailDraft = () => async (dispatch, getState) => {
 export const loadEmailDraftForThread = (threadId) => async (dispatch, getState) => {
   if (!threadId) return;
   const { email } = getState();
+
+  // With per-thread draft caching, a resumed draft must go into the cache for
+  // this thread BEFORE it becomes the active thread.  If we are already on the
+  // requested thread, stash the current (empty) state first so the restore path
+  // below has a stable cache row to update.
+  const isTargetActive = email.activeEmail?.threadId === threadId;
+  if (isTargetActive) {
+    dispatch(setThreadDraftCache({
+      threadId,
+      patch: {
+        aiReplyDraft: email.aiReplyDraft,
+        gmailDraftId: email.gmailDraftId,
+        draftSync: email.draftSync,
+        aiProofreadResult: email.aiProofreadResult,
+        emailTouched: email.emailTouched,
+        lastSentReply: email.lastSentReply,
+        pendingComposerInsert: email.pendingComposerInsert,
+      },
+    }));
+  }
+
   // Never clobber an agent who has already started typing on this task.
-  if (String(email.aiReplyDraft || '').replace(/<[^>]+>/g, '').trim()) return;
+  const cached = getThreadDraft(getState().email, threadId);
+  if (String(cached.aiReplyDraft || '').replace(/<[^>]+>/g, '').trim()) return;
   const token = await dispatch(ensureGmailToken());
   if (!token) return;
   try {
     const found = await apiFindGmailDraftForThread(token, threadId);
     if (found?.draftId && (found.html || found.text)) {
-      if (getState().email.resolvedThreadId !== threadId) return; // task switched mid-lookup
-      dispatch(setGmailDraftId(found.draftId));
-      dispatch(setAiReplyDraft(found.html || `<p>${found.text}</p>`));
-      dispatch(setDraftSync({ status: 'saved', savedAt: Date.now(), resumed: true }));
+      // Guard against a stale lookup: only cache the draft if this thread is
+      // still the one being opened (for active) or still known in the sidebar.
+      // Using resolvedThreadId here would reject every historical thread.
+      const { activeEmail, customerThreads } = getState().email;
+      const stillRelevant =
+        activeEmail?.threadId === threadId ||
+        customerThreads.some((t) => t.threadId === threadId);
+      if (!stillRelevant) return;
+      // Write into the cache via a Redux action so the new reference triggers
+      // re-renders of thread-list draft badges, without mutating the currently
+      // active thread's working fields.
+      dispatch(setThreadDraftCache({
+        threadId,
+        patch: {
+          aiReplyDraft: found.html || `<p>${found.text}</p>`,
+          gmailDraftId: found.draftId,
+          draftSync: { status: 'saved', savedAt: Date.now(), resumed: true },
+          emailTouched: true,
+          aiProofreadResult: null,
+          lastSentReply: null,
+          pendingComposerInsert: null,
+        },
+      }));
+      // Ensure the thread list shows the draft pill for this thread even if
+      // the initial draft-list pre-fetch missed it.
+      const ctIdx = customerThreads.findIndex((t) => t.threadId === threadId);
+      if (ctIdx >= 0) {
+        const nextThreads = [...customerThreads];
+        nextThreads[ctIdx] = { ...nextThreads[ctIdx], hasDraft: true };
+        dispatch(setCustomerThreads(nextThreads));
+      }
+      // If this thread is currently open, mirror the restored draft to the
+      // scalar working fields so the composer shows it immediately.
+      if (getState().email.activeEmail?.threadId === threadId) {
+        dispatch(setGmailDraftId(found.draftId));
+        dispatch(setAiReplyDraft(found.html || `<p>${found.text}</p>`));
+        dispatch(setDraftSync({ status: 'saved', savedAt: Date.now(), resumed: true }));
+      }
       console.log('[EmailSlice] Resumed Gmail draft', found.draftId, 'for thread', threadId);
     }
   } catch (err) {
@@ -2288,9 +2759,21 @@ export const loadEmailDraftForThread = (threadId) => async (dispatch, getState) 
 
 // Remove the Gmail draft (after the reply is sent, or when starting fresh).
 export const deleteEmailDraft = () => async (dispatch, getState) => {
-  const draftId = getState().email.gmailDraftId;
+  const state = getState().email;
+  const draftId = state.gmailDraftId;
+  const activeThreadId = state.activeEmail?.threadId || null;
   dispatch(setGmailDraftId(null));
   dispatch(setDraftSync({ status: null, savedAt: null, resumed: false }));
+  // Also clear the cached draft for this thread so returning to it later starts
+  // fresh after a successful send.
+  if (activeThreadId) {
+    setThreadDraft(state, activeThreadId, emptyThreadDraft());
+    // Remove the draft pill from the thread list metadata for this thread.
+    const idx = state.customerThreads.findIndex((t) => t.threadId === activeThreadId);
+    if (idx >= 0) {
+      state.customerThreads[idx] = { ...state.customerThreads[idx], hasDraft: false };
+    }
+  }
   if (!draftId) return;
   const token = await dispatch(ensureGmailToken());
   if (!token) return;
@@ -2497,10 +2980,13 @@ export const handleSseEvent = (event) => (dispatch, getState) => {
         console.log('[EmailSlice] SSE ai-summary: updating aiEnrichment for task', activeId);
         // Merge with any existing enrichment (e.g. category/sentiment from CAD)
         const existing = emailState.aiEnrichment || {};
+        const riskDetected = parseRiskValue(event.data?.riskDetected);
         dispatch(setAiEnrichment({
           ...existing,
           summary: summaryText || existing.summary || null,
           suggestedReply: suggestedReply || existing.suggestedReply || null,
+          riskDetected,
+          riskMessageId: riskDetected ? normMsgId(event.data?.messageId) : null,
           source: 'jds-cache',
         }));
       }

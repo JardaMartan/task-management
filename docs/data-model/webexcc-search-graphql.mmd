@@ -1,0 +1,183 @@
+classDiagram
+    class SearchQuery {
+        +String queryType "taskDetails | agentSession | taskLegDetails"
+        +Long from
+        +Long to
+        +Filter filter
+        +ExtFilter extFilter
+        +Aggregation[] aggregations
+        +Pagination pagination
+    }
+
+    class CustomerSessionRecord {
+        +String id
+        +String status
+        +String channelType
+        +String channelSubType
+        +Long createdTime
+        +Long endedTime
+        +Boolean isActive
+        +Customer customer
+        +AgentRef lastAgent
+        +QueueRef lastQueue
+        +SiteRef lastSite
+        +TeamRef lastTeam
+        +EntryPointRef lastEntryPoint
+        +Long totalDuration
+        +Long connectedDuration
+        +Long queueDuration
+        +Long ringingDuration
+        +Long holdDuration
+        +Long wrapupDuration
+        +Long consultDuration
+        +Long conferenceDuration
+        +Long selfserviceDuration
+        +Integer consultCount
+        +Integer transferCount
+        +Integer blindTransferCount
+        +String lastWrapupCodeName
+        +String campaignId
+        +String campaignName
+        +String ivrScriptName
+        +String flowActivityName
+        +Boolean captureRequested
+        +Boolean isTranscriptionAvailable
+        +Map~String,Object~ stringGlobalVariables
+        +Map~String,Object~ integerGlobalVariables
+        +Map~String,Object~ booleanGlobalVariables
+        +CustomerActivity[] activities
+    }
+
+    class CustomerActivity {
+        +String id
+        +String eventName
+        +String previousState
+        +String nextState
+        +Long createdTime
+        +Long endedTime
+        +Long duration
+        +String agentId
+        +String agentName
+        +String agentSessionId
+        +String agentChannelId
+        +String queueId
+        +String queueName
+        +String entrypointId
+        +String siteId
+        +String teamId
+        +String destinationAgentId
+        +String destinationQueueId
+        +String transferType
+        +String activityType
+        +String activityName
+        +String terminationReason
+        +String ivrScriptName
+        +String contactAssignmentType
+    }
+
+    class AgentSessionRecord {
+        +String agentSessionId
+        +Boolean isActive
+        +String agentId
+        +String agentName
+        +String userLoginId
+        +Long startTime
+        +Long endTime
+        +String state
+        +String agentSignOutReason
+        +String siteId
+        +String teamId
+        +String orgId
+        +String multiMediaProfileType
+        +String skillsProfile
+        +AgentChannelInfo[] channelInfo
+    }
+
+    class AgentChannelInfo {
+        +String channelId
+        +String channelType
+        +String agentPhoneNumber
+        +String subChannelType
+        +String currentState
+        +String idleCodeName
+        +Long totalDuration
+        +Long connectedDuration
+        +Long idleDuration
+        +Long availableDuration
+        +Long ringingDuration
+        +Long wrapupDuration
+        +Long holdDuration
+        +Long consultDuration
+        +Long postCallDuration
+        +Integer connectedCount
+        +Integer idleCount
+        +Integer ringingCount
+        +Integer wrapupCount
+        +Integer transferCount
+        +Integer conferenceCount
+        +Integer ronaCount
+        +Integer outdialCount
+        +AgentActivity[] activities
+    }
+
+    class AgentActivity {
+        +String id
+        +String state
+        +Long startTime
+        +Long endTime
+        +Long duration
+        +IdleCode idleCode
+        +String taskId
+        +QueueRef queue
+        +WrapupCode wrapupCode
+        +Boolean isOutdial
+        +String outboundType
+        +Boolean isCurrentActivity
+        +Boolean isLoginActivity
+        +Boolean isLogoutActivity
+        +String changedById
+        +String changedByName
+        +String reason
+    }
+
+    class CallLegRecord {
+        +String id
+        +String taskId
+        +Long createdTime
+        +Long endedTime
+        +Boolean isActive
+        +String status
+        +String handleType
+        +String callLegType
+        +String channelType
+        +String channelSubType
+        +QueueRef queue
+        +AgentRef owner
+        +SiteRef site
+        +TeamRef team
+        +EntryPointRef entryPoint
+        +AgentRef nextDestinationAgent
+        +TeamRef nextDestinationTeam
+        +QueueRef nextDestinationQueue
+        +Long queueDuration
+        +Long connectedDuration
+        +Long ringingDuration
+        +Long wrapupDuration
+        +Long holdDuration
+        +Long consultDuration
+        +Long conferenceDuration
+        +Long handleTime
+        +Long selfserviceDuration
+        +String terminationReason
+        +String abandonedType
+        +Boolean isWithinServiceLevel
+        +String slaValue
+    }
+
+    SearchQuery --> CustomerSessionRecord
+    SearchQuery --> AgentSessionRecord
+    SearchQuery --> CallLegRecord
+    CustomerSessionRecord "1" --> "*" CustomerActivity
+    AgentSessionRecord "1" --> "*" AgentChannelInfo
+    AgentChannelInfo "1" --> "*" AgentActivity
+    CustomerSessionRecord "1" --> "*" CallLegRecord

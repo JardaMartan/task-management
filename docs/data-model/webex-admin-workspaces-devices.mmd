@@ -1,0 +1,72 @@
+erDiagram
+    ORGANIZATION {
+        string id PK
+    }
+    LOCATION {
+        string id PK
+        string orgId FK
+        string name
+        object address
+        string timeZone
+        string country
+        string[] floorIds
+    }
+    WORKSPACE {
+        string id PK
+        string displayName
+        string orgId FK
+        string locationId FK
+        string workspaceLocationId
+        string floorId
+        number capacity
+        string type
+        string hotdeskingStatus
+        string supportedDevices
+        string devicePlatform
+        object calling
+        object calendar
+        object deviceHostedMeetings
+        object indoorNavigation
+        object health
+        object plannedMaintenance
+        object[] capabilities
+        string created
+    }
+    DEVICE {
+        string id PK
+        string displayName
+        string product
+        string type
+        string serial
+        string mac
+        string software
+        string connectionStatus
+        string devicePlatform
+        string orgId FK
+        string locationId FK
+        string workspaceId FK
+        string personId FK
+        string activationCode
+        string[] capability
+        string permission
+        string plannedMaintenance
+        string upgradeChannel
+        string errorCode
+    }
+    RESOURCEGROUP {
+        string id PK
+        string name
+        string orgId FK
+    }
+
+    ORGANIZATION ||--o{ LOCATION : has
+    ORGANIZATION ||--o{ WORKSPACE : has
+    ORGANIZATION ||--o{ DEVICE : has
+    ORGANIZATION ||--o{ RESOURCEGROUP : has
+    LOCATION ||--o{ WORKSPACE : contains
+    LOCATION ||--o{ DEVICE : contains
+    WORKSPACE ||--o{ DEVICE : contains
+    WORKSPACE }o--|| RESOURCEGROUP : calendar_resource_group
+    DEVICE }o--|| WORKSPACE : placed_in
+    DEVICE }o--|| LOCATION : located
+    DEVICE }o--o| PERSON : assigned_to

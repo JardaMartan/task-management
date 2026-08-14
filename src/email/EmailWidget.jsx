@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import PropTypes from 'prop-types';
 import { useDispatch, useSelector } from 'react-redux';
 import { Alert } from '@momentum-ui/react';
-import { initEmailTask, resetEmail, resetEmailContent, setMockEmailData, checkGmailThreadUpdates, loadEmailSla, loadCustomerEmailThreads } from '../store/slices/emailSlice';
+import { initEmailTask, resetEmail, resetEmailContent, setMockEmailData, setCadRiskDetected, parseRiskValue, checkGmailThreadUpdates, loadEmailSla, loadCustomerEmailThreads } from '../store/slices/emailSlice';
 import { toggleAnalyticsOpen } from '../store/slices/widgetSlice';
 import { useI18n } from '../i18n/I18nContext';
 import EmailAnalyticsBar from './EmailAnalyticsBar';
@@ -57,6 +57,11 @@ const EmailWidget = ({ interactionId, callAssociatedDetails, darkMode, mockMode,
         dispatch(loadCustomerEmailThreads(browseEmail));
       }
     } else if (interactionId && tokenBrokerUrl) {
+      console.log('[EmailWidget] mount effect dispatching initEmailTask', {
+        interactionId,
+        tokenBrokerUrl: Boolean(tokenBrokerUrl),
+        callAssociatedThreadId: callAssociatedDetails?.gmailThreadId || callAssociatedDetails?.threadId || null,
+      });
       dispatch(initEmailTask(interactionId, callAssociatedDetails));
     }
     return () => {
@@ -76,6 +81,17 @@ const EmailWidget = ({ interactionId, callAssociatedDetails, darkMode, mockMode,
     }, 60_000);
     return () => clearInterval(interval);
   }, [dispatch, isDemoMode, interactionId, tokenBrokerUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // CAD-driven risk flag (e.g. Jmartan_Riziko) can change during the interaction
+  // independent of the task heartbeat. The initial value is seeded by
+  // initEmailTask, but later CAD updates must also be reflected in the email
+  // view without re-initialising the whole task.
+  const cadRiskValue = callAssociatedDetails?.Jmartan_Riziko ?? callAssociatedDetails?.jmartan_riziko ?? null;
+  useEffect(() => {
+    if (isDemoMode) return;
+    const available = cadRiskValue != null && cadRiskValue !== '';
+    dispatch(setCadRiskDetected({ detected: parseRiskValue(cadRiskValue), available }));
+  }, [dispatch, isDemoMode, cadRiskValue]);
 
   // SLA expiry is delivered WITH the task as CAD (configurable variable name),
   // unwrapped by UnifiedView360.buildEmailCallDetails as `slaExpiresRaw`.

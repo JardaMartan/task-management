@@ -6,6 +6,10 @@ import { setActiveEmail } from '../store/slices/emailSlice';
 import EmailViewer from './EmailViewer';
 import AttachmentList from './AttachmentList';
 
+// Same normalisation used in emailSlice so we can match JDS messageId to the
+// loaded thread's rfcMessageId values. Handles angle brackets, whitespace, case.
+const normMsgId = (id) => String(id || '').replace(/[<>]/g, '').trim().toLowerCase();
+
 /**
  * ConversationView — renders all messages in the current thread as a stacked
  * accordion. The `activeEmail` message is auto-expanded on mount and whenever
@@ -17,6 +21,15 @@ const ConversationView = ({ darkMode }) => {
   const dispatch = useDispatch();
   const thread = useSelector((state) => state.email.thread);
   const activeEmail = useSelector((state) => state.email.activeEmail);
+  const aiEnrichment = useSelector((state) => state.email.aiEnrichment);
+  const cadRiskDetected = useSelector((state) => state.email.cadRiskDetected);
+  const cadRiskAvailable = useSelector((state) => state.email.cadRiskAvailable);
+  // CAD risk (Jmartan_Riziko) takes precedence over JDS-derived risk.
+  // Only fall back to JDS when CAD is not currently providing a value.
+  const riskDetected = cadRiskAvailable
+    ? Boolean(cadRiskDetected)
+    : Boolean(aiEnrichment?.riskDetected);
+  const riskMessageId = cadRiskAvailable ? null : (aiEnrichment?.riskMessageId || null);
 
   // Local UI state: which message IDs are currently expanded
   const [expandedIds, setExpandedIds] = useState(() =>
@@ -73,6 +86,18 @@ const ConversationView = ({ darkMode }) => {
         const isExpanded = expandedIds.has(msg.messageId);
         const isActive = msg.messageId === activeEmail?.messageId;
         const isNewest = idx === 0;
+        // riskDetected is tied to the message that the AI analyzed (the received
+        // customer email). Highlight the matching card by RFC 822 Message-ID.
+        // Fallback: if JDS did not provide a messageId, flag the newest received
+        // message (the customer message the agent is most likely replying to).
+        // When CAD signals risk (Jmartan_Riziko), apply it to the active/current
+        // message the agent is handling so the alert is always relevant.
+        const normalizedRfc = normMsgId(msg.rfcMessageId);
+        const isRisky = riskDetected && (
+          (cadRiskAvailable && isActive) ||
+          (riskMessageId && normalizedRfc === riskMessageId) ||
+          (!riskMessageId && isNewest && !String(msg.from || '').includes(String(activeEmail?.to || '')))
+        );
 
         // Show display name only (strip <email@> part)
         const fromDisplay = msg.from?.replace(/<[^>]+>/, '').trim() || msg.from || '';
@@ -85,8 +110,17 @@ const ConversationView = ({ darkMode }) => {
               isExpanded ? 'msg-card--expanded' : '',
               isActive ? 'msg-card--active' : '',
               isNewest ? 'msg-card--newest' : '',
+              isRisky ? 'msg-card--risk' : '',
             ].filter(Boolean).join(' ')}
           >
+            {/* ── Risk badge (visible when AI flagged this message) ── */}
+            {isRisky && (
+              <div className="msg-card__risk-bar" role="alert">
+                <span className="msg-card__risk-icon" aria-hidden="true">⚠</span>
+                <span className="msg-card__risk-text">{t('email.ai.riskAlert')}</span>
+              </div>
+            )}
+
             {/* ── Clickable header ── */}
             <div
               className="msg-card__header"

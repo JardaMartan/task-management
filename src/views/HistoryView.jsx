@@ -747,6 +747,70 @@ const deriveInteractionInfo = (events) => {
   };
 };
 
+const RISK_CAD_VAR_NAME = 'jmartan_riziko';
+
+/**
+ * Compute the final risk flag for historical interactions from raw JDS events.
+ * Rules:
+ *   1) email:ai-summary events carry data.riskDetected.
+ *   2) Any later lifecycle event may carry data.booleanGlobalVariables with
+ *      name 'Jmartan_Riziko' (case-insensitive) value 'true'.
+ * Latest event by timestamp wins, so a later CAD variable update overrides the
+ * AI summary value.  Returns a Map<taskId, {riskDetected:boolean, source:string}>.
+ */
+const computeInteractionRiskFromRawEvents = (rawEvents) => {
+  const riskByTask = new Map();
+  const tsOf = (e) => Number(e.eventTime || e.timestamp || e.time || e.ts || 0);
+
+  const update = (taskId, riskDetected, source, ts) => {
+    if (!taskId) return;
+    const existing = riskByTask.get(taskId);
+    if (!existing || ts >= existing.ts) {
+      riskByTask.set(taskId, { riskDetected: Boolean(riskDetected), source, ts });
+    }
+  };
+
+  const deriveTaskId = (e) => {
+    const d = e.data || {};
+    return (
+      e.taskId ||
+      d.taskId ||
+      d.interactionId ||
+      String(e.source || '').match(TASK_ID_FROM_SOURCE_RE)?.[1] ||
+      String(d.source || '').match(TASK_ID_FROM_SOURCE_RE)?.[1] ||
+      null
+    );
+  };
+
+  (rawEvents || []).forEach((e) => {
+    const d = e.data || {};
+    const taskId = deriveTaskId(e);
+    const ts = tsOf(e);
+
+    if (e.type === 'email:ai-summary') {
+      // AI summary riskDetected can be a string "true"/"false" (from raw JSON)
+      // or a boolean. Normalise before deciding.
+      const aiRisk = typeof d.riskDetected === 'boolean'
+        ? d.riskDetected
+        : String(d.riskDetected).toLowerCase() === 'true';
+      update(taskId, aiRisk, 'ai-summary', ts);
+      return;
+    }
+
+    const boolVars = d.booleanGlobalVariables;
+    if (Array.isArray(boolVars)) {
+      const riskVar = boolVars.find(
+        (v) => String(v?.name || '').toLowerCase() === RISK_CAD_VAR_NAME
+      );
+      if (riskVar) {
+        update(taskId, String(riskVar.value).toLowerCase() === 'true', 'cad-variable', ts);
+      }
+    }
+  });
+
+  return riskByTask;
+};
+
 // ─── InteractionMetrics component ────────────────────────────────────────────
 
 const InteractionMetrics = ({ metrics, channel }) => {
@@ -880,17 +944,65 @@ const backfillChannelByTaskId = (events) => {
 // stops a summary event — whose eventTime is when it was WRITTEN, which can be
 // long after the interaction (e.g. a regenerated voice summary) — from becoming
 // its interaction group's newest event and hijacking the group's channel/time.
+// Custom "WxCC *" / "WxConnect:*" events are also excluded because they duplicate
+// the canonical task:* lifecycle events and only clutter the timeline.
 const TIMELINE_METADATA_TYPES = new Set([
   'task:wrapup-summary', 'email:wrapup-summary', 'email:ai-summary',
 ]);
+const TIMELINE_EXCLUDED_SOURCES = new Set(['WxConnect:CallAnswered']);
+const TIMELINE_EXCLUDED_SOURCE_PREFIXES = ['WxConnect:'];
+
+const isTimelineExcluded = (e) => {
+  if (!e) return true;
+  if (TIMELINE_METADATA_TYPES.has(e.type)) return true;
+  const src = String(e.source || '');
+  if (TIMELINE_EXCLUDED_SOURCES.has(src)) return true;
+  if (TIMELINE_EXCLUDED_SOURCE_PREFIXES.some((prefix) => src.startsWith(prefix))) return true;
+  return false;
+};
 
 const normalizeEvents = (caseEvents, emailEvents) => {
   const out = [];
-  (caseEvents || []).forEach((e) => { if (!TIMELINE_METADATA_TYPES.has(e.type)) out.push(normalizeEvent(e, 'task')); });
-  (emailEvents || []).forEach((e) => { if (!TIMELINE_METADATA_TYPES.has(e.type)) out.push(normalizeEvent(e, 'email')); });
+  (caseEvents || []).forEach((e) => { if (!isTimelineExcluded(e)) out.push(normalizeEvent(e, 'task')); });
+  (emailEvents || []).forEach((e) => { if (!isTimelineExcluded(e)) out.push(normalizeEvent(e, 'email')); });
   backfillChannelByTaskId(out);
+  // Preserve taskId on normalized events that arrived as custom JDS events without
+  // an interactionId in the payload. These "WxCC *" custom events still belong to
+  // the same interaction as the canonical task:* lifecycle events, which share the
+  // same `source` path containing the interaction id.
+  backfillTaskIdFromSourcePath(out);
   out.sort((a, b) => new Date(b.ts || 0) - new Date(a.ts || 0));
   return out;
+};
+
+const TASK_ID_FROM_SOURCE_RE = /\/com\/cisco\/wxcc\/([0-9a-f-]{36})/i;
+
+/**
+ * Some custom JDS events (e.g. "WxCC CallAnswered") only expose the interaction
+ * id inside the `source` path.  Derive a taskId from that path and copy it onto
+ * any normalized event that already has a matching event in the same set.
+ * Note: this runs AFTER isTimelineExcluded, so if the custom event is excluded
+ * the grouping logic will simply not see it; that's fine because the canonical
+ * task:* events already provide the grouping key.
+ */
+const backfillTaskIdFromSourcePath = (events) => {
+  const byId = new Map();
+  events.forEach((ev) => {
+    if (ev.taskId) {
+      byId.set(ev.taskId, ev);
+    } else {
+      const m = String(ev.eventType).match(TASK_ID_FROM_SOURCE_RE);
+      const d = ev.rawData || {};
+      const fromSource =
+        m?.[1] ||
+        String(d.source || '').match(TASK_ID_FROM_SOURCE_RE)?.[1] ||
+        null;
+      if (fromSource) {
+        ev.taskId = fromSource;
+        byId.set(fromSource, ev);
+      }
+    }
+  });
 };
 
 /**
@@ -1116,7 +1228,7 @@ const CollapsibleData = ({ label, icon, entries, tone }) => {
   );
 };
 
-const InteractionGroup = ({ taskId, events, darkMode, defaultOpen = false, casesMap, onNavigate, mockSummary, onSelect }) => {
+const InteractionGroup = ({ taskId, events, darkMode, defaultOpen = false, casesMap, onNavigate, mockSummary, onSelect, riskInfo }) => {
   const [open, setOpen] = useState(defaultOpen);
   const [caseExpanded, setCaseExpanded] = useState(false);
   const dispatch = useDispatch();
@@ -1136,7 +1248,17 @@ const InteractionGroup = ({ taskId, events, darkMode, defaultOpen = false, cases
   const metrics = deriveInteractionMetrics(events);
   const { icon: firstIcon, src: firstSrc, color: firstDotColor } = resolveEventIcon(first.channel, first.eventType, first.uiIconType);
   const badgeColor = CHANNEL_COLOR[first.channel] || 'pastel';
-  const shortId = taskId.length > 12 ? `${taskId.substring(0, 8)}…` : taskId;
+  const isEmail = first.channel === 'email';
+
+  // Risk indicator — only for email interactions; later CAD variable overrides AI summary.
+  const riskDetected = isEmail && Boolean(riskInfo?.riskDetected);
+
+  // Debug logging for this interaction in live environments.
+  useEffect(() => {
+    if (!isEmail || !taskId) return;
+    // eslint-disable-next-line no-console
+    console.log('[History Risk]', taskId, 'riskInfo=', riskInfo, 'first.channel=', first.channel, 'events.count=', events.length, 'riskAlert key exists=', Boolean(t('history.riskAlert') !== 'history.riskAlert'));
+  }, [isEmail, taskId, riskInfo, first.channel, events.length, t]);
 
   // Aggregate business / variable / diagnostic data across the interaction lifecycle.
   const info = deriveInteractionInfo(events);
@@ -1181,9 +1303,15 @@ const InteractionGroup = ({ taskId, events, darkMode, defaultOpen = false, cases
   const caseData = caseId && casesMap ? casesMap.get(caseId) : null;
 
   return (
-    <li className="history-view__item history-view__item--group">
+    <li className={`history-view__item history-view__item--group${riskDetected ? ' history-view__item--risk' : ''}`}>
       <EventDot channel={first.channel} icon={firstIcon} src={firstSrc} color={firstDotColor} />
       <div className="history-view__body">
+        {riskDetected && (
+          <div className="history-view__risk-bar" role="alert">
+            <span className="history-view__risk-icon" aria-hidden="true">⚠</span>
+            <span className="history-view__risk-text">{t('history.riskAlert') || 'Risk detected'}</span>
+          </div>
+        )}
         <div
           className="history-view__row history-view__row--clickable"
           role="button"
@@ -1257,23 +1385,20 @@ const InteractionGroup = ({ taskId, events, darkMode, defaultOpen = false, cases
           </div>
         )}
         <InteractionMetrics metrics={metrics} channel={first.channel} />
-        <div className="history-view__short-id">
-          {shortId}
-        </div>
         {/* ── Channel jump CTA — shown only in 360-mode (onNavigate present) ── */}
         {onNavigate && ['voice', 'call', 'phone'].includes(first.channel) && (
           <button type="button" className="history-view__view-cta" onClick={() => onNavigate('voice', { taskId })}>
-            Open call transcript →
+            {t('history.openCallTranscript')} →
           </button>
         )}
         {onNavigate && first.channel === 'email' && (
           <button type="button" className="history-view__view-cta" onClick={() => onNavigate('email', { taskId })}>
-            Open email →
+            {t('history.openEmail')} →
           </button>
         )}
         {onNavigate && ['chat', 'whatsapp', 'sms', 'in-app', 'rcs'].includes(first.channel) && (
           <button type="button" className="history-view__view-cta" onClick={() => onNavigate('chat', { taskId })}>
-            Open chat →
+            {t('history.openChat')} →
           </button>
         )}
         {/* ── Inline case details panel — shown only in standalone (no onNavigate) ── */}
@@ -1749,6 +1874,16 @@ const HistoryView = ({ darkMode, mockMode, onNavigate }) => {
   // task:ended for the same interaction) collapse into a single expandable card.
   const { groups, standalone } = useMemo(() => groupByTaskId(events), [events]);
 
+  // Compute per-interaction risk flags from the ORIGINAL raw JDS event set.
+  // The risk flag lives in events that are filtered out of the normalized
+  // timeline (email:ai-summary) or scattered across lifecycle events as a CAD
+  // boolean variable, so we must scan the raw Redux arrays, not the normalized
+  // subset used for rendering.
+  const interactionRiskMap = useMemo(
+    () => computeInteractionRiskFromRawEvents([...(caseHistory || []), ...(emailHistory || [])]),
+    [caseHistory, emailHistory]
+  );
+
   // Merge groups + standalone into a single time-ordered list for rendering
   const timelineItems = useMemo(() => {
     const items = [];
@@ -1890,6 +2025,7 @@ const HistoryView = ({ darkMode, mockMode, onNavigate }) => {
                         onNavigate={onNavigate}
                         onSelect={handleSelectInteraction}
                         mockSummary={isDemoMode ? (MOCK_INTERACTION_SUMMARIES[item.taskId] || null) : null}
+                        riskInfo={interactionRiskMap.get(item.taskId)}
                       />
                     </div>
                   );

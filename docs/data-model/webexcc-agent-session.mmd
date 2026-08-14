@@ -1,0 +1,67 @@
+erDiagram
+    AGENT {
+        string id PK
+        string name
+        string userLoginId
+        string teamId FK
+        string siteId FK
+        string orgId FK
+    }
+    AGENTSESSION {
+        string agentSessionId PK "ASR - Agent Session Record"
+        string agentId FK
+        string teamId FK
+        string siteId FK
+        string orgId FK
+        long startTime
+        long endTime
+        string state
+        boolean isActive
+        string multiMediaProfileType
+        string skillsProfile
+    }
+    AGENTCHANNELINFO {
+        string channelId PK
+        string agentSessionId FK
+        string channelType
+        string agentPhoneNumber
+        string subChannelType
+        string currentState
+        string idleCodeName
+        long totalDuration
+        long connectedDuration
+        long idleDuration
+        long ringingDuration
+        long wrapupDuration
+        long holdDuration
+        int connectedCount
+        int idleCount
+        int ringingCount
+    }
+    AGENTACTIVITY {
+        string id PK "AAR - Agent Activity Record"
+        string channelId FK
+        string agentSessionId FK
+        string state
+        long startTime
+        long endTime
+        long duration
+        string idleCodeId
+        string idleCodeName
+        string taskId
+        string queueId
+        string queueName
+        string wrapupCodeId
+        string wrapupCodeName
+        boolean isOutdial
+        boolean isLoginActivity
+        boolean isLogoutActivity
+        boolean isCurrentActivity
+        string changedById
+        string reason
+    }
+
+    AGENT ||--o{ AGENTSESSION : logs
+    AGENTSESSION ||--o{ AGENTCHANNELINFO : contains
+    AGENTSESSION ||--o{ AGENTACTIVITY : contains
+    AGENTCHANNELINFO ||--o{ AGENTACTIVITY : tracks

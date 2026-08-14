@@ -141,7 +141,13 @@ const TaskManagement = (props) => {
     const t = typeof props.task === 'string'
       ? (() => { try { return JSON.parse(props.task); } catch { return {}; } })()
       : props.task;
-    return `${t.interactionId}|${t.state}|${t.isWrapUp}|${t.isTerminated}|${t.ani}`;
+    const cadRisk =
+      t.callAssociatedDetails?.Jmartan_Riziko ??
+      t.callAssociatedDetails?.jmartan_riziko ??
+      t.callAssociatedData?.Jmartan_Riziko ??
+      t.callAssociatedData?.jmartan_riziko ??
+      null;
+    return `${t.interactionId}|${t.state}|${t.isWrapUp}|${t.isTerminated}|${t.ani}|${cadRisk}`;
   }, [props.task]);
 
   const taskPayload = useMemo(
@@ -149,6 +155,30 @@ const TaskManagement = (props) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [stableTaskKey, props.taskType, props.email],
   );
+
+  // Live CAD property (e.g. Jmartan_Riziko) can change during the interaction
+  // independent of the task heartbeat. Merge it into taskPayload so downstream
+  // buildEmailCallDetails and the risk highlight react immediately.
+  const liveCad = useMemo(() => {
+    if (!props.cad && !props.details) return null;
+    const raw = props.cad || props.details;
+    try {
+      return typeof raw === 'string' ? JSON.parse(raw) : raw;
+    } catch (error) {
+      console.warn('TaskManagement: failed to parse live cad prop', error);
+      return null;
+    }
+  }, [props.cad, props.details]);
+
+  const taskPayloadWithCad = useMemo(() => {
+    if (!taskPayload || !liveCad) return taskPayload;
+    return {
+      ...taskPayload,
+      callAssociatedData: { ...(taskPayload.callAssociatedData || {}), ...liveCad },
+      callAssociatedDetails: { ...(taskPayload.callAssociatedDetails || {}), ...liveCad },
+    };
+  }, [taskPayload, liveCad]);
+
   const [noteDraft, setNoteDraft] = useState('');
   const sdkInitStartedRef = useRef(false);
 
@@ -343,7 +373,17 @@ const TaskManagement = (props) => {
       payload.mediaProperties?.emailSubject ||
       null;
 
-    return { ...raw, customerEmail: fromAddress, fromAddress, gmailThreadId, gmailMessageId, rfcMessageId, subject };
+    return {
+      ...raw,
+      customerEmail: fromAddress,
+      fromAddress,
+      gmailThreadId,
+      gmailMessageId,
+      rfcMessageId,
+      subject,
+      // Pass the CAD risk boolean through so initEmailTask can seed it immediately.
+      Jmartan_Riziko: cadVal('Jmartan_Riziko') ?? cadVal('jmartan_riziko') ?? raw.Jmartan_Riziko ?? raw.jmartan_riziko ?? null,
+    };
   };
 
   // Explicit view routing (set via web component `view` attribute in desktop layout JSON).
@@ -411,8 +451,8 @@ const TaskManagement = (props) => {
         <UnifiedView360
           darkMode={darkMode}
           mockMode={explicitView === '360-mock'}
-          navPanel={!taskPayload}
-          task={taskPayload}
+          navPanel={!taskPayloadWithCad}
+          task={taskPayloadWithCad}
         />
       </div>
     );
@@ -420,10 +460,10 @@ const TaskManagement = (props) => {
   if (explicitView === 'email') {
     return (
       <div className={`tm-view-mount${darkMode ? ' md--dark' : ''}`}>
-        {taskPayload ? (
+        {taskPayloadWithCad ? (
           <EmailWidget
-            interactionId={taskPayload.taskId || taskPayload.id || taskPayload.interactionId || ''}
-            callAssociatedDetails={buildEmailCallDetails(taskPayload)}
+            interactionId={taskPayloadWithCad.taskId || taskPayloadWithCad.id || taskPayloadWithCad.interactionId || ''}
+            callAssociatedDetails={buildEmailCallDetails(taskPayloadWithCad)}
             darkMode={darkMode}
           />
         ) : (
@@ -495,8 +535,8 @@ const TaskManagement = (props) => {
 
       {taskPayload && isEmailTask ? (
         <EmailWidget
-          interactionId={taskPayload.taskId || taskPayload.id || taskPayload.interactionId || ''}
-          callAssociatedDetails={buildEmailCallDetails(taskPayload)}
+          interactionId={taskPayloadWithCad.taskId || taskPayloadWithCad.id || taskPayloadWithCad.interactionId || ''}
+          callAssociatedDetails={buildEmailCallDetails(taskPayloadWithCad)}
           darkMode={darkMode}
         />
       ) : null}

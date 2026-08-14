@@ -298,7 +298,13 @@ class TaskManagementElement extends HTMLElement {
       const t = typeof v === 'string'
         ? (() => { try { return JSON.parse(v); } catch { return {}; } })()
         : v;
-      return `${t.interactionId}|${t.state}|${t.isWrapUp}|${t.isTerminated}|${t.ani}`;
+      const cadRisk =
+        t.callAssociatedDetails?.Jmartan_Riziko ??
+        t.callAssociatedDetails?.jmartan_riziko ??
+        t.callAssociatedData?.Jmartan_Riziko ??
+        t.callAssociatedData?.jmartan_riziko ??
+        null;
+      return `${t.interactionId}|${t.state}|${t.isWrapUp}|${t.isTerminated}|${t.ani}|${cadRisk}`;
     };
     const prevKey = getTaskKey(this._task);
     const nextKey = getTaskKey(value);
@@ -501,6 +507,7 @@ class TaskManagementElement extends HTMLElement {
       task: this._task,
       selectedtaskid: this._selectedtaskid,
       cad: this._cad,
+      details: this._cad,
       wrap: this._wrap,
       avatar: this._avatar,
       name: this._name,
@@ -624,6 +631,7 @@ class TaskManagementElement extends HTMLElement {
         task: this._task,
         selectedtaskid: this._selectedtaskid,
         cad: this._cad,
+        details: this._cad,
         wrap: this._wrap,
         avatar: this._avatar,
         name: this._name,

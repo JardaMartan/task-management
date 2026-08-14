@@ -401,6 +401,23 @@
 .voice__refresh-btn:disabled { cursor: default; opacity: .6; }
 .md--dark .voice__refresh-btn { color: rgba(255,255,255,.55); }
 .md--dark .voice__refresh-btn:hover { background: rgba(255,255,255,.08); color: #40c4f0; }
+
+.voice__export-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px; height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--md-color-gray-60, #5b6b7b);
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.voice__export-btn:hover { background: var(--md-color-gray-20, #e8ebee); color: var(--md-color-blue-50, #0e7fc1); }
+.md--dark .voice__export-btn { color: rgba(255,255,255,.55); }
+.md--dark .voice__export-btn:hover { background: rgba(255,255,255,.08); color: #40c4f0; }
 .voice__refresh-btn--spin svg { animation: voiceSpin .8s linear infinite; }
 @keyframes voiceSpin { to { transform: rotate(360deg); } }
 

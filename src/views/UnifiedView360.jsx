@@ -23,6 +23,7 @@ import { Icon } from '@momentum-ui/react';
 import { useI18n } from '../i18n/I18nContext';
 import { getMockData } from '../mock/mockData';
 import { setPendingEmailCompose } from '../store/slices/widgetSlice';
+import { parseRiskValue } from '../store/slices/emailSlice';
 import CasesView from './CasesView';
 import HistoryView from './HistoryView';
 import CustomerContactCard from './CustomerContactCard';
@@ -32,7 +33,7 @@ import SlaCountdown from '../email/SlaCountdown';
 import ChatWidget from '../chat/ChatWidget';
 import TaskWidget from '../task/TaskWidget';
 import { loadAgentSettings, provisionSlaCatalog, applyAgentState } from '../store/slices/settingsSlice';
-import { setEmailTouched, searchCustomerByIdentityManual, clearManualCustomerSearch } from '../store/slices/emailSlice';
+import { setEmailTouched, setCadRiskDetected, searchCustomerByIdentityManual, clearManualCustomerSearch } from '../store/slices/emailSlice';
 
 const TAB_IDS = ['cases', 'history', 'voice', 'email', 'chat', 'task'];
 const TAB_ICONS = { cases: 'tasks_16', history: 'recents_16', voice: 'handset_16', email: 'email_16', chat: 'chat_16', task: 'check-circle_16' };
@@ -337,7 +338,9 @@ const UnifiedView360 = ({ darkMode, mockMode, navPanel, task }) => {
           if (Number.isFinite(ms) && ms > 0) slaExpiresAt = ms;
         }
       }
-      return { interactionId: id, channel, slaExpiresAt, title: title || email || null, email };
+      const riskRaw = cadVal(cad, cad2, 'Jmartan_Riziko');
+      const riskDetected = parseRiskValue(riskRaw);
+      return { interactionId: id, channel, slaExpiresAt, title: title || email || null, email, riskDetected };
     };
     const poll = async () => {
       try {
@@ -347,6 +350,17 @@ const UnifiedView360 = ({ darkMode, mockMode, navPanel, task }) => {
         const list = [];
         if (typeof map.forEach === 'function') map.forEach((v) => { const x = extractOne(v); if (x) list.push(x); });
         else Object.keys(map).forEach((k) => { const x = extractOne(map[k]); if (x) list.push(x); });
+        const currentId = task?.interactionId;
+        const currentTask = currentId ? list.find((t) => t.interactionId === currentId) : null;
+        if (currentTask?.riskDetected !== undefined) {
+          dispatch(setCadRiskDetected({ detected: currentTask.riskDetected, available: true }));
+        }
+        // Always reset the CAD risk flag when the current task is no longer in the
+        // Desktop's open task map, so stale risk from a previous interaction does not
+        // bleed onto the new active task.
+        if (!currentTask && currentId) {
+          dispatch(setCadRiskDetected({ detected: false, available: false }));
+        }
         const bc = new BroadcastChannel('crm-sync');
         bc.postMessage({ type: 'TASK_MAP', tasks: list });
         bc.close();

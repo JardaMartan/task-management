@@ -1,0 +1,54 @@
+erDiagram
+    ORGANIZATION {
+        string id PK
+        string name
+    }
+    SUBSCRIPTION {
+        string id PK
+        string orgId FK
+        string name
+        string description
+        string destinationUrl
+        string eventType
+        string resourceVersion
+        string secret
+        boolean enabled
+    }
+    WEBHOOKEVENT {
+        string id PK
+        string type
+        string source
+        string comciscoorgid
+        long comciscotimestamp
+        string datacontenttype
+        json data
+    }
+    AGENTEVENTDATA {
+        string agentId
+        string agentName
+        string sessionId
+        string state
+        string previousState
+        string teamId
+        string siteId
+    }
+    TASKEVENTDATA {
+        string taskId
+        string channelType
+        string status
+        string queueId
+        string agentId
+        string customerId
+    }
+    CAPTUREEVENTDATA {
+        string taskId
+        string recordingUrl
+        string transcriptId
+        boolean published
+    }
+
+    ORGANIZATION ||--o{ SUBSCRIPTION : registers
+    SUBSCRIPTION ||--o{ WEBHOOKEVENT : emits
+    WEBHOOKEVENT ||--o| AGENTEVENTDATA : may_carry
+    WEBHOOKEVENT ||--o| TASKEVENTDATA : may_carry
+    WEBHOOKEVENT ||--o| CAPTUREEVENTDATA : may_carry

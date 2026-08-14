@@ -1,0 +1,80 @@
+erDiagram
+    ORGANIZATION {
+        string id PK
+        string displayName
+        string created
+        string domain
+        string managementAccess
+        string clusterName
+    }
+    PERSON {
+        string id PK
+        string[] emails
+        string displayName
+        string firstName
+        string lastName
+        string nickName
+        string avatar
+        string title
+        string department
+        string orgId FK
+        string managerId FK
+        string[] roles
+        string[] licenses
+        string locationId FK
+        string extension
+        string[] siteUrls
+        string status
+        string type
+        string loginEnabled
+        string invitePending
+        string lastActivity
+        string created
+        string lastModified
+        string timezone
+    }
+    ROLE {
+        string id PK
+        string name
+        string description
+    }
+    LICENSE {
+        string id PK
+        string name
+        number total
+        number consumed
+        number quantity
+        string unit
+        number unitSize
+        string licenseType
+    }
+    LOCATION {
+        string id PK
+        string name
+        string orgId FK
+        object address
+        string timeZone
+        string country
+        string[] floorIds
+    }
+    SCIMUSER {
+        string id PK
+        string userName
+        string[] emails
+        string name_formatted
+        string name_familyName
+        string name_givenName
+        boolean active
+        string[] roles
+        string orgId FK
+    }
+
+    ORGANIZATION ||--o{ PERSON : has
+    ORGANIZATION ||--o{ ROLE : defines
+    ORGANIZATION ||--o{ LICENSE : owns
+    ORGANIZATION ||--o{ LOCATION : has
+    PERSON ||--o{ PERSON : manages
+    PERSON }o--o{ ROLE : assigned
+    PERSON }o--o{ LICENSE : assigned
+    PERSON }o--|| LOCATION : located
+    PERSON ||--|| SCIMUSER : provisioned_as

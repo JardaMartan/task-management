@@ -7,6 +7,7 @@ import { getMockData } from '../mock/mockData';
 import { toggleAnalyticsOpen } from '../store/slices/widgetSlice';
 import { fetchLiveVoiceTranscript, fetchVoiceSummaryFor, fetchVoiceCallsForCustomer } from '../store/slices/voiceSlice';
 import { usePanelUiState } from '../ui/usePanelUiState';
+import { buildVoiceTranscriptHtml, downloadHtml } from './exportVoiceTranscriptHtml';
 import './voice.css';
 
 // Stable default so filter memos aren't invalidated every render.
@@ -185,6 +186,14 @@ const VoiceWidget = ({ darkMode, mockMode, initialTaskId, onNavigate, currentTas
   const liveStatus = useSelector((state) => state.voice?.status?.[selectedCall?.taskId]);
   const liveSummary = useSelector((state) => state.voice?.summaries?.[selectedCall?.taskId]);
   const liveSummaryStatus = useSelector((state) => state.voice?.summaryStatus?.[selectedCall?.taskId]);
+
+  // Prefer the richer Search API call record (with duration, team, etc.) for
+  // exports, but fall back to the list/display record if it isn't loaded yet.
+  const selectedCallTask = useSelector((state) => {
+    if (!selectedCall?.taskId) return null;
+    return state.voice?.customerCalls?.find((c) => c.taskId === selectedCall.taskId) || null;
+  });
+
   useEffect(() => {
     if (usingRealCalls && selectedCall?.taskId) {
       dispatch(fetchLiveVoiceTranscript(selectedCall.taskId));
@@ -201,6 +210,20 @@ const VoiceWidget = ({ darkMode, mockMode, initialTaskId, onNavigate, currentTas
   const callTranscript = hasLiveTranscript
     ? liveTranscript.transcript
     : ((usingRealCalls || isLiveCall) ? [] : (selectedCall?.transcript || MOCK_TRANSCRIPT));
+
+  const handleExportTranscript = useCallback(() => {
+    const call = selectedCallTask || selectedCall;
+    if (!call?.taskId) return;
+    const html = buildVoiceTranscriptHtml({
+      call,
+      transcript: callTranscript,
+      summary: liveSummary,
+      t,
+      locale,
+    });
+    const filename = `${t('voice.export.filePrefix')}_${call.taskId}_${new Date().toISOString().slice(0, 10)}.html`;
+    downloadHtml(filename, html);
+  }, [selectedCallTask, selectedCall, callTranscript, liveSummary, t, locale]);
 
   // Resolve a transcript utterance's speaker label to the real customer/agent
   // name when known, falling back to a localized "Customer"/"Agent".
@@ -347,6 +370,19 @@ const VoiceWidget = ({ darkMode, mockMode, initialTaskId, onNavigate, currentTas
               >
                 <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
                   <path fill="currentColor" d="M17.65 6.35A7.96 7.96 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z" />
+                </svg>
+              </button>
+            )}
+            {usingRealCalls && selectedCall?.taskId && (
+              <button
+                type="button"
+                className="voice__export-btn"
+                title={t('voice.export.title')}
+                aria-label={t('voice.export.title')}
+                onClick={handleExportTranscript}
+              >
+                <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
+                  <path fill="currentColor" d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" />
                 </svg>
               </button>
             )}

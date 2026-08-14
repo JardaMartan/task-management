@@ -1,0 +1,82 @@
+erDiagram
+    ORGANIZATION {
+        string id PK
+        string name
+        string parentOrgId
+    }
+    SITE {
+        string id PK
+        string name
+        string orgId FK
+    }
+    TEAM {
+        string id PK
+        string name
+        string siteId FK
+        string orgId FK
+    }
+    QUEUE {
+        string id PK
+        string name
+        string siteId FK
+        string orgId FK
+    }
+    ENTRYPOINT {
+        string id PK
+        string name
+        string orgId FK
+        string ivrScriptId
+    }
+    AGENT {
+        string id PK
+        string name
+        string userLoginId
+        string teamId FK
+        string siteId FK
+        string orgId FK
+        string mediaProfileId FK
+        string skillProfileId FK
+        string agentProfileId FK
+    }
+    USER {
+        string id PK
+        string ciUserId
+        string agentProfileId FK
+        boolean contactCenterEnabled
+        string orgId FK
+    }
+    AGENTPROFILE {
+        string id PK
+        string name
+        string accessQueue
+        string accessWrapUpCode
+        boolean dialPlanEnabled
+    }
+    MEDIAPROFILE {
+        string id PK
+        string multiMediaProfileType
+    }
+    SKILLPROFILE {
+        string id PK
+        string name
+    }
+
+    ORGANIZATION ||--o{ SITE : has
+    ORGANIZATION ||--o{ TEAM : has
+    ORGANIZATION ||--o{ QUEUE : has
+    ORGANIZATION ||--o{ ENTRYPOINT : has
+    ORGANIZATION ||--o{ AGENT : has
+    ORGANIZATION ||--o{ USER : has
+    ORGANIZATION ||--o{ MEDIAPROFILE : defines
+    ORGANIZATION ||--o{ SKILLPROFILE : defines
+    ORGANIZATION ||--o{ AGENTPROFILE : defines
+
+    SITE ||--o{ TEAM : contains
+    SITE ||--o{ QUEUE : hosts
+    TEAM ||--o{ AGENT : contains
+
+    AGENT ||--|| USER : represented_by
+    AGENT ||--o| MEDIAPROFILE : assigned
+    AGENT ||--o| SKILLPROFILE : assigned
+    AGENT ||--o| AGENTPROFILE : configured_by
+    ENTRYPOINT ||--o{ QUEUE : routes_to

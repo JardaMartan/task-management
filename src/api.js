@@ -2167,7 +2167,11 @@ export const fetchCustomerVoiceCalls = async (accessToken, orgId, phones, datace
     }
     const body = await response.json();
     const tasks = (body?.data?.taskDetails?.tasks || [])
-      .filter((t) => !t.channelType || String(t.channelType).toLowerCase() === 'telephony');
+      .filter((t) => !t.channelType || String(t.channelType).toLowerCase() === 'telephony')
+      // Keep only calls that actually reached an agent. Self-service / IVR-only
+      // calls (terminationType "self_service", connectedDuration 0, no agent)
+      // have no transcript, agent, team or wrap-up — they'd show as empty rows.
+      .filter((t) => Number(t.connectedDuration) > 0 || Boolean(t.lastAgent?.name));
     tasks.sort((a, b) => (b.createdTime || 0) - (a.createdTime || 0));
     return tasks.slice(0, limit).map((t) => ({
       taskId: t.id,
@@ -2312,7 +2316,12 @@ export const fetchEmailThreadMetadata = async (threadId, gmailToken) => {
   }
 
   const data = await response.json();
-  const messages = data.messages || [];
+  // Thread list sorting and display must reflect real email traffic only.
+  // In-progress Gmail drafts appear as messages with the DRAFT label inside
+  // the thread, so we exclude them from the "last message" date and count.
+  const messages = (data.messages || []).filter(
+    (m) => !(m.labelIds || []).includes('DRAFT')
+  );
   const firstMsg = messages[0] || {};
   const lastMsg = messages[messages.length - 1] || {};
 
@@ -2632,12 +2641,10 @@ export const deleteGmailDraft = async (gmailToken, draftId) => {
 };
 
 /**
- * Find the newest draft belonging to a given thread and return its HTML body.
- * Returns { draftId, html, text } or null when the thread has no draft.
+ * List all Gmail drafts for the current user.
+ * Returns { drafts: [{ id, message: { id, threadId } }] }.
  */
-export const findGmailDraftForThread = async (gmailToken, threadId) => {
-  if (!threadId) return null;
-  // drafts.list returns { drafts: [{ id, message: { id, threadId } }] }
+export const fetchGmailDraftList = async (gmailToken) => {
   const listRes = await fetch(`${GMAIL_API_BASE}/drafts?maxResults=100`, {
     headers: { Authorization: `Bearer ${gmailToken}` },
   });
@@ -2645,7 +2652,16 @@ export const findGmailDraftForThread = async (gmailToken, threadId) => {
     const text = await listRes.text();
     throw new Error(`Gmail drafts.list ${listRes.status}: ${text}`);
   }
-  const list = await listRes.json();
+  return listRes.json();
+};
+
+/**
+ * Find the newest draft belonging to a given thread and return its HTML body.
+ * Returns { draftId, html, text } or null when the thread has no draft.
+ */
+export const findGmailDraftForThread = async (gmailToken, threadId) => {
+  if (!threadId) return null;
+  const list = await fetchGmailDraftList(gmailToken);
   const match = (list.drafts || []).filter((d) => d.message?.threadId === threadId).pop();
   if (!match) return null;
 

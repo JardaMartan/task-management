@@ -1,0 +1,117 @@
+erDiagram
+    TASK {
+        string id PK "CSR - Customer Session Record"
+        string channelType
+        string channelSubType
+        string status
+        long createdTime
+        long endedTime
+        long lastActivityTime
+        string lastAgentId FK
+        string lastQueueId FK
+        string lastSiteId FK
+        string lastTeamId FK
+        string lastEntryPointId FK
+        string campaignId FK
+        string ivrScriptId
+        string customerId
+        boolean isActive
+        boolean isCallback
+        boolean isOutdial
+        boolean isCampaign
+        long totalDuration
+        long connectedDuration
+        long queueDuration
+        long holdDuration
+        long wrapupDuration
+        long consultDuration
+        long conferenceDuration
+        long ringingDuration
+    }
+    CALLLEG {
+        string id PK "CLR - Call Leg Record"
+        string taskId FK
+        string queueId FK
+        string ownerAgentId FK
+        string siteId FK
+        string teamId FK
+        string entryPointId FK
+        string nextDestinationAgentId FK
+        string handleType
+        string status
+        string callLegType
+        boolean isActive
+        long queueDuration
+        long connectedDuration
+        long ringingDuration
+        long wrapupDuration
+        long handleTime
+        string terminationReason
+    }
+    CONVERSATION {
+        string id PK
+        string taskId FK
+        string channelType
+        long createdTime
+    }
+    TRANSCRIPTION {
+        string id PK
+        string taskId FK
+        string conversationId FK
+        boolean isAvailable
+        boolean isRealtime
+    }
+    RECORDING {
+        string id PK
+        string taskId FK
+        string location
+        long fileSize
+        boolean captureRequested
+        boolean isDeleted
+        boolean isMonitored
+    }
+    CADVARIABLE {
+        string name
+        string type "string|boolean|integer|long|double"
+        string value
+        string taskId FK
+    }
+    CUSTOMER {
+        string id PK
+        string name
+        string phoneNumber
+        string email
+    }
+    CAMPAIGN {
+        string id PK
+        string name
+        string status
+        string orgId FK
+    }
+    CUSTOMERACTIVITY {
+        string id PK "CAR - Customer Activity Record"
+        string taskId FK
+        string eventName
+        string previousState
+        string nextState
+        long createdTime
+        long endedTime
+        long duration
+        string agentId
+        string queueId
+        string entrypointId
+        string siteId
+        string teamId
+        string transferType
+        string terminationReason
+    }
+
+    TASK ||--o{ CALLLEG : has
+    TASK ||--o{ CONVERSATION : may_have
+    TASK ||--o{ TRANSCRIPTION : may_have
+    TASK ||--o{ RECORDING : may_have
+    TASK ||--o{ CADVARIABLE : carries
+    TASK ||--o{ CUSTOMERACTIVITY : contains
+    TASK }o--|| CUSTOMER : involves
+    TASK }o--|| CAMPAIGN : generated_by
+    CONVERSATION ||--o{ TRANSCRIPTION : may_have

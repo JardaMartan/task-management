@@ -28,7 +28,7 @@ import emailReducer, {
   // Actions
   setGmailToken, setActiveEmail, setThread, setCustomerThreads, setCustomerHistory,
   appendCustomerHistoryEvent, setCustomerIdentities,
-  setAiEnrichment, setAiReplyDraft, setTemplates, setPendingCorrelationId,
+  setAiEnrichment, setCadRiskDetected, setAiReplyDraft, setTemplates, setPendingCorrelationId,
   fetchCustomerJdsHistory, loadJdsHistoryForEmailTask, loadJdsHistoryForWorkItemTask, loadJdsHistoryForVoiceTask, loadJdsHistoryForChatTask, loadJdsHistoryForSocialTask, refreshAiEnrichment, generateAiReply, improveAiDraft,
   sendEmailReply, handleSseEvent, submitWrapUp,
   saveEmailDraft, loadEmailDraftForThread, deleteEmailDraft, generateWrapUpSummary, setWrapUpSummary,
@@ -70,7 +70,7 @@ export {
   // Email actions
   setGmailToken, setActiveEmail, setThread, setCustomerThreads, setCustomerHistory,
   appendCustomerHistoryEvent, setCustomerIdentities,
-  setAiEnrichment, setAiReplyDraft, setTemplates, setPendingCorrelationId,
+  setAiEnrichment, setCadRiskDetected, setAiReplyDraft, setTemplates, setPendingCorrelationId,
   fetchCustomerJdsHistory, loadJdsHistoryForEmailTask, loadJdsHistoryForWorkItemTask, loadJdsHistoryForVoiceTask, loadJdsHistoryForChatTask, loadJdsHistoryForSocialTask, refreshAiEnrichment, generateAiReply, improveAiDraft,
   sendEmailReply, handleSseEvent, submitWrapUp,
   saveEmailDraft, loadEmailDraftForThread, deleteEmailDraft, generateWrapUpSummary, setWrapUpSummary,

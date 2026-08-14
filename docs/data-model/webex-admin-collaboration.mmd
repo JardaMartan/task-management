@@ -1,0 +1,87 @@
+erDiagram
+    PERSON {
+        string id PK
+        string displayName
+        string orgId FK
+    }
+    TEAM {
+        string id PK
+        string name
+        string description
+        string created
+        string creatorId FK
+    }
+    ROOM {
+        string id PK
+        string title
+        string type
+        string teamId FK
+        string created
+    }
+    MEMBERSHIP {
+        string id PK
+        string roomId FK
+        string roomType
+        string personId FK
+        string personEmail
+        string personDisplayName
+        string personOrgId
+        boolean isModerator
+        boolean isMonitor
+        boolean isRoomHidden
+        string created
+    }
+    MESSAGE {
+        string id PK
+        string roomId FK
+        string roomType
+        string personId FK
+        string personEmail
+        string parentId FK
+        string toPersonId FK
+        string toPersonEmail
+        string text
+        string markdown
+        string html
+        string[] files
+        string[] mentionedPeople
+        string[] mentionedGroups
+        object[] attachments
+        boolean isVoiceClip
+        string created
+        string updated
+    }
+    MEETING {
+        string id PK
+        string title
+        string agenda
+        string start
+        string end
+        string timezone
+        string meetingType
+        string scheduledType
+        string state
+        string hostUserId FK
+        string hostEmail
+        string meetingNumber
+        string siteUrl
+        string webLink
+        string roomId FK
+        string recurrence
+        boolean enabledBreakoutSessions
+        boolean enabledAutoRecordMeeting
+        boolean enabledJoinBeforeHost
+        boolean publicMeeting
+        string[] integrationTags
+    }
+
+    TEAM ||--o{ ROOM : contains
+    PERSON ||--o{ TEAM : creates
+    PERSON ||--o{ MEMBERSHIP : participates
+    PERSON ||--o{ MESSAGE : authors
+    PERSON ||--o{ MEETING : hosts
+    ROOM ||--o{ MEMBERSHIP : has
+    ROOM ||--o{ MESSAGE : contains
+    ROOM ||--o{ MEETING : scheduled_in
+    MESSAGE ||--o{ MESSAGE : replies_via_parentId
+    MESSAGE }o--o{ PERSON : mentions

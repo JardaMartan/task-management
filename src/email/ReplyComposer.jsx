@@ -225,6 +225,7 @@ const ReplyComposer = ({ interactionId, callAssociatedDetails, darkMode, outboun
   const activeSignatureId   = useSelector((state) => state.email.activeSignatureId);
   const emailTouched        = useSelector((state) => state.email.emailTouched);
   const draftSync           = useSelector((state) => state.email.draftSync);
+  const gmailDraftId        = useSelector((state) => state.email.gmailDraftId);
   const widgetAgent         = useSelector((state) => state.widget.agent);
   const widgetAgentName     = useSelector((state) => state.widget.agentName);
   const experienceUrl       = useSelector((state) => state.widget?.emailConfig?.experienceUrl);
@@ -491,21 +492,30 @@ const ReplyComposer = ({ interactionId, callAssociatedDetails, darkMode, outboun
         {/* ── Recipient + actions bar (Send lives here, next to the target address) ── */}
         <div className="reply-composer__bar">
           <div className="reply-composer__bar-info">
-            {!outboundMode && (
-              <Badge color={emailTouched ? 'orange' : 'green'}>
-                {emailTouched ? t('email.state.draft') : t('email.state.new')}
-              </Badge>
-            )}
-            {!outboundMode && !isNote && (draftSync.resumed || draftSync.status) && (
-              <span className={`reply-composer__draft-status${draftSync.status === 'saving' ? ' reply-composer__draft-status--saving' : ''}`}>
-                {draftSync.resumed
-                  ? t('email.draft.resumed')
-                  : draftSync.status === 'saving'
-                  ? t('email.draft.saving')
-                  : draftSync.status === 'saved'
-                  ? t('email.draft.saved')
-                  : ''}
-              </span>
+            {!outboundMode && !isNote && (gmailDraftId || emailTouched || draftSync.status || draftSync.resumed) && (
+              <span
+                className={`reply-composer__draft-dot${
+                  draftSync.status === 'saved' || draftSync.resumed || gmailDraftId
+                    ? ' reply-composer__draft-dot--saved'
+                    : draftSync.status === 'saving'
+                    ? ' reply-composer__draft-dot--saving'
+                    : ' reply-composer__draft-dot--unsaved'
+                }`}
+                aria-label={
+                  draftSync.status === 'saved' || draftSync.resumed || gmailDraftId
+                    ? t('email.draft.saved')
+                    : draftSync.status === 'saving'
+                    ? t('email.draft.saving')
+                    : t('email.draft.unsaved')
+                }
+                title={
+                  draftSync.status === 'saved' || draftSync.resumed || gmailDraftId
+                    ? t('email.draft.saved')
+                    : draftSync.status === 'saving'
+                    ? t('email.draft.saving')
+                    : t('email.draft.unsaved')
+                }
+              />
             )}
             {outboundMode ? (
               <span className="reply-composer__bar-title">{t('email.outbound.title')}</span>

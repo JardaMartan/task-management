@@ -131,6 +131,87 @@
   border-left: 3px solid var(--md-color-blue-50, #007aa3);
 }
 
+/* Interaction-thread marker: persistent blue accent on the left edge plus a
+   subtle background tint so it remains identifiable even when not active. */
+.thread-list__item--interaction {
+  border-left: 3px solid var(--md-color-blue-50, #007aa3);
+  background: rgba(0, 122, 163, 0.06);
+}
+
+.thread-list__item--interaction.thread-list__item--active {
+  background: var(--md-color-blue-05, #f0f7ff);
+  border-left-color: var(--md-color-blue-60, #00557b);
+}
+
+.thread-list__interaction-badge {
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.thread-list__draft-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 6px;
+  vertical-align: middle;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0;
+  text-transform: none;
+  background: var(--md-color-orange-10, #fce8d6);
+  color: var(--md-color-orange-70, #b45309);
+  border: 1px solid var(--md-color-orange-30, #f2c7a2);
+}
+
+.email-widget.md--dark .thread-list__draft-badge {
+  background: rgba(224, 108, 0, 0.2);
+  color: #ffb380;
+  border-color: rgba(224, 108, 0, 0.4);
+}
+
+/* Jump-to-interaction button in the thread panel header */
+.thread-panel__jump-btn.md-button {
+  height: 28px;
+  min-width: 0;
+  padding: 0 10px;
+  font-size: 12px;
+  border-radius: 14px;
+  border: 1px solid var(--md-color-blue-50, #007aa3);
+  color: var(--md-color-blue-60, #00557b);
+  background: var(--md-color-blue-05, #f0f7ff);
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.thread-panel__jump-btn.md-button:hover {
+  background: var(--md-color-blue-50, #007aa3);
+  color: #fff;
+  border-color: var(--md-color-blue-60, #00557b);
+}
+
+.email-widget.md--dark .thread-list__item--interaction {
+  background: rgba(0, 160, 209, 0.12);
+  border-left-color: #00a0d1;
+}
+
+.email-widget.md--dark .thread-list__item--interaction.thread-list__item--active {
+  background: rgba(0, 160, 209, 0.2);
+  border-left-color: #4dd4f5;
+}
+
+.email-widget.md--dark .thread-panel__jump-btn.md-button {
+  color: #4dd4f5;
+  border-color: rgba(0, 160, 209, 0.6);
+  background: rgba(0, 122, 163, 0.15);
+}
+
+.email-widget.md--dark .thread-panel__jump-btn.md-button:hover {
+  background: rgba(0, 160, 209, 0.45);
+  color: #fff;
+}
+
 .thread-list__item-head {
   display: flex;
   justify-content: space-between;
@@ -808,12 +889,17 @@
   color: var(--md-color-orange-60, #b45309);
 }
 
-.reply-composer__draft-status {
-  font-size: 11px;
-  color: var(--md-color-green-60, #16a34a);
-  white-space: nowrap;
+.reply-composer__draft-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--md-color-gray-40, #9e9e9e);
 }
-.reply-composer__draft-status--saving { color: var(--md-color-gray-50, #767676); }
+.reply-composer__draft-dot--saved { background: var(--md-color-green-50, #4db33d); box-shadow: 0 0 0 2px rgba(77, 179, 61, 0.2); }
+.reply-composer__draft-dot--unsaved { background: var(--md-color-red-50, #e84545); box-shadow: 0 0 0 2px rgba(232, 69, 69, 0.2); }
+.reply-composer__draft-dot--saving { background: var(--md-color-orange-50, #f58219); }
 
 .reply-composer__bar-actions {
   display: flex;
@@ -1174,6 +1260,11 @@
 .email-widget.md--dark .thread-list__snippet {
   color: rgba(255,255,255,.6);
 }
+.email-widget.md--dark .thread-list__draft-badge {
+  background: rgba(224, 108, 0, 0.2);
+  color: #ffb380;
+  border-color: rgba(224, 108, 0, 0.4);
+}
 .email-widget.md--dark .thread-panel__other {
   border-top-color: rgba(255,255,255,.12);
 }
@@ -1254,6 +1345,9 @@
 .email-widget.md--dark .reply-composer__bar-title {
   color: rgba(255,255,255,.9);
 }
+.email-widget.md--dark .reply-composer__draft-dot--saved { background: var(--md-color-green-40, #67cb8d); }
+.email-widget.md--dark .reply-composer__draft-dot--unsaved { background: var(--md-color-red-40, #ff7d7d); }
+.email-widget.md--dark .reply-composer__draft-dot--saving { background: var(--md-color-orange-40, #ff9a3c); }
 .email-widget.md--dark .reply-composer--note.md-card {
   background-color: rgba(245,130,25,.08);
   border-left-color: #f58219;
@@ -1327,6 +1421,64 @@
 /* Active = the message targeted by the reply composer */
 .msg-card--active > .msg-card__header {
   background: var(--md-color-blue-05, #f0f7ff);
+}
+
+/* Risk highlight: AI (JDS) flagged this received message as risky */
+.msg-card--risk {
+  border-color: var(--md-color-red-40, #f26d6d);
+  box-shadow: 0 0 0 1px var(--md-color-red-40, #f26d6d), 0 2px 8px rgba(232, 69, 69, 0.14);
+}
+
+.msg-card--risk > .msg-card__header {
+  background: var(--md-color-red-05, #fff0f0);
+  border-bottom-color: var(--md-color-red-20, #f7c2c2);
+}
+
+.msg-card--risk > .msg-card__header::before {
+  content: '⚠';
+  margin-right: 6px;
+  color: var(--md-color-red-50, #e84545);
+  font-size: 14px;
+}
+
+.msg-card--risk.msg-card--active > .msg-card__header {
+  background: var(--md-color-red-10, #ffe0e0);
+}
+
+.msg-card--risk.msg-card--active > .msg-card__header:hover,
+.msg-card--risk > .msg-card__header:hover {
+  background: var(--md-color-red-10, #ffe0e0);
+}
+
+/* Risk warning bar below the card's top edge */
+.msg-card__risk-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  background: var(--md-color-red-50, #e84545);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.msg-card__risk-icon {
+  font-size: 13px;
+}
+
+.msg-card__risk-text {
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+/* Ensure rounded top corners don't clip the red bar on the first card */
+.msg-card:first-child .msg-card__risk-bar {
+  border-radius: 7px 7px 0 0;
+}
+
+.msg-card:only-child .msg-card__risk-bar {
+  border-radius: 7px 7px 0 0;
 }
 
 /* ── Message card header (always visible, click to toggle) ── */
@@ -1452,6 +1604,30 @@
 
 .email-widget.md--dark .msg-card--active > .msg-card__header:hover {
   background: rgba(0,160,209,.15);
+}
+
+.email-widget.md--dark .msg-card--risk {
+  border-color: rgba(232, 69, 69, .55);
+  box-shadow: 0 0 0 1px rgba(232, 69, 69, .55), 0 2px 10px rgba(232, 69, 69, .22);
+}
+
+.email-widget.md--dark .msg-card--risk > .msg-card__header {
+  background: rgba(232, 69, 69, .12);
+  border-bottom-color: rgba(232, 69, 69, .35);
+}
+
+.email-widget.md--dark .msg-card--risk > .msg-card__header::before {
+  color: #ff6b6b;
+}
+
+.email-widget.md--dark .msg-card--risk.msg-card--active > .msg-card__header,
+.email-widget.md--dark .msg-card--risk > .msg-card__header:hover {
+  background: rgba(232, 69, 69, .18);
+}
+
+.email-widget.md--dark .msg-card__risk-bar {
+  background: #d32f2f;
+  color: #fff;
 }
 
 .email-widget.md--dark .msg-card__body {
