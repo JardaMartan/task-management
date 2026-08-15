@@ -317,6 +317,50 @@
   width: 100%;
 }
 
+/* ── AI content blocks (summary + suggested reply) ─ */
+.ai-panel__block {
+  background: var(--md-color-white, #ffffff);
+  border: 1px solid var(--md-color-gray-20, #dbe3ec);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  box-shadow: 0 1px 2px rgba(10,34,54,0.04);
+}
+
+.ai-panel__block-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+
+.ai-panel__block-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.ai-panel__block-title--summary {
+  color: var(--md-color-blue-60, #0e7fc1);
+}
+
+.ai-panel__block-title--reply {
+  color: var(--md-color-green-60, #3a8a2d);
+}
+
+.ai-panel__block-text {
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0;
+  color: var(--md-color-gray-80, #1c1c1c);
+}
+
+/* Keep legacy class for any old consumers */
 .reading-pane__summary {
   background: var(--md-color-white, #ffffff);
   border: 1px solid var(--md-color-gray-20, #dbe3ec);
@@ -1231,6 +1275,7 @@
 
 /* AI summary / thread summary banners */
 .email-widget.md--dark .reading-pane__summary,
+.email-widget.md--dark .ai-panel__block,
 .email-widget.md--dark .thread-panel__summary-banner {
   background: var(--md-color-gray-80, #17242f);
   border-color: rgba(255,255,255,0.08);
@@ -1240,8 +1285,15 @@
   color: rgba(255,255,255,0.5);
 }
 .email-widget.md--dark .reading-pane__summary-text,
+.email-widget.md--dark .ai-panel__block-text,
 .email-widget.md--dark .thread-panel__summary-text {
   color: rgba(255,255,255,.85);
+}
+.email-widget.md--dark .ai-panel__block-title--summary {
+  color: #4dd4f5;
+}
+.email-widget.md--dark .ai-panel__block-title--reply {
+  color: #7cd67c;
 }
 
 /* Email header meta row (From/To/CC) — overrides the light-mode gray */

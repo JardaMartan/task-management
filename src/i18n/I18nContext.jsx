@@ -5,9 +5,10 @@ import { translations, DEFAULT_LOCALE } from './translations';
 // eslint-disable-next-line no-use-before-define
 function interpolate(template, vars) {
   if (!template || typeof template !== 'string') return template;
-  // Using regex replace for parameter interpolation (replaceAll cannot handle capture groups straightforwardly here)
+  // Support both {{var}} and ICU-ish {var} placeholders so legacy keys keep working.
   // eslint-disable-next-line unicorn/prefer-string-replace-all
-  return template.replace(/\{\{(\w+)\}\}/g, (match, k) => (vars && Object.hasOwn(vars, k) ? vars[k] : ''));
+  return template.replace(/\{\{(\w+)\}\}/g, (match, k) => (vars && Object.hasOwn(vars, k) ? vars[k] : ''))
+    .replace(/\{(\w+)\}/g, (match, k) => (vars && Object.hasOwn(vars, k) ? vars[k] : ''));
 }
 
 function getNested(obj, path) {

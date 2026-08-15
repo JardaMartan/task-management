@@ -100,9 +100,11 @@ const AiPanel = ({ darkMode, onSeedReply }) => {
         </div>
 
         {currentSummary && (
-          <div className="reading-pane__summary" role="note">
-            <span className="reading-pane__summary-label">{t('email.ai.summary')}</span>
-            <p className="reading-pane__summary-text">{currentSummary}</p>
+          <div className="ai-panel__block ai-panel__block--summary" role="note">
+            <span className="ai-panel__block-title ai-panel__block-title--summary">
+              <span className="ai-panel__block-dot" aria-hidden="true" />{t('email.ai.summary')}
+            </span>
+            <p className="ai-panel__block-text">{currentSummary}</p>
             {olderSummaries.length > 0 && (
               <>
                 <button
@@ -154,9 +156,11 @@ const AiPanel = ({ darkMode, onSeedReply }) => {
         )}
 
         {currentReply && (
-          <div className="ai-panel__suggested">
-            <div className="ai-panel__suggested-label">{t('email.ai.suggestedReply')}</div>
-            <p className="ai-panel__suggested-text">{currentReply}</p>
+          <div className="ai-panel__block ai-panel__block--reply">
+            <div className="ai-panel__block-title ai-panel__block-title--reply">
+              <span className="ai-panel__block-dot" aria-hidden="true" />{t('email.ai.suggestedReply')}
+            </div>
+            <p className="ai-panel__block-text">{currentReply}</p>
             <Button
               ariaLabel={t('email.ai.useReply')}
               size={28}
