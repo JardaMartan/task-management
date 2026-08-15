@@ -207,8 +207,7 @@ const baseDictionary = {
     },
     thread: {
       title: 'Email Threads',
-      currentInteraction: 'Current interaction',
-      jumpToInteraction: 'Jump to interaction thread',
+      count: '{n} threads',
       draft: 'Draft',
     },
     attachments: {
@@ -219,6 +218,10 @@ const baseDictionary = {
     },
     ai: {
       summary: 'AI Summary',
+      source: {
+        preanalyzed: 'pre-analyzed',
+        ai: 'AI',
+      },
       category: 'Category',
       sentiment: 'Sentiment',
       confidence: 'Confidence',
@@ -255,6 +258,8 @@ const baseDictionary = {
       attach: 'Attach',
       attachLabel: 'Add attachment',
       removeAttachment: 'Remove attachment',
+      templateLabel: 'Template',
+      templatePlaceholder: 'Use template…',
       undoHint: 'Sending in {n}s',
       undo: 'Undo',
       shortcuts: 'Ctrl+Enter to send',
@@ -900,8 +905,7 @@ const deDictionary = {
     },
     thread: {
       title: 'E-Mail-Threads',
-      currentInteraction: 'Aktuelle Interaktion',
-      jumpToInteraction: 'Zum Interaktions-Thread springen',
+      count: '{n} Threads',
       draft: 'Entwurf',
     },
     attachments: {
@@ -912,6 +916,10 @@ const deDictionary = {
     },
     ai: {
       summary: 'KI-Zusammenfassung',
+      source: {
+        preanalyzed: 'voranalysiert',
+        ai: 'KI',
+      },
       category: 'Kategorie',
       sentiment: 'Stimmung',
       confidence: 'Konfidenz',
@@ -948,6 +956,8 @@ const deDictionary = {
       attach: 'Anhängen',
       attachLabel: 'Anhang hinzufügen',
       removeAttachment: 'Anhang entfernen',
+      templateLabel: 'Vorlage',
+      templatePlaceholder: 'Vorlage wählen…',
       undoHint: 'Senden in {n}s',
       undo: 'Rückgängig',
       shortcuts: 'Strg+Enter zum Senden',
@@ -1593,8 +1603,7 @@ const csDictionary = {
     },
     thread: {
       title: 'Vlákna',
-      currentInteraction: 'Aktuální interakce',
-      jumpToInteraction: 'Přejít na vlákno interakce',
+      count: '{n} vláken',
       draft: 'Koncept',
     },
     attachments: {
@@ -1605,6 +1614,10 @@ const csDictionary = {
     },
     ai: {
       summary: 'AI shrnutí',
+      source: {
+        preanalyzed: 'předanalyzováno',
+        ai: 'AI',
+      },
       category: 'Kategorie',
       sentiment: 'Nálada',
       confidence: 'Spolehlivost',
@@ -1641,6 +1654,8 @@ const csDictionary = {
       attach: 'Přiložit',
       attachLabel: 'Přidat přílohu',
       removeAttachment: 'Odebrat přílohu',
+      templateLabel: 'Šablona',
+      templatePlaceholder: 'Vybrat šablonu…',
       undoHint: 'Odesílám za {n}s',
       undo: 'Zpět',
       shortcuts: 'Ctrl+Enter pro odeslání',

@@ -1,7 +1,7 @@
-import React, { useRef, useEffect } from 'react';
+import React from 'react';
 import PropTypes from 'prop-types';
 import { useSelector, useDispatch } from 'react-redux';
-import { Badge, Button, Card, CardSection } from '@momentum-ui/react';
+import { Badge, Card, CardSection } from '@momentum-ui/react';
 import { useI18n } from '../i18n/I18nContext';
 import { fetchEmailThread, fetchMockEmailThread } from '../store/slices/emailSlice';
 
@@ -45,8 +45,6 @@ const ThreadPanel = ({ darkMode, isDemoMode, locale, activeFilters = {} }) => {
   const activeEmailTouched = useSelector((state) => state.email.emailTouched);
   const activeGmailDraftId = useSelector((state) => state.email.gmailDraftId);
 
-  const interactionRef = useRef(null);
-
   // True when the thread has an in-progress or saved draft.
   // Sources, in priority order:
   //   1. The visible thread list metadata (hasDraft) set by fetchCustomerThreads
@@ -86,24 +84,6 @@ const ThreadPanel = ({ darkMode, isDemoMode, locale, activeFilters = {} }) => {
     }
   };
 
-  const handleJumpToInteraction = () => {
-    if (!interactionThreadId) return;
-    if (interactionThreadId === activeEmail?.threadId) return;
-    console.log('[ThreadPanel] jumping to interaction thread', interactionThreadId);
-    if (isDemoMode) {
-      dispatch(fetchMockEmailThread(interactionThreadId, locale));
-    } else {
-      dispatch(fetchEmailThread(interactionThreadId));
-    }
-  };
-
-  // Auto-scroll the interaction thread into view whenever it changes or the list is first built.
-  useEffect(() => {
-    if (interactionRef.current) {
-      interactionRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
-  }, [interactionThreadId]);
-
   // Build a unified chronological list from customerThreads metadata.
   // fetchEmailThread now updates the customerThreads entry for any thread that
   // is fully loaded, so active and inactive entries share the same metadata
@@ -130,24 +110,14 @@ const ThreadPanel = ({ darkMode, isDemoMode, locale, activeFilters = {} }) => {
     return true;
   });
 
-  const canJumpToInteraction = interactionThreadId && activeEmail?.threadId !== interactionThreadId;
-
   return (
     <Card className={`thread-panel${darkMode ? ' md--dark' : ''}`}>
       <CardSection full>
-        <div className="thread-panel__title-row">
-          <span className="md-h4">{t('email.thread.title') || 'Email Threads'}</span>
-          {canJumpToInteraction && (
-            <Button
-              className="thread-panel__jump-btn"
-              size={28}
-              onClick={handleJumpToInteraction}
-              aria-label={t('email.thread.jumpToInteraction') || 'Jump to interaction thread'}
-              title={t('email.thread.jumpToInteraction') || 'Jump to interaction thread'}
-            >
-              {t('email.thread.jumpToInteraction')}
-            </Button>
-          )}
+        <div className="thread-panel__header">
+          <span className="thread-panel__header-label">{t('email.thread.title') || 'Email Threads'}</span>
+          <span className="thread-panel__header-count" aria-label={t('email.thread.count', { n: filteredThreads.length })}>
+            {t('email.thread.count', { n: filteredThreads.length })}
+          </span>
         </div>
 
         <ul className="thread-list" role="listbox" aria-label={t('email.thread.title') || 'Email Threads'}>
@@ -161,7 +131,6 @@ const ThreadPanel = ({ darkMode, isDemoMode, locale, activeFilters = {} }) => {
             return (
               <li
                 key={th.threadId}
-                ref={isInteractionThread ? interactionRef : null}
                 className={`thread-list__item${th.isActive ? ' thread-list__item--active' : ' thread-list__item--other'}${isInteractionThread ? ' thread-list__item--interaction' : ''}${hasDraft ? ' thread-list__item--draft' : ''}`}
                 role="option"
                 aria-selected={th.isActive}
@@ -174,16 +143,6 @@ const ThreadPanel = ({ darkMode, isDemoMode, locale, activeFilters = {} }) => {
                 <div className="thread-list__item-head">
                   <span className="thread-list__from" title={th.from}>
                     {displayFrom}
-                    {isInteractionThread && (
-                      <Badge
-                        className="thread-list__interaction-badge"
-                        color="blue"
-                        aria-label={t('email.thread.currentInteraction') || 'Current interaction'}
-                        title={t('email.thread.currentInteraction') || 'Current interaction'}
-                      >
-                        {t('email.thread.currentInteraction')}
-                      </Badge>
-                    )}
                     {hasDraft && (
                       <span
                         className="thread-list__draft-badge"

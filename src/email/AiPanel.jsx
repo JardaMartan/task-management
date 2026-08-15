@@ -1,13 +1,11 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { useSelector, useDispatch } from 'react-redux';
 import { Button, Badge, Card, CardSection } from '@momentum-ui/react';
 import { useI18n } from '../i18n/I18nContext';
-import SearchableSelect from '../ui/SearchableSelect';
 import {
   refreshAiEnrichment,
   setPendingComposerInsert,
-  applyTemplate,
   selectThreadAiSummaries,
 } from '../store/slices/emailSlice';
 
@@ -19,15 +17,13 @@ const SENTIMENT_COLORS = {
 };
 
 const AiPanel = ({ darkMode, onSeedReply }) => {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const dispatch = useDispatch();
   const aiEnrichment = useSelector((state) => state.email.aiEnrichment);
   const isFetchingEmail = useSelector((state) => state.email.isFetchingEmail);
   const aiConfig = useSelector((state) => state.widget?.emailConfig?.aiProvider);
-  const templates = useSelector((state) => state.email.templates);
   const lastSentReply = useSelector((state) => state.email.lastSentReply);
   const aiReplyDraft = useSelector((state) => state.email.aiReplyDraft);
-  const wrapUpStatus = useSelector((state) => state.email.wrapUpSummary.status);
   // Versioned AI summaries/replies for the open thread (newest first): the agent
   // re-generates them after each thread update, so show the latest and collapse
   // the older ones.
@@ -45,7 +41,7 @@ const AiPanel = ({ darkMode, onSeedReply }) => {
 
   const fmtVersionTime = (ts) => {
     try {
-      return new Date(ts).toLocaleString(locale, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+      return new Date(ts).toLocaleString(undefined, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
     } catch { return ''; }
   };
 
@@ -61,24 +57,6 @@ const AiPanel = ({ darkMode, onSeedReply }) => {
     if (markCurrent) setSuggestedUsed(true);
     if (onSeedReply) onSeedReply(replyText);
   };
-
-  const handleInsertTemplate = (templateId) => {
-    if (templateId) dispatch(applyTemplate(templateId));
-  };
-
-  // Show only templates matching the UI locale (fall back to 'en' when none match).
-  const localeTemplates = useMemo(() => {
-    const hasLocale = templates.some((tpl) => tpl.locale);
-    if (!hasLocale) return templates;
-    const lang = (locale || 'en').split('-')[0].toLowerCase();
-    const matching = templates.filter((tpl) => (tpl.locale || 'en') === lang);
-    return matching.length > 0 ? matching : templates.filter((tpl) => (tpl.locale || 'en') === 'en');
-  }, [templates, locale]);
-
-  const templateOptions = useMemo(
-    () => localeTemplates.map((tpl) => ({ id: tpl.id, name: tpl.name })),
-    [localeTemplates],
-  );
 
   const { category, sentiment, confidence, source } = aiEnrichment || {};
   const confidencePct = confidence != null ? `${Math.round(confidence * 100)}%` : null;
@@ -97,18 +75,22 @@ const AiPanel = ({ darkMode, onSeedReply }) => {
     <Card className={`ai-panel${darkMode ? ' md--dark' : ''}`} onKeyDown={handleCardKeyDown}>
       <CardSection full>
         <div className="ai-panel__header">
-          <span className="md-h4">{t('email.ai.summary')}</span>
-          <div className="ai-panel__header-actions">
+          <div className="ai-panel__header-title">
+            <span className="ai-panel__header-label">{t('email.ai.summary')}</span>
             {source && (
-              <Badge color="default">
-                {source === 'cad' ? 'pre-analyzed' : 'AI'}
+              <Badge className="ai-panel__source-badge" color={source === 'cad' ? 'orange' : 'blue'}>
+                {source === 'cad'
+                  ? t('email.ai.source.preanalyzed')
+                  : t('email.ai.source.ai')}
               </Badge>
             )}
+          </div>
+          <div className="ai-panel__header-actions">
             {aiConfig && (
               <Button
                 ariaLabel={t('email.ai.refresh')}
                 size={28}
-                color="none"
+                color="blue"
                 onClick={handleRefresh}
               >
                 {isFetchingEmail ? <span className="widget-spinner widget-spinner--sm widget-spinner--inherit" /> : t('email.ai.refresh')}
@@ -218,21 +200,6 @@ const AiPanel = ({ darkMode, onSeedReply }) => {
           </div>
         )}
 
-        {/* Template selection — insert a template at the composer caret */}
-        {templates.length > 0 && (
-          <div className="ai-panel__templates">
-            <span className="ai-panel__templates-label">{t('email.composer.templatePicker.title')}</span>
-            <SearchableSelect
-              value=""
-              options={templateOptions}
-              onChange={handleInsertTemplate}
-              searchable
-              placeholder={t('email.composer.templatePicker.search')}
-              ariaLabel={t('email.composer.templatePicker.title')}
-              emptyText={t('email.composer.templatePicker.empty')}
-            />
-          </div>
-        )}
       </CardSection>
     </Card>
   );

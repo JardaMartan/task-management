@@ -14,6 +14,7 @@ import {
   setPendingComposerInsert,
   saveEmailDraft,
   loadTeamEmailAssets,
+  applyTemplate,
 } from '../store/slices/emailSlice';
 import RichTextEditor from './RichTextEditor';
 import ComposerToolbar from './ComposerToolbar';
@@ -222,6 +223,7 @@ const ReplyComposer = ({ interactionId, callAssociatedDetails, darkMode, outboun
   const sendResult          = useSelector((state) => state.email.sendResult);
   const activeEmail         = useSelector((state) => state.email.activeEmail);
   const allSignatures       = useSelector((state) => state.email.signatures);
+  const allTemplates        = useSelector((state) => state.email.templates);
   const activeSignatureId   = useSelector((state) => state.email.activeSignatureId);
   const emailTouched        = useSelector((state) => state.email.emailTouched);
   const draftSync           = useSelector((state) => state.email.draftSync);
@@ -308,6 +310,21 @@ const ReplyComposer = ({ interactionId, callAssociatedDetails, darkMode, outboun
     const suggested = SENTIMENT_TONE_MAP[aiEnrichment?.sentiment];
     if (suggested) setSelectedTone(suggested);
   }, [aiEnrichment?.sentiment]);
+
+  // Filter templates by current UI locale; fall back to 'en' if none match.
+  const templates = React.useMemo(() => {
+    const hasLocale = allTemplates?.length && allTemplates.some((tmpl) => tmpl.locale);
+    if (!hasLocale) return allTemplates || [];
+    const lang = (locale || 'en').split('-')[0].toLowerCase();
+    const matching = allTemplates.filter((tmpl) => (tmpl.locale || 'en') === lang);
+    return matching.length > 0 ? matching : allTemplates.filter((tmpl) => (tmpl.locale || 'en') === 'en');
+  }, [allTemplates, locale]);
+
+  // Apply a selected email template to the composer draft.
+  const handleApplyTemplate = (templateId) => {
+    if (!templateId || !activeEmail) return;
+    dispatch(applyTemplate({ email: activeEmail, templateId }));
+  };
 
   useEffect(() => () => {
     if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
@@ -639,6 +656,21 @@ const ReplyComposer = ({ interactionId, callAssociatedDetails, darkMode, outboun
         {/* ── Formatting toolbar + inline AI correction controls (one line) ── */}
         {!isNote && (
           <ComposerToolbar editor={editorRef.current?.editor} onAttachClick={handleAttachClick}>
+            {templates.length > 0 && (
+              <div className="rte-toolbar__templates" role="group" aria-label={t('email.reply.templateLabel')}>
+                <SearchableSelect
+                  value=""
+                  options={[
+                    { id: '', name: t('email.reply.templatePlaceholder') },
+                    ...templates.map((tmpl) => ({ id: tmpl.id, name: tmpl.name || tmpl.id })),
+                  ]}
+                  onChange={(id) => handleApplyTemplate(id)}
+                  placeholder={t('email.reply.templatePlaceholder')}
+                  searchable={false}
+                  ariaLabel={t('email.reply.templateLabel')}
+                />
+              </div>
+            )}
             {aiConfig && (
               <div className="reply-composer__ai-inline" role="group" aria-label={t('email.reply.aiActionBar')}>
                 <button
