@@ -1898,6 +1898,13 @@
 .rte-toolbar__icon-u    { text-decoration: underline; font-weight: 700; }
 .rte-toolbar__icon-link { font-size: 13px; }
 
+.rte-toolbar__btn svg,
+.rte-toolbar__attach-btn svg,
+.reply-composer__ai-action-btn svg {
+  display: block;
+  flex-shrink: 0;
+}
+
 .rte-toolbar__divider {
   display: inline-block;
   width: 1px;
@@ -2075,25 +2082,28 @@
 .reply-composer__ai-inline {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
+  gap: 5px;
+  flex-wrap: nowrap;
+  max-width: 100%;
 }
 
 .reply-composer__ai-action-btn {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  justify-content: center;
+  gap: 4px;
   height: 26px;
-  padding: 0 10px;
+  padding: 0 8px;
   border: 1px solid var(--md-color-gray-20, #dbe3ec);
   border-radius: 13px;
   background: var(--md-color-white-100, #fff);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
   color: var(--md-color-gray-70, #3d3d3d);
   cursor: pointer;
   transition: background 0.1s, border-color 0.1s, color 0.1s;
   user-select: none;
+  white-space: nowrap;
 }
 .reply-composer__ai-action-btn:hover {
   background: var(--md-color-gray-05, #f4f7fa);
@@ -2107,15 +2117,29 @@
   pointer-events: none;
 }
 
+.reply-composer__ai-action-text {
+  display: inline-block;
+  max-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: max-width 0.2s ease, opacity 0.15s ease;
+}
+.reply-composer__ai-action-btn:hover .reply-composer__ai-action-text,
+.reply-composer__ai-action-btn:focus-visible .reply-composer__ai-action-text {
+  max-width: 90px;
+  opacity: 1;
+  margin-left: 3px;
+}
+
 .reply-composer__tone-row {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   font-size: 12px;
   color: var(--md-color-gray-60, #545454);
 }
 
-.reply-composer__tone-label { font-weight: 500; }
+.reply-composer__tone-label { display: none; }
 
 /* Tone dropdown uses SearchableSelect (pill shape), scaled to match row height */
 .reply-composer__tone-row .ss-ctl {
@@ -2130,19 +2154,26 @@
 .reply-composer__tone-row .ss-trigger {
   height: 26px;
   border-radius: 13px;
-  font-size: 12px;
-  padding: 0 10px 0 11px;
+  font-size: 11px;
+  padding: 0 7px 0 8px;
+  max-width: 110px;
+}
+.reply-composer__tone-row .ss-trigger .ss-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .reply-composer__tone-row .ss-pop {
-  min-width: 140px;
+  min-width: 130px;
+  font-size: 12px;
 }
 
 /* ── Template picker in composer toolbar ────────────── */
 .rte-toolbar__templates {
   display: inline-flex;
   align-items: center;
-  min-width: 140px;
-  max-width: 200px;
+  min-width: 120px;
+  max-width: 170px;
 }
 .rte-toolbar__templates .ss-ctl {
   width: 100%;
@@ -2157,8 +2188,13 @@
 .rte-toolbar__templates .ss-trigger {
   height: 26px;
   border-radius: 13px;
-  font-size: 12px;
-  padding: 0 10px 0 11px;
+  font-size: 11px;
+  padding: 0 8px 0 9px;
+}
+.rte-toolbar__templates .ss-trigger .ss-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .rte-toolbar__templates .ss-trigger.is-open,
 .rte-toolbar__templates .ss-trigger:focus-visible {
@@ -2167,7 +2203,8 @@
 .rte-toolbar__templates .ss-pop {
   top: calc(100% + 4px);
   right: auto;
-  min-width: 180px;
+  min-width: 160px;
+  font-size: 12px;
 }
 
 /* ── Reply Composer: To-line ────────────────────────── */

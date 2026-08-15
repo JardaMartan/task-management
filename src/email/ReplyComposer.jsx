@@ -680,12 +680,15 @@ const ReplyComposer = ({ interactionId, callAssociatedDetails, darkMode, outboun
                   disabled={isDraftEmpty || isAiBusy}
                   title={t('email.reply.fixGrammar')}
                 >
-                  {isCorrectingGrammar ? <span className="widget-spinner widget-spinner--xs widget-spinner--inherit" /> : <span aria-hidden="true">✓</span>}
-                  {t('email.reply.fixGrammar')}
+                  {isCorrectingGrammar ? <span className="widget-spinner widget-spinner--xs widget-spinner--inherit" /> : (
+                    <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true" fill="currentColor">
+                      <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+                    </svg>
+                  )}
+                  <span className="reply-composer__ai-action-text">{t('email.reply.fixGrammar')}</span>
                 </button>
 
-                <div className="reply-composer__tone-row">
-                  <span className="reply-composer__tone-label">{t('email.reply.toneLabel')}:</span>
+                <div className="reply-composer__tone-row" title={`${t('email.reply.toneLabel')}: ${t(TONE_OPTIONS.find(o => o.value === selectedTone)?.labelKey || '')}`}>
                   <SearchableSelect
                     value={selectedTone}
                     options={TONE_OPTIONS.map((opt) => ({ id: opt.value, name: t(opt.labelKey) }))}
@@ -706,8 +709,12 @@ const ReplyComposer = ({ interactionId, callAssociatedDetails, darkMode, outboun
                 >
                   {pendingAi === 'proofread'
                     ? <span className="widget-spinner widget-spinner--xs widget-spinner--inherit" />
-                    : <span aria-hidden="true">🔍</span>}
-                  {t('email.reply.proofreadLabel')}
+                    : (
+                      <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true" fill="currentColor">
+                        <path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+                      </svg>
+                    )}
+                  <span className="reply-composer__ai-action-text">{t('email.reply.proofreadLabel')}</span>
                 </button>
               </div>
             )}

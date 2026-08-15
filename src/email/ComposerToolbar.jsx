@@ -132,7 +132,9 @@ const ComposerToolbar = ({ editor, onAttachClick, children }) => {
             active={editor.isActive('bold')}
             title={t('email.composer.bold')}
           >
-            <strong>B</strong>
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="currentColor">
+              <path d="M6 4h7a5 5 0 0 1 5 5 5 5 0 0 1-5 5H6V4zm0 11h9a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6v-8z"/>
+            </svg>
           </ToolbarBtn>
 
           <ToolbarBtn
@@ -140,7 +142,9 @@ const ComposerToolbar = ({ editor, onAttachClick, children }) => {
             active={editor.isActive('italic')}
             title={t('email.composer.italic')}
           >
-            <em>I</em>
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="currentColor">
+              <path d="M11 4h6l-1 2h-2L11 18h2l-1 2H6l1-2h2l3-12H10z"/>
+            </svg>
           </ToolbarBtn>
 
           <ToolbarBtn
@@ -148,7 +152,9 @@ const ComposerToolbar = ({ editor, onAttachClick, children }) => {
             active={editor.isActive('underline')}
             title={t('email.composer.underline')}
           >
-            <span className="rte-toolbar__icon-u">U</span>
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="currentColor">
+              <path d="M6 3h3v8a3 3 0 0 0 6 0V3h3v8a6 6 0 0 1-12 0V3zm1 15h10v2H7z"/>
+            </svg>
           </ToolbarBtn>
 
           <ToolbarBtn
@@ -156,7 +162,9 @@ const ComposerToolbar = ({ editor, onAttachClick, children }) => {
             active={editor.isActive('strike')}
             title={t('email.composer.strike')}
           >
-            <s>S</s>
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="currentColor">
+              <path d="M15 4H9l1 2h4l-1-2zm-6 13l-1 2h8l-1-2H9zm4-8c-2 0-3-1-3-2 0-1 1-2 3-2s3 1 3 2h3c0-2-2-4-6-4s-6 2-6 4c0 2 2 3 3 4l-4 4h13v-2H9l2-2c1 0 3-1 3-2 0-1-1-2-3-2zm9 6v2H3v-2h15z"/>
+            </svg>
           </ToolbarBtn>
         </ToolbarGroup>
 
@@ -194,7 +202,9 @@ const ComposerToolbar = ({ editor, onAttachClick, children }) => {
             active={editor.isActive('bulletList')}
             title={t('email.composer.bulletList')}
           >
-            <span className="rte-toolbar__icon-ul" aria-hidden="true">≡</span>
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="currentColor">
+              <path d="M4 5h2v2H4V5zm0 6h2v2H4v-2zm0 6h2v2H4v-2zM8 6h12v2H8V6zm0 6h12v2H8v-2zm0 6h12v2H8v-2z"/>
+            </svg>
           </ToolbarBtn>
 
           <ToolbarBtn
@@ -202,7 +212,9 @@ const ComposerToolbar = ({ editor, onAttachClick, children }) => {
             active={editor.isActive('orderedList')}
             title={t('email.composer.orderedList')}
           >
-            <span className="rte-toolbar__icon-ol" aria-hidden="true">#≡</span>
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="currentColor">
+              <path d="M2 5h2v1H3v1h1v1H2v2h4V4H2v1zm0 6h2v-1h1v2H2v2h4v-4H2v1zm1 5H2v2h2v1H2v1h4v-4H3v1zm5-13h12v2H8V3zm0 6h12v2H8V9zm0 6h12v2H8v-2z"/>
+            </svg>
           </ToolbarBtn>
         </ToolbarGroup>
 
@@ -214,7 +226,9 @@ const ComposerToolbar = ({ editor, onAttachClick, children }) => {
           active={editor.isActive('blockquote')}
           title={t('email.composer.blockquote')}
         >
-          <span aria-hidden="true">❝</span>
+          <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="currentColor">
+            <path d="M4 8c0-2 1.5-4 4-4v2.5C6.5 7 6 7.7 6 9v1h2v6H4V8zm10 0c0-2 1.5-4 4-4v2.5c-1.5.5-2 1.2-2 2.5v1h2v6h-4V8z"/>
+          </svg>
         </ToolbarBtn>
 
         {/* ── Inline AI / extra controls ── */}
