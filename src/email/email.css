@@ -1850,7 +1850,7 @@
   justify-content: center;
   min-width: 28px;
   height: 26px;
-  padding: 0 8px;
+  padding: 0 7px;
   border: none;
   border-right: 1px solid var(--md-color-gray-15, #f0f2f4);
   border-radius: 0;
@@ -1861,6 +1861,14 @@
   cursor: pointer;
   transition: background 0.1s, color 0.1s;
   user-select: none;
+}
+
+.rte-toolbar__btn svg {
+  display: block;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin: auto;
 }
 .rte-toolbar__group .rte-toolbar__btn:last-child {
   border-right: none;
@@ -1894,15 +1902,11 @@
   border-radius: 13px;
 }
 
-/* Icon helpers */
-.rte-toolbar__icon-u    { text-decoration: underline; font-weight: 700; }
-.rte-toolbar__icon-link { font-size: 13px; }
-
-.rte-toolbar__btn svg,
-.rte-toolbar__attach-btn svg,
-.reply-composer__ai-action-btn svg {
+.rte-toolbar__attach-btn svg {
   display: block;
   flex-shrink: 0;
+  width: 16px;
+  height: 16px;
 }
 
 .rte-toolbar__divider {
