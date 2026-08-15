@@ -21,6 +21,12 @@ const ToolbarBtn = ({ onClick, active, disabled, title, children }) => (
   </button>
 );
 
+const ToolbarGroup = ({ children }) => (
+  <div className="rte-toolbar__group" role="group">
+    {children}
+  </div>
+);
+
 ToolbarBtn.propTypes = {
   onClick: PropTypes.func.isRequired,
   active: PropTypes.bool,
@@ -119,38 +125,40 @@ const ComposerToolbar = ({ editor, onAttachClick, children }) => {
     <div className="rte-toolbar" role="toolbar" aria-label={t('email.composer.toolbar')}>
       <div className="rte-toolbar__row">
 
-        {/* ── Inline formatting ── */}
-        <ToolbarBtn
-          onClick={() => editor.chain().focus().toggleBold().run()}
-          active={editor.isActive('bold')}
-          title={t('email.composer.bold')}
-        >
-          <strong>B</strong>
-        </ToolbarBtn>
+        {/* ── Inline formatting (segmented MomentumUI ButtonGroup look) ── */}
+        <ToolbarGroup>
+          <ToolbarBtn
+            onClick={() => editor.chain().focus().toggleBold().run()}
+            active={editor.isActive('bold')}
+            title={t('email.composer.bold')}
+          >
+            <strong>B</strong>
+          </ToolbarBtn>
 
-        <ToolbarBtn
-          onClick={() => editor.chain().focus().toggleItalic().run()}
-          active={editor.isActive('italic')}
-          title={t('email.composer.italic')}
-        >
-          <em>I</em>
-        </ToolbarBtn>
+          <ToolbarBtn
+            onClick={() => editor.chain().focus().toggleItalic().run()}
+            active={editor.isActive('italic')}
+            title={t('email.composer.italic')}
+          >
+            <em>I</em>
+          </ToolbarBtn>
 
-        <ToolbarBtn
-          onClick={() => editor.chain().focus().toggleUnderline().run()}
-          active={editor.isActive('underline')}
-          title={t('email.composer.underline')}
-        >
-          <span className="rte-toolbar__icon-u">U</span>
-        </ToolbarBtn>
+          <ToolbarBtn
+            onClick={() => editor.chain().focus().toggleUnderline().run()}
+            active={editor.isActive('underline')}
+            title={t('email.composer.underline')}
+          >
+            <span className="rte-toolbar__icon-u">U</span>
+          </ToolbarBtn>
 
-        <ToolbarBtn
-          onClick={() => editor.chain().focus().toggleStrike().run()}
-          active={editor.isActive('strike')}
-          title={t('email.composer.strike')}
-        >
-          <s>S</s>
-        </ToolbarBtn>
+          <ToolbarBtn
+            onClick={() => editor.chain().focus().toggleStrike().run()}
+            active={editor.isActive('strike')}
+            title={t('email.composer.strike')}
+          >
+            <s>S</s>
+          </ToolbarBtn>
+        </ToolbarGroup>
 
         <ToolbarDivider />
 
@@ -180,21 +188,23 @@ const ComposerToolbar = ({ editor, onAttachClick, children }) => {
         <ToolbarDivider />
 
         {/* ── Lists ── */}
-        <ToolbarBtn
-          onClick={() => editor.chain().focus().toggleBulletList().run()}
-          active={editor.isActive('bulletList')}
-          title={t('email.composer.bulletList')}
-        >
-          <span className="rte-toolbar__icon-ul" aria-hidden="true">≡</span>
-        </ToolbarBtn>
+        <ToolbarGroup>
+          <ToolbarBtn
+            onClick={() => editor.chain().focus().toggleBulletList().run()}
+            active={editor.isActive('bulletList')}
+            title={t('email.composer.bulletList')}
+          >
+            <span className="rte-toolbar__icon-ul" aria-hidden="true">≡</span>
+          </ToolbarBtn>
 
-        <ToolbarBtn
-          onClick={() => editor.chain().focus().toggleOrderedList().run()}
-          active={editor.isActive('orderedList')}
-          title={t('email.composer.orderedList')}
-        >
-          <span className="rte-toolbar__icon-ol" aria-hidden="true">#≡</span>
-        </ToolbarBtn>
+          <ToolbarBtn
+            onClick={() => editor.chain().focus().toggleOrderedList().run()}
+            active={editor.isActive('orderedList')}
+            title={t('email.composer.orderedList')}
+          >
+            <span className="rte-toolbar__icon-ol" aria-hidden="true">#≡</span>
+          </ToolbarBtn>
+        </ToolbarGroup>
 
         <ToolbarDivider />
 

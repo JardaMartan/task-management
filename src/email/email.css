@@ -1833,7 +1833,17 @@
   gap: 1px;
 }
 
-/* Toolbar button — unified pill shape (Momentum look via custom controls) */
+/* Toolbar button group — MomentumUI segmented control look */
+.rte-toolbar__group {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--md-color-gray-20, #dbe3ec);
+  border-radius: 13px;
+  background: var(--md-color-white-100, #fff);
+  overflow: hidden;
+}
+
+/* Toolbar button — flat segment inside the pill group */
 .rte-toolbar__btn {
   display: inline-flex;
   align-items: center;
@@ -1841,33 +1851,47 @@
   min-width: 28px;
   height: 26px;
   padding: 0 8px;
-  border: 1px solid var(--md-color-gray-20, #dbe3ec);
-  border-radius: 13px;
+  border: none;
+  border-right: 1px solid var(--md-color-gray-15, #f0f2f4);
+  border-radius: 0;
   background: var(--md-color-white-100, #fff);
   color: var(--md-color-gray-70, #3d3d3d);
   font-family: inherit;
   font-size: 12px;
   cursor: pointer;
-  transition: background 0.1s, border-color 0.1s, color 0.1s;
+  transition: background 0.1s, color 0.1s;
   user-select: none;
+}
+.rte-toolbar__group .rte-toolbar__btn:last-child {
+  border-right: none;
 }
 
 .rte-toolbar__btn:hover {
   background: var(--md-color-gray-05, #f4f7fa);
-  border-color: var(--md-color-blue-50, #0e7fc1);
   color: var(--md-color-gray-90, #282828);
 }
 
 .rte-toolbar__btn--active {
-  background: var(--md-color-blue-10, #e0f4fc);
-  border-color: var(--md-color-blue-30, #7fd3f0);
+  background: var(--md-color-blue-10, #cfe0ee);
   color: var(--md-color-blue-70, #00557b);
+}
+
+.rte-toolbar__btn--active:hover {
+  background: var(--md-color-blue-20, #bddcf0);
 }
 
 .rte-toolbar__btn--disabled,
 .rte-toolbar__btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+/* Stand-alone toolbar buttons (link, blockquote, attach) keep the pill shape */
+.rte-toolbar__row > .rte-toolbar__btn,
+.rte-toolbar__link-wrap > .rte-toolbar__btn:first-child,
+.rte-toolbar__attach-btn {
+  border: 1px solid var(--md-color-gray-20, #dbe3ec);
+  border-radius: 13px;
 }
 
 /* Icon helpers */
@@ -1964,6 +1988,14 @@
   background: var(--md-color-gray-05, #f4f7fa);
   border-color: var(--md-color-blue-50, #0e7fc1);
   color: var(--md-color-gray-90, #282828);
+}
+
+/* Active state for standalone toolbar buttons */
+.rte-toolbar__row > .rte-toolbar__btn.rte-toolbar__btn--active,
+.rte-toolbar__link-wrap > .rte-toolbar__btn.rte-toolbar__btn--active {
+  background: var(--md-color-blue-10, #cfe0ee);
+  border-color: var(--md-color-blue-50, #0e7fc1);
+  color: var(--md-color-blue-70, #00557b);
 }
 
 /* ── AI Action Bar ──────────────────────────────────── */
