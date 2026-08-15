@@ -900,6 +900,16 @@ export const initEmailTask =
       callAssociatedDetails?.from ||
       callAssociatedDetails?.customerEmail ||
       null;
+
+    console.log('[EmailSlice] initEmailTask thread selection inputs:', {
+      gmailThreadId: callAssociatedDetails?.gmailThreadId || null,
+      threadIdProp: callAssociatedDetails?.threadId || null,
+      rfcMessageId: callAssociatedDetails?.rfcMessageId || null,
+      subject: callAssociatedDetails?.subject || null,
+      customerEmail,
+      cachedResolvedThreadId: getState().email.resolvedThreadId,
+    });
+
     // Store in Redux so fetchEmailThread can re-fetch the AI summary
     // when the user navigates back to the active task's thread.
     if (customerEmail) dispatch(setCustomerEmail(customerEmail));
@@ -981,16 +991,19 @@ export const initEmailTask =
     //      and can highlight an older thread while the real interaction thread is
     //      the newest one at the top of the list.
     let resolvedThreadId = threadId;
+    let selectionMethod = 'direct-cad';
     if (!resolvedThreadId && customerEmail) {
       const rfcMessageId = callAssociatedDetails?.rfcMessageId || null;
       const subject = callAssociatedDetails?.subject || null;
       try {
         if (rfcMessageId) {
+          selectionMethod = 'rfc822msgid';
           console.log('[EmailSlice] Searching thread via rfc822msgid:', rfcMessageId);
           resolvedThreadId = await apiFindGmailThreadByRfcMessageId(rfcMessageId, token);
           console.log('[EmailSlice] rfc822msgid search result:', resolvedThreadId);
         }
         if (!resolvedThreadId) {
+          selectionMethod = 'customer-thread-list';
           console.log('[EmailSlice] Resolving active thread from customer thread list', {
             customerEmail,
             subject,
@@ -1005,7 +1018,7 @@ export const initEmailTask =
       }
     }
 
-    console.log('[EmailSlice] Resolved threadId:', resolvedThreadId, '| customerEmail:', customerEmail);
+    console.log('[EmailSlice] Resolved threadId:', resolvedThreadId, '| customerEmail:', customerEmail, '| selectionMethod:', selectionMethod);
     // Cache the resolved threadId so future tab re-visits skip the Gmail search.
     // Also remember it as the interaction-related thread for jump-back / highlighting.
     if (resolvedThreadId) {

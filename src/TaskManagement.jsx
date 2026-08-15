@@ -373,7 +373,7 @@ const TaskManagement = (props) => {
       payload.mediaProperties?.emailSubject ||
       null;
 
-    return {
+    const details = {
       ...raw,
       customerEmail: fromAddress,
       fromAddress,
@@ -384,6 +384,16 @@ const TaskManagement = (props) => {
       // Pass the CAD risk boolean through so initEmailTask can seed it immediately.
       Jmartan_Riziko: cadVal('Jmartan_Riziko') ?? cadVal('jmartan_riziko') ?? raw.Jmartan_Riziko ?? raw.jmartan_riziko ?? null,
     };
+
+    console.log('[TaskManagement] buildEmailCallDetails:', {
+      fromAddress,
+      gmailThreadId,
+      rfcMessageId,
+      subject,
+      rfcMessageIdValue: raw.rfcMessageId,
+    });
+
+    return details;
   };
 
   // Explicit view routing (set via web component `view` attribute in desktop layout JSON).
