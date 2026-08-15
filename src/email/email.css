@@ -1833,17 +1833,17 @@
   gap: 1px;
 }
 
-/* Toolbar button */
+/* Toolbar button — unified pill shape (Momentum look via custom controls) */
 .rte-toolbar__btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   min-width: 28px;
   height: 26px;
-  padding: 0 5px;
-  border: 1px solid transparent;
-  border-radius: 3px;
-  background: transparent;
+  padding: 0 8px;
+  border: 1px solid var(--md-color-gray-20, #dbe3ec);
+  border-radius: 13px;
+  background: var(--md-color-white-100, #fff);
   color: var(--md-color-gray-70, #3d3d3d);
   font-family: inherit;
   font-size: 12px;
@@ -1853,8 +1853,8 @@
 }
 
 .rte-toolbar__btn:hover {
-  background: var(--md-color-gray-10, #f4f5f7);
-  border-color: var(--md-color-gray-25, #d8dce0);
+  background: var(--md-color-gray-05, #f4f7fa);
+  border-color: var(--md-color-blue-50, #0e7fc1);
   color: var(--md-color-gray-90, #282828);
 }
 
@@ -1877,9 +1877,9 @@
 .rte-toolbar__divider {
   display: inline-block;
   width: 1px;
-  height: 18px;
-  background: var(--md-color-gray-25, #d8dce0);
-  margin: 0 4px;
+  height: 20px;
+  background: var(--md-color-gray-20, #dbe3ec);
+  margin: 0 6px;
   vertical-align: middle;
 }
 
@@ -1943,12 +1943,27 @@
   flex: 1;
 }
 
-/* Paperclip attach icon button */
+/* Attach button — pill shape to match toolbar buttons */
 .rte-toolbar__attach-btn {
-  color: var(--md-color-gray-60, #545454);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 10px 0 8px;
+  border: 1px solid var(--md-color-gray-20, #dbe3ec);
+  border-radius: 13px;
+  background: var(--md-color-white-100, #fff);
+  color: var(--md-color-gray-70, #3d3d3d);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.1s, border-color 0.1s, color 0.1s;
+  user-select: none;
 }
 .rte-toolbar__attach-btn:hover {
-  color: var(--md-color-blue-60, #00607d);
+  background: var(--md-color-gray-05, #f4f7fa);
+  border-color: var(--md-color-blue-50, #0e7fc1);
+  color: var(--md-color-gray-90, #282828);
 }
 
 /* ── AI Action Bar ──────────────────────────────────── */
@@ -2035,21 +2050,23 @@
 .reply-composer__ai-action-btn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 3px 8px;
-  border: 1px solid var(--md-color-gray-25, #d8dce0);
-  border-radius: 3px;
+  gap: 5px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--md-color-gray-20, #dbe3ec);
+  border-radius: 13px;
   background: var(--md-color-white-100, #fff);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--md-color-gray-70, #3d3d3d);
   cursor: pointer;
-  transition: background 0.1s, border-color 0.1s;
+  transition: background 0.1s, border-color 0.1s, color 0.1s;
+  user-select: none;
 }
 .reply-composer__ai-action-btn:hover {
-  background: var(--md-color-blue-05, #f0f7ff);
-  border-color: var(--md-color-blue-30, #7fd3f0);
-  color: var(--md-color-blue-70, #00557b);
+  background: var(--md-color-gray-05, #f4f7fa);
+  border-color: var(--md-color-blue-50, #0e7fc1);
+  color: var(--md-color-gray-90, #282828);
 }
 .reply-composer__ai-action-btn--disabled,
 .reply-composer__ai-action-btn:disabled {
@@ -2061,26 +2078,31 @@
 .reply-composer__tone-row {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 11px;
+  gap: 5px;
+  font-size: 12px;
   color: var(--md-color-gray-60, #545454);
 }
 
 .reply-composer__tone-label { font-weight: 500; }
 
-.reply-composer__tone-select {
-  height: 24px;
-  font-size: 11px;
-  padding: 0 4px;
-  border: 1px solid var(--md-color-gray-25, #d8dce0);
-  border-radius: 3px;
-  background: var(--md-color-white-100, #fff);
-  color: var(--md-color-gray-80, #1c1c1c);
-  outline: none;
-  cursor: pointer;
+/* Tone dropdown uses SearchableSelect (pill shape), scaled to match row height */
+.reply-composer__tone-row .ss-ctl {
+  --ss-panel: var(--md-color-white-100, #ffffff);
+  --ss-border: var(--md-color-gray-20, #dbe3ec);
+  --ss-text: var(--md-color-gray-90, #0a2236);
+  --ss-text2: var(--md-color-gray-60, #5b6b7b);
+  --ss-accent: var(--md-color-blue-50, #0e7fc1);
+  --ss-bg: var(--md-color-gray-05, #f4f7fa);
+  --ss-active: var(--md-color-blue-10, #cfe0ee);
 }
-.reply-composer__tone-select:focus {
-  border-color: var(--md-color-blue-50, #007aa3);
+.reply-composer__tone-row .ss-trigger {
+  height: 26px;
+  border-radius: 13px;
+  font-size: 12px;
+  padding: 0 10px 0 11px;
+}
+.reply-composer__tone-row .ss-pop {
+  min-width: 140px;
 }
 
 /* ── Template picker in composer toolbar ────────────── */
@@ -2092,12 +2114,19 @@
 }
 .rte-toolbar__templates .ss-ctl {
   width: 100%;
+  --ss-panel: var(--md-color-white-100, #ffffff);
+  --ss-border: var(--md-color-gray-20, #dbe3ec);
+  --ss-text: var(--md-color-gray-90, #0a2236);
+  --ss-text2: var(--md-color-gray-60, #5b6b7b);
+  --ss-accent: var(--md-color-blue-50, #0e7fc1);
+  --ss-bg: var(--md-color-gray-05, #f4f7fa);
+  --ss-active: var(--md-color-blue-10, #cfe0ee);
 }
 .rte-toolbar__templates .ss-trigger {
   height: 26px;
   border-radius: 13px;
   font-size: 12px;
-  background: var(--md-color-white-100, #fff);
+  padding: 0 10px 0 11px;
 }
 .rte-toolbar__templates .ss-trigger.is-open,
 .rte-toolbar__templates .ss-trigger:focus-visible {
@@ -2106,6 +2135,7 @@
 .rte-toolbar__templates .ss-pop {
   top: calc(100% + 4px);
   right: auto;
+  min-width: 180px;
 }
 
 /* ── Reply Composer: To-line ────────────────────────── */

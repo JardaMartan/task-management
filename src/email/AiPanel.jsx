@@ -4,7 +4,6 @@ import { useSelector, useDispatch } from 'react-redux';
 import { Button, Badge, Card, CardSection } from '@momentum-ui/react';
 import { useI18n } from '../i18n/I18nContext';
 import {
-  refreshAiEnrichment,
   setPendingComposerInsert,
   selectThreadAiSummaries,
 } from '../store/slices/emailSlice';
@@ -45,10 +44,6 @@ const AiPanel = ({ darkMode, onSeedReply }) => {
     } catch { return ''; }
   };
 
-  const handleRefresh = () => {
-    dispatch(refreshAiEnrichment());
-  };
-
   // Suggested reply and templates are inserted at the composer caret (not replacing the draft).
   // Any version can be used — markCurrent only drives the current button's "used" state.
   const handleUseReply = (replyText, { markCurrent = false } = {}) => {
@@ -74,31 +69,6 @@ const AiPanel = ({ darkMode, onSeedReply }) => {
   return (
     <Card className={`ai-panel${darkMode ? ' md--dark' : ''}`} onKeyDown={handleCardKeyDown}>
       <CardSection full>
-        <div className="ai-panel__header">
-          <div className="ai-panel__header-title">
-            <span className="ai-panel__header-label">{t('email.ai.summary')}</span>
-            {source && (
-              <Badge className="ai-panel__source-badge" color={source === 'cad' ? 'orange' : 'blue'}>
-                {source === 'cad'
-                  ? t('email.ai.source.preanalyzed')
-                  : t('email.ai.source.ai')}
-              </Badge>
-            )}
-          </div>
-          <div className="ai-panel__header-actions">
-            {aiConfig && (
-              <Button
-                ariaLabel={t('email.ai.refresh')}
-                size={28}
-                color="blue"
-                onClick={handleRefresh}
-              >
-                {isFetchingEmail ? <span className="widget-spinner widget-spinner--sm widget-spinner--inherit" /> : t('email.ai.refresh')}
-              </Button>
-            )}
-          </div>
-        </div>
-
         {currentSummary && (
           <div className="ai-panel__block ai-panel__block--summary" role="note">
             <span className="ai-panel__block-title ai-panel__block-title--summary">

@@ -676,7 +676,7 @@ const ReplyComposer = ({ interactionId, callAssociatedDetails, darkMode, outboun
                 <button
                   type="button"
                   className={`reply-composer__ai-action-btn${(isDraftEmpty || isAiBusy) ? ' reply-composer__ai-action-btn--disabled' : ''}`}
-                  onClick={handleFixGrammar}
+                  onMouseDown={(e) => { e.preventDefault(); if (!isDraftEmpty && !isAiBusy) handleFixGrammar(); }}
                   disabled={isDraftEmpty || isAiBusy}
                   title={t('email.reply.fixGrammar')}
                 >
@@ -686,24 +686,21 @@ const ReplyComposer = ({ interactionId, callAssociatedDetails, darkMode, outboun
 
                 <div className="reply-composer__tone-row">
                   <span className="reply-composer__tone-label">{t('email.reply.toneLabel')}:</span>
-                  <select
-                    className="reply-composer__tone-select"
+                  <SearchableSelect
                     value={selectedTone}
-                    onChange={(e) => handleToneAdjust(e.target.value)}
+                    options={TONE_OPTIONS.map((opt) => ({ id: opt.value, name: t(opt.labelKey) }))}
+                    onChange={(value) => handleToneAdjust(value)}
                     disabled={isAiBusy}
-                    aria-label={t('email.reply.toneLabel')}
-                  >
-                    {TONE_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>{t(opt.labelKey)}</option>
-                    ))}
-                  </select>
+                    ariaLabel={t('email.reply.toneLabel')}
+                    searchable={false}
+                  />
                   {pendingAi === 'tone' && <span className="widget-spinner widget-spinner--xs widget-spinner--inherit" aria-label={t('email.reply.generating')} />}
                 </div>
 
                 <button
                   type="button"
                   className={`reply-composer__ai-action-btn${(isDraftEmpty || isAiBusy) ? ' reply-composer__ai-action-btn--disabled' : ''}`}
-                  onClick={handleProofread}
+                  onMouseDown={(e) => { e.preventDefault(); if (!isDraftEmpty && !isAiBusy) handleProofread(); }}
                   disabled={isDraftEmpty || isAiBusy}
                   title={t('email.reply.proofreadLabel')}
                 >
